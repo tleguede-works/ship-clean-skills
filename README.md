@@ -114,14 +114,23 @@ Two consequences, both of which have already caused a real problem:
    Which version you get is then decided by installation order, not by you. If a
    skill is needed in two agents, let `npx skills` install both from one source.
 
-### Track updates
+### Track and apply updates
 
 ```bash
-npx skills generate-lock
+npx skills check      # is an update available?
+npx skills update     # apply
+npx skills update -g  # global skills only
+npx skills ls -g      # what is installed, globally
 ```
 
-Writes the lock that `skills check` and `skills update` match against. Without
-it, updates are not tracked back to a source.
+`skills check` resolves each installed skill back to its source, so a skill
+installed from this repository is recognised as ours and can be updated. A skill
+placed there by hand, with no recorded source, is not.
+
+> The upstream README also documents `generate-lock`. It does not exist in
+> `skills` 1.7.0 — `skills-lock.json` is only consumed by
+> `skills experimental_install`. Verified with `npx skills --help`, not copied
+> from the documentation.
 
 ## License
 
