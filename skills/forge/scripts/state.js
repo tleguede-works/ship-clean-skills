@@ -359,7 +359,7 @@ function cmdInit(rootArg, productName, references) {
  * register
  * ------------------------------------------------------------------ */
 
-function cmdRegister(root, kind, key, relPath, type) {
+function cmdRegister(root, kind, key, relPath, type, opts) {
   const state = loadState(root);
   const canonical = L.CANONICAL_LAYOUT[key];
 
@@ -404,12 +404,36 @@ function cmdRegister(root, kind, key, relPath, type) {
   if (fm && fm.data.version) entry.version = fm.data.version;
   if (fm && fm.data.slice) entry.slice = fm.data.slice;
 
+  // Les prémisses dont ce livrable dépend. C'est la dépendance que rien ne
+  // déclarait, et qui rendait invisible le défaut le plus coûteux : un
+  // livrable approuvé se justifie par une exigence qu'un artefact postérieur a
+  // retirée. `consistency-check premises` compare ces IDs à l'état réel du PRD.
+  if (opts && opts.requires !== undefined) {
+    const list = String(opts.requires)
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (!list.length) {
+      L.fail({
+        error: 'empty_requires',
+        key,
+        hint: '--requires attend au moins un ID de règle (B1, C2…).'
+      });
+    }
+    entry.requires = list;
+  }
+  if (opts && opts.amendedBy) entry.amended_by = String(opts.amendedBy).trim();
+
   bucket(state)[key] = entry;
   audit(state, 'register', `Livrable enregistré : ${key}`, { kind, path: relPath });
 
   save(root, state, { type: 'register', deliverable: key, path: relPath, kind });
 
-  L.out({ command: 'register', kind, key, path: relPath, status: entry.status, content_hash: entry.content_hash });
+  L.out({
+    command: 'register', kind, key, path: relPath,
+    status: entry.status, content_hash: entry.content_hash,
+    requires: entry.requires || []
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -1207,7 +1231,22 @@ function main() {
       for (const f of flags) if (f.startsWith('--reference=')) refs.push(f.slice('--reference='.length));
       return cmdInit(positional[0], positional[1], refs);
     }
-    case 'register': return cmdRegister(positional[0], positional[1], positional[2], positional[3], positional[4]);
+    case 'register': {
+      // `--requires` et `--amended-by` sont des dépendances déclarées, pas des
+      // options de confort : sans elles, un livrable approuvé peut reposer sur
+      // une prémisse retirée par un artefact postérieur, et rien ne le voit.
+      const extra = {};
+      for (const f of flags) {
+        if (f.startsWith('--requires=')) extra.requires = f.slice('--requires='.length);
+        if (f === '--requires') extra.requires = '__next__';
+        if (f.startsWith('--amended-by=')) extra.amendedBy = f.slice('--amended-by='.length);
+      }
+      if (extra.requires === '__next__') {
+        const i = argv.indexOf('--requires');
+        extra.requires = argv[i + 1];
+      }
+      return cmdRegister(positional[0], positional[1], positional[2], positional[3], positional[4], extra);
+    }
     case 'set-status': return cmdSetStatus(positional[0], positional[1], positional[2], positional[3]);
     case 'set-phase': return cmdSetPhase(positional[0], positional[1], positional[2]);
     case 'complete-phase': return cmdCompletePhase(positional[0], positional[1]);

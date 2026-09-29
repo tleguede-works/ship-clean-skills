@@ -1124,6 +1124,147 @@ test('une phase complète passe le contrat', () => {
   assert(state.phases['0_bootstrap'].status === 'approved', 'la phase n\'a pas été approuvée');
 });
 
+/* ------------------------------------------------------------------ *
+ * Prémisses — un livrable approuvé ne doit pas reposer sur une exigence retirée
+ * ------------------------------------------------------------------ */
+
+section('Prémisses retirées');
+
+/** Un mini-projet avec un PRD dont la section « Hors scope » est donnée. */
+function prdProject(label, horsScope) {
+  const project = freshProject(label);
+  fs.writeFileSync(path.join(project, '.forge', 'prd.md'), [
+    '---', 'type: prd', 'status: draft', '---', '',
+    '# PRD', '',
+    '## 4. Règles métier', '',
+    '| B1 | Une exigence vivante |', '',
+    '## 9. Hors scope (explicitement)', '',
+    horsScope, '',
+    '## 10. Critères de succès', ''
+  ].join('\n'));
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  fs.writeFileSync(path.join(project, '.forge', 'conventions.md'),
+    '---\ntype: conventions\nstatus: draft\n---\n\n# Conventions\n');
+  return project;
+}
+
+test('conventions approved sur une prémisse retirée est signalé', () => {
+  // C'est le cas du projet de test : conventions.md approuvait PostgreSQL en
+  // s'appuyant sur « multi-tenant strict », que le PRD a ensuite retiré.
+  const project = prdProject('premise-retiree', '- **C102** — Multi-tenant strict — raison : aucun second client');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=C102']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  const res = run('consistency-check.js', ['premises', project]);
+  assert(res.code !== 0 || res.json.pass === false, 'le conflit n\'a pas été signalé');
+  const c = res.json.checks[0];
+  assert(c.retired && c.retired.length === 1, `prémisse retirée non nommée : ${JSON.stringify(c)}`);
+  assert(c.retired[0].deliverable === 'conventions', 'le livrable fautif n\'est pas nommé');
+  assert(c.retired[0].premise === 'C102', 'l\'ID retiré n\'est pas nommé');
+});
+
+test('consequences du retrait : un livrable approuvé sans prémisse déclarée est un avertissement', () => {
+  const project = prdProject('premise-non-declaree', '- **C102** — Multi-tenant strict');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks[0];
+  // Un avertissement, pas un échec : un PRD ne dépend de rien, et forcer la
+  // déclaration rendrait le contrôle irritant donc désactivé.
+  assert(c.status === 'warn', `statut attendu warn, obtenu ${c.status}`);
+  assert(c.undeclared.length === 1, 'le livrable sans prémisse déclarée n\'est pas listé');
+  assert(/--requires=/.test(c.undeclared[0].hint), 'l\'aide ne donne pas la commande');
+});
+
+test('une exigence retirée sans son ID est un retrait non traçable', () => {
+  const project = prdProject('premise-sans-id', '- **Multi-tenant strict** — raison : aucun second client');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=C102']);
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks[0];
+  assert(c.untraceable.length === 1, `le retrait sans ID n\'est pas vu : ${JSON.stringify(c)}`);
+  assert(c.status === 'fail', `un retrait non traçable doit échouer, il est : ${c.status}`);
+});
+
+test('un ID cité dans la raison ne rend pas le retrait traçable', () => {
+  // L'entrée retire C103 ; sa raison évoque C102. Un ID lu dans la prose
+  // décrit une AUTRE exigence, pas celle-ci : le dire revientrait à déclarer
+  // C102 retirée alors qu'elle ne l'est pas — et à accuser les livrables qui
+  // s'appuient légitimement dessus.
+  const project = prdProject('premise-en-prose', "- **C103** — Autre chose — l'exigence C102 est abandonnée");
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=C102']);
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks[0];
+  assert(c.untraceable.length === 0,
+    `l'entrée a bien un ID en tête, elle ne doit pas être signalée : ${JSON.stringify(c.untraceable)}`);
+  assert(c.retired.length === 0,
+    `C102 n'est pas retirée, elle ne doit pas être signalée : ${JSON.stringify(c.retired)}`);
+  assert(c.status === 'pass', `statut attendu pass, obtenu ${c.status}`);
+});
+
+test('un ID qui désigne deux exigences est une collision', () => {
+  // Constaté en corrigeant le projet de test : C1 valait « multi-tenant strict »
+  // en hors scope et « un seul serveur » en contraintes. Même identifiant, deux
+  // sens, et ce contrôle aurait alors accusé le mauvais livrable.
+  const project = freshProject('premise-collision');
+  fs.writeFileSync(path.join(project, '.forge', 'prd.md'), [
+    '---', 'type: prd', 'status: draft', '---', '',
+    '## 5. Contraintes', '',
+    '| C1 | Un seul serveur, hébergé chez le client |', '',
+    '## 9. Hors scope (explicitement)', '',
+    '- **C1** — Multi-tenant strict — raison : aucun second client', ''
+  ].join('\n'));
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  fs.writeFileSync(path.join(project, '.forge', 'conventions.md'),
+    '---\ntype: conventions\nstatus: draft\n---\n\n# Conventions\n');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=C1']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks[0];
+  assert(c.collisions && c.collisions.length === 1, `collision non détectée : ${JSON.stringify(c.collisions)}`);
+  assert(c.collisions[0].id === 'C1', 'l\'ID en collision n\'est pas nommé');
+  assert(c.collisions[0].defined_in.length === 2, 'les deux définitions ne sont pas montrées');
+  assert(c.status === 'fail', `une collision doit échouer, elle est : ${c.status}`);
+});
+
+test('une prémisse déclarée et vivante ne pose aucun problème', () => {
+  const project = prdProject('premise-saine', '- **C102** — Multi-tenant strict');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=B1']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks[0];
+  assert(c.status === 'pass', `statut attendu pass, obtenu ${c.status}`);
+  assert(c.declared_dependencies === 1, `dépendances non comptées : ${c.declared_dependencies}`);
+});
+
+test('premises saute proprement sans PRD', () => {
+  const project = freshProject('premise-sans-prd');
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks[0];
+  assert(c.status === 'skip', `un contrôle sans PRD doit sauter, il est : ${c.status}`);
+});
+
+test('un refus Forge est écrit sur stderr, pas seulement sur stdout', () => {
+  // Constaté en perdant sept constats d'affilée : `> /dev/null` avalait
+  // l'échec exactement comme il avale une sortie normale. Le compte de ce qui
+  // a été enregistré dans l'état devenait faux, sans trace.
+  const project = freshProject('stderr-refus');
+  const res = run('state.js', ['finding', project, '--domain=inexistant', '--severity=low',
+    '--origin=test', 'un fait', 'une correction']);
+  assert(res.code !== 0, 'le refus aurait dû échouer');
+  assert(/unknown_domain/.test(res.stderr || ''),
+    `l'erreur n'est pas sur stderr : ${JSON.stringify(res.stderr)}`);
+  assert(res.json.error === 'unknown_domain', 'l\'erreur ne reste pas lisible en JSON sur stdout');
+});
+
+test('un succès n\'écrit rien sur stderr', () => {
+  const project = freshProject('stderr-succes');
+  const res = run('state.js', ['status', project]);
+  assert(res.code === 0, 'status a échoué');
+  assert((res.stderr || '').trim() === '', `une commande réussie écrit sur stderr : ${res.stderr}`);
+});
+
   console.log(`\x1b[32m✓ ${passed} tests passés\x1b[0m`);
 } else {
   console.log(`\x1b[31m✗ ${failed} échec(s)\x1b[0m, ${passed} passés`);
