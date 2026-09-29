@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-09-29
+
 ### fix(ci) — Les notes de release ne se lisaient plus, et le garde-fou accusait le CHANGELOG
 
 Le premier correctif a bien fonctionné : le tag vide n'a plus été publié, et le
