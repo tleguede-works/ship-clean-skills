@@ -62,6 +62,10 @@ without any signal.
 
 ## Release
 
+A global install is a **copy** into `~/.agents/skills/`, not a symlink —
+verified, not assumed. So a local edit to an installed skill is not refused
+anywhere: it is silently replaced by the next `skills update`. Edit here.
+
 The repository's default branch is the distribution channel: `npx skills add`
 reads from it. Version with git tags per skill so an update is identifiable:
 

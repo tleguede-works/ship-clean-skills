@@ -90,11 +90,38 @@ npx skills update      # apply them
 npx skills list        # what is installed, and where
 ```
 
-**Edit in this repository, never in an installed skill.** The CLI installs by
-symlink to a canonical copy it manages; a local edit to an installed skill is
-silently overwritten by the next `skills update`. That divergence is how a
-project ends up running a two-releases-old version of a skill without anyone
-noticing.
+### Where it installs, and what that means
+
+A global install lands in **`~/.agents/skills/<skill-id>/`**, which OpenCode
+reads alongside `~/.claude/skills/`. It is a **copy**, not a symlink — verified
+here, not assumed from the documentation.
+
+Two consequences, both of which have already caused a real problem:
+
+1. **Edit in this repository, never in an installed skill.** The installed copy
+   is independent. A local edit is not lost visibly — it is silently replaced by
+   the next `skills update`, and the two drift apart. That is how a project ends
+   up running a several-releases-old version of a skill.
+2. **Do not install the same skill into two global locations.** OpenCode resolves
+   skills by ID and a later-registered source wins, so with the same skill in
+   both global paths one of them is simply shadowed:
+
+   ```
+   ~/.claude/skills/impeccable      ← loaded
+   ~/.agents/skills/impeccable      ← shadowed
+   ```
+
+   Which version you get is then decided by installation order, not by you. If a
+   skill is needed in two agents, let `npx skills` install both from one source.
+
+### Track updates
+
+```bash
+npx skills generate-lock
+```
+
+Writes the lock that `skills check` and `skills update` match against. Without
+it, updates are not tracked back to a source.
 
 ## License
 
