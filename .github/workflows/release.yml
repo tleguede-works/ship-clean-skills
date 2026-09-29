@@ -154,16 +154,13 @@ jobs:
           TAG: "v${{ steps.bump.outputs.to }}"
           VERSION: ${{ steps.bump.outputs.to }}
         run: |
-          # Extraire les notes de la section qui vient d'être publiée, pas le
-          # CHANGELOG entier : une release qui répète l'historique complet n'est
-          # pas lisible.
-          NOTES=$(node -e "
-            const fs=require('fs');
-            const t=fs.readFileSync('CHANGELOG.md','utf-8');
-            const re=new RegExp('^## \\\\[' + process.env.VERSION + '\\\\][\\\\s\\\\S]*?\\\\n(?=\\\\n## |$)','m');
-            const m=t.match(re);
-            process.stdout.write(m?m[0].split('\n').slice(1).join('\n').trim():'');
-          ")
+          # Les notes viennent de release.js, pas d'une regex écrite ici.
+          # Cette regex a lived dans le workflow pendant une release entière,
+          # échappée deux fois, et cherchait « \[ » — un antislash littéral
+          # devant le crochet. Elle ne trouvait rien, et le garde-fou levait
+          # « notes vides » sur un CHANGELOG parfaitement valide : un
+          # diagnostic qui accuse le mauvais fichier.
+          NOTES=$(node scripts/release.js notes "$VERSION")
 
           {
             echo "## ${{ steps.bump.outputs.to }}"

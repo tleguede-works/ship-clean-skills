@@ -27,6 +27,27 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(ci) — Les notes de release ne se lisaient plus, et le garde-fou accusait le CHANGELOG
+
+Le premier correctif a bien fonctionné : le tag vide n'a plus été publié, et le
+run a **échoué** au lieu de mensonger. Mais il échouait pour la mauvaise
+raison — les notes étaient vides.
+
+L'extraction vivait dans le workflow, en JavaScript enchâssé dans une chaîne
+bash. Deux niveaux d'échappement plus tard, `\\[` produisait `\[` dans la
+regex : un antislash littéral devant le crochet. La section n'était jamais
+trouvée.
+
+Le pire n'était pas l'échec : c'était le message. « notes de release vides »
+sur un CHANGELOG parfaitement valide renvoie vers le mauvais fichier. On
+aurait passé une heure à relire un CHANGELOG correct.
+
+`release.js notes` fait l'extraction dans le script, donc dans un test. Deux
+tests ajoutés, dont un qui échoue sur une version absente en nommant les
+versions présentes — ce qui, sur le bug ci-dessus, affiche `1.1.1` dans la
+liste tout en disant qu'elle est absente. La contradiction est visible ;
+l'échec seul ne l'était pas.
+
 ## [1.1.1] - 2026-09-29
 
 ### fix(ci) — La release a publié un tag vide, en annonçant « success »
