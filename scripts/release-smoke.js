@@ -126,6 +126,37 @@ test('un bump sans entrée est refusé, et VERSION reste intact', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('notes renvoie le corps de la section demandée', () => {
+  const dir = sandbox();
+  try {
+    const changelog = path.join(dir, 'CHANGELOG.md');
+    fs.writeFileSync(changelog, fs.readFileSync(changelog, 'utf-8').replace(
+      '## [Unreleased]',
+      '## [Unreleased]\n\n### feat(test) — une entrée de test\n\nSon corps.\n'
+    ));
+    runIn(dir, 'bump', '--minor');
+    const v = fs.readFileSync(path.join(dir, 'VERSION'), 'utf-8').trim();
+
+    const r = runIn(dir, 'notes', v);
+    assert(r.code === 0, `notes a échoué : ${r.stdout}${r.stderr}`);
+    assert(r.stdout.includes('une entrée de test'),
+      `notes ne contient pas l'entrée attendue : ${r.stdout.slice(0, 120)}`);
+    assert(!r.stdout.includes('## ['),
+      'notes ne doit pas répéter le titre de section');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('notes échoue sur une version absente, et nomme les versions présentes', () => {
+  const dir = sandbox();
+  try {
+    const r = runIn(dir, 'notes', '9.9.9');
+    assert(r.code !== 0, 'notes a accepté une version absente');
+    let json; try { json = JSON.parse(r.stdout); } catch { throw new Error('stdout non JSON'); }
+    assert(Array.isArray(json.available) && json.available.length > 0,
+      `l'erreur ne liste pas les versions disponibles : ${r.stdout.slice(0, 120)}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('check détecte une divergence VERSION ↔ CHANGELOG', () => {
   const dir = sandbox();
   try {

@@ -208,17 +208,64 @@ function cmdBump(kind) {
   }, null, 2) + '\n');
 }
 
+/**
+ * Notes de release : le corps de la section `[<version>]`, sans son titre.
+ *
+ * Cette extraction vivait dans le workflow, en JavaScript enchâssé dans une
+ * chaîne bash. Deux niveaux d'échappement plus tard, `\\\\[` produisait `\\[`
+ * dans la regex — un antislash littéral devant le crochet — et la section n'était
+ * jamais trouvée. Le workflow levait alors une erreur parfaitement reasonable
+ * (« notes vides ») sur un CHANGELOG parfaitement valide.
+ *
+ * Un diagnostic qui accuse le mauvais fichier coûte plus cher que le défaut
+ * qu'il devait signaler. Ici, l'extraction est dans le script, donc testable.
+ */
+function cmdNotes(versionArg) {
+  const text = read(CHANGELOG);
+  if (text === null) {
+    process.stdout.write(JSON.stringify({ error: 'CHANGELOG.md absent' }, null, 2) + '\n');
+    process.exit(1);
+  }
+  const version = (versionArg || currentVersion()).trim();
+
+  const lines = text.split('\n');
+  const start = lines.findIndex(l => l.match(SECTION_RE) && l.match(SECTION_RE)[1] === version);
+  if (start === -1) {
+    process.stdout.write(JSON.stringify({
+      error: `section [${version}] absente du CHANGELOG`,
+      available: lines.filter(l => SECTION_RE.test(l)).map(l => l.match(SECTION_RE)[1])
+    }, null, 2) + '\n');
+    process.exit(1);
+  }
+  let end = lines.length;
+  for (let j = start + 1; j < lines.length; j++) {
+    if (SECTION_RE.test(lines[j])) { end = j; break; }
+  }
+
+  const body = lines.slice(start + 1, end).join('\n').trim();
+  if (!body) {
+    process.stdout.write(JSON.stringify({
+      error: `la section [${version}] ne contient aucune entrée`,
+      hint: 'Une release vide ne raconte rien et consomme un numéro.'
+    }, null, 2) + '\n');
+    process.exit(1);
+  }
+  process.stdout.write(body + '\n');
+}
+
 const [cmd, arg] = process.argv.slice(2);
 switch (cmd) {
   case 'current': cmdCurrent(); break;
   case 'check': cmdCheck(); break;
+  case 'notes': cmdNotes(process.argv[3]); break;
   case 'bump': cmdBump((arg || '').replace(/^--/, '')); break;
   default:
     process.stdout.write(JSON.stringify({
       usage: {
         'release.js current': 'affiche la version',
         'release.js check': 'valide VERSION ↔ CHANGELOG (CI)',
-        'release.js bump --major|--minor|--patch': 'promeut [Unreleased] en version datée'
+        'release.js bump --major|--minor|--patch': 'promeut [Unreleased] en version datée',
+        'release.js notes [version]': 'corps de la section [version], pour les notes de release'
       }
     }, null, 2) + '\n');
 }
