@@ -27,6 +27,80 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — Un livrable approuvé pouvait reposer sur une exigence retirée
+
+`consistency-check` est l'outil qui existe pour voir les écarts ENTRE artefacts.
+Au premier test grandeur nature, il a répondu `pass: true` sur le cas même
+qu'il est censé attraper.
+
+`conventions.md`, approuvé en Phase 0, justifiait PostgreSQL par « la réponse à
+l'exigence multi-tenant strict, premier critère d'audit ». Le PRD, écrit
+ensuite, a mis le multi-tenant **hors scope** — aucun second client n'existe —
+et l'a remplacé par l'isolation par ligne entre magasins et régions. Les deux
+documents ne peuvent pas rester vrais ensemble, et rien ne le disait.
+
+Pourquoi aucun contrôle ne le voyait : **tous** les contrôles de
+`consistency-check` exigeaient un artefact *postérieur* — une slice, un plan,
+un écran, un `DECISIONS.md`. À la fin de la Phase 1, aucun n'existait. Les six
+contrôles passaient en `skip`, et `pass: true` ne distinguait pas « tout est
+cohérent » de « il n'y a rien à comparer ».
+
+**Le contrôle ajouté** — `consistency-check premises` :
+
+- un livrable approuvé **déclare** ses prémisses :
+  `state.js register … --requires=B11,C1,C2`
+- toute prémisse déclarée que le PRD a retirée est signalée, avec le livrable
+  et l'ID fautifs
+- un livrable approuvé sans prémisse déclarée est un **avertissement**, pas un
+  échec : la dépendance non déclarée doit être visible sans rendre le contrôle
+  irritant, donc désactivable
+- une exigence retirée **sans son ID en tête d'entrée** est un échec : retirer
+  une exigence en lui ôtant son identifiant la rend introuvable, donc la
+  contradiction redevient indétectable
+- un ID cité dans la raison d'une entrée ne compte pas : il décrit une autre
+  exigence, pas celle qui est retirée
+- un **même ID défini dans deux sections** est une collision et échoue
+
+Cette dernière n'était pas théorique : en corrigeant le projet de test, j'ai
+donné `C1` à « multi-tenant strict » en hors scope alors que `C1` valait déjà
+« un seul serveur » en contraintes. Le contrôle l'a vu immédiatement, et
+accusait déjà le mauvais livrable. Les exigences retirées sont maintenant
+numérotées `B1xx` / `C1xx`, hors de la plage des ID vivants.
+
+**Le conflit a été résolu, pas contourné** : `conventions.md` a été réamendé
+(PostgreSQL reste, mais pour porter `store_id` / `region_id` et non
+`tenant_id`), repassé `stale` puis `approved`, et `consistency-check all` est
+ repassé au vert. Le gabarit `prd.md.tmpl` exige désormais qu'une exigence
+retirée garde son ID.
+
+### fix(forge) — Les refus étaient écrits sur stdout, donc perduables
+
+`forge-lib` envoyait **aussi** les erreurs sur stdout. Les scripts sont
+conçus pour être enchaînés, donc c'était délibéré pour la lisibilité — mais
+conséquence : `node state.js finding … > /dev/null` avalait l'échec exactement
+comme il avale une sortie normale.
+
+Perdu de cette façon, en une seule commande : **sept constats d'affilée** ont
+été enregistrés avec un domaine de règle inexistant, les sept ont échoué, et
+aucun n'a laissé de trace. Le compte de ce qui est réellement dans l'état
+était faux — et c'est précisément le compte qu'un agent fait pour savoir s'il a
+avancé.
+
+`fail()` écrit désormais sur stderr, **et** sur stdout pour la lisibilité en
+chaîne. Un succès n'écrit rien sur stderr.
+
+### fix(forge) — 9 tests ajoutés (78 → 87)
+
+Couverture : prémisse retirée sous livrable approuvé, prémisse non déclarée
+(avertissement), retrait sans ID, mention en prose, collision d'ID, prémisse
+saine, absence de PRD, refus sur stderr, succès sans stderr.
+
+Un de ces tests a d'abord échoué **à tort**, et c'est le test qui avait tort :
+il exigeait qu'une entrée MENANT par `**C103**` mais dont la raison évoque
+`C102` soit signalée comme retrait non traçable. Non : elle est traçable, par
+C103. La propriété à vérifier est l'inverse — que `C102` ne soit **pas** traitée
+comme retirée. Corrigé, parce que c'est le contrôle qui avait la bonne lecture.
+
 ## [1.1.4] - 2026-09-29
 
 ### fix(forge) — Une phase s'approuvait sans avoir rien produit

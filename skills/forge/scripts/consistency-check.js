@@ -330,13 +330,179 @@ function checkFindings(root, state) {
  * CLI
  * ------------------------------------------------------------------ */
 
+/**
+ * Prémisses retirées sous un livrable approuvé.
+ *
+ * C'est le contrôle qui manquait le plus. Tous les autres vérifient qu'un
+ * artefact est cohérent avec un artefact **postérieur** : ils sautent tous
+ * jusqu'à ce que les plans existent. Or le motif le plus coûteux d'un projet
+ * est précisément l'inverse — un artefact antérieur **approuvé**, dont un
+ * artefact postérieur révèle qu'il reposait sur une prémisse abandonnée.
+ *
+ * Constaté sur un test grandeur nature : `conventions.md`, approuvé en Phase 0,
+ * justifiait PostgreSQL par « la réponse à l'exigence multi-tenant strict ».
+ * Le PRD, écrit plus tard, a mis le multi-tenant hors scope faute de second
+ * client, et l'isolation par ligne à la place. Les deux documents ne peuvent
+ * pas rester vrais ensemble. `consistency-check all` répondait `pass: true`,
+ * parce que tous ses contrôles exigeaient une slice, un plan, un écran ou un
+ * DECISIONS.md — rien de tout cela n'existait à la fin de la Phase 1.
+ *
+ * Le mécanisme ne fait pas d'analyse de texte : un livrable **déclare** les IDs
+ * de règles dont il dépend, et on compare ces IDs à l'état réel du PRD. La
+ * section « Hors scope » du gabarit est la seule structure lue, parce que c'est
+ * celle que le skill contrôle lui-même.
+ */
+function checkPremises(root, state) {
+  const prd = (state.deliverables || {}).prd;
+  if (!prd || !prd.path) {
+    return skip('premises', 'aucun PRD (Phase 1 non atteinte)');
+  }
+  const prdAbs = L.toAbs(root, prd.path);
+  if (!fs.existsSync(prdAbs)) {
+    return skip('premises', `PRD introuvable : ${prd.path}`);
+  }
+  const text = fs.readFileSync(prdAbs, 'utf-8');
+
+  // Découpe le PRD : le « hors scope » du gabarit est la seule zone où un ID
+  // présent signifie « cette exigence a été retirée ».
+  //
+  // Et une entrée de hors scope SANS ID est elle-même un défaut : retirer une
+  // exigence en lui ôtant son identifiant empêche toute mention ultérieure.
+  // Le retrait devient invisible au moment précis où il coûte le plus cher.
+  const lines = text.split('\n');
+  const inHorsScope = new Set();
+  const untraceable = [];
+
+  // Où chaque ID est *défini* : une ligne de tableau `| C1 | …` ou une puce
+  // en tête. Un ID défini deux fois avec deux sens différents n'est pas un
+  // identifiant, c'est une collision — et le contrôle qui s'appuie dessus va
+  // alors accuser le mauvais livrable, en citant une exigence sans rapport.
+  // Constaté en corrigeant le projet de test : C1 valait « multi-tenant
+  // strict » en hors scope et « un seul serveur » en contraintes.
+  const definitions = new Map();
+  let section = '';
+  let hors = false;
+  const noteDefinition = (id, label, sec) => {
+    if (!definitions.has(id)) definitions.set(id, []);
+    definitions.get(id).push({ label: label.slice(0, 70), section: sec });
+  };
+
+  for (const line of lines) {
+    const h = line.match(/^##\s+(.*)$/);
+    if (h) { section = h[1].trim(); hors = /hors[ -]?scope/i.test(section); }
+
+    // Ligne de tableau : | B1 | texte |, ou | C1 | texte |
+    const row = line.match(/^\|\s*\*{0,2}([BCE]\d+)\*{0,2}\s*\|\s*([^|]*)/);
+    if (row) {
+      noteDefinition(row[1], row[2], section);
+      if (hors) inHorsScope.add(row[1]);
+      continue;
+    }
+
+    if (!hors) continue;
+    const isBullet = /^\s*[-*]\s+/.test(line);
+    if (!isBullet) continue;
+    // L'ID doit être en TÊTE de l'entrée, comme le prescrit le gabarit
+    // (`B7 — titre`). Un ID cité dans la raison ne rend pas le retrait
+    // traçable : il dit qu'une autre exigence existe, pas que celle-ci est
+    // retirée. Accepter une mention en prose ferait passer un retrait non
+    // déclaré pour un retrait déclaré.
+    const head = line.replace(/^\s*[-*]\s+/, '');
+    const lead = head.match(/^\*\*([BCE]\d+)\*\*\s*[-—:]?\s*/) || head.match(/^([BCE]\d+)\s*[-—:]\s*/);
+    if (!lead) {
+      const label = head.split('—')[0].trim();
+      untraceable.push({
+        line: label.slice(0, 80),
+        why: 'exigence retirée sans son ID en tête d\'entrée — plus rien ne peut dire ' +
+             'qu\'un livrable approuvé reposait dessus'
+      });
+      continue;
+    }
+    inHorsScope.add(lead[1]);
+    noteDefinition(lead[1], head.replace(lead[0], '').split('—')[0].trim(), section);
+  }
+
+  const collisions = [];
+  for (const [id, defs] of definitions) {
+    const sections = new Set(defs.map(d => d.section));
+    if (defs.length > 1 && sections.size > 1) {
+      collisions.push({
+        id,
+        defined_in: defs,
+        why: `l'ID ${id} désigne deux exigences différentes. Toute référence à ${id} ` +
+             'devient ambiguë — y compris celle de ce contrôle.'
+      });
+    }
+  }
+
+  // Les IDs déclarés, et leur état.
+  const declared = new Set();
+  for (const m of text.matchAll(/\b([BCE]\d+)\b/g)) declared.add(m[1]);
+
+  const retired = [];
+  const unknown = [];
+  const undeclared = [];
+  const checked = [];
+
+  for (const [key, d] of Object.entries(state.deliverables || {})) {
+    if (d.status !== 'approved' && d.status !== 'in_review') continue;
+    if (key === 'prd') continue;
+
+    if (!Array.isArray(d.requires) || !d.requires.length) {
+      undeclared.push({
+        deliverable: key,
+        why: 'approuvé sans déclarer les exigences dont il dépend',
+        hint: `node scripts/state.js register <anchor> deliverable ${key} ${d.path} --requires=B1,C1`
+      });
+      continue;
+    }
+    for (const id of d.requires) {
+      checked.push({ deliverable: key, premise: id });
+      if (inHorsScope.has(id)) {
+        retired.push({
+          deliverable: key, premise: id, path: d.path,
+          why: `l'exigence ${id} est dans la section « Hors scope » du PRD, ` +
+               `mais ${key} a été approuvé en s'appuyant dessus`
+        });
+      } else if (!declared.has(id)) {
+        unknown.push({
+          deliverable: key, premise: id,
+          why: `l'exigence ${id} n'existe pas dans le PRD — la référence est morte`
+        });
+      }
+    }
+  }
+
+  const pass = retired.length === 0 && unknown.length === 0 && untraceable.length === 0 &&
+    collisions.length === 0;
+  record('premises', pass, {
+    retired,
+    unknown,
+    undeclared,
+    untraceable,
+    collisions,
+    declared_dependencies: checked.length,
+    rule: 'Un livrable approuvé qui se justifie par une exigence retirée reste un livrable ' +
+          'approuvé, et rien ne le signale. C\'est le motif le plus coûteux d\'un projet : ' +
+          'l\'artefact tardif révèle le défaut de l\'artefact déjà validé.'
+  });
+  // Les livrables approuvés sans prémisse déclarée ne sont pas une erreur —
+  // un PRD ne dépend de rien — mais l'omission doit être visible, sinon la
+  // dépendance reste non déclarée pour de bon.
+  if (pass && undeclared.length) {
+    const entry = results.checks[results.checks.length - 1];
+    entry.status = 'warn';
+  }
+}
+
 const CHECKS = {
   reality: (root, state) => checkSliceReality(root, state),
   ids: (root, state) => checkIdTraceability(root, state),
   plans: (root, state) => checkPlanSelfConsistency(root, state),
   screens: (root, state) => checkScreenCoverage(root, state),
   questions: (root, state) => checkOpenQuestions(root, state),
-  findings: (root, state) => checkFindings(root, state)
+  findings: (root, state) => checkFindings(root, state),
+  premises: (root, state) => checkPremises(root, state)
 };
 
 function main() {
@@ -355,7 +521,8 @@ function main() {
         plans: 'consistency-check.js plans <anchor>      # state.json → contenu du plan',
         screens: 'consistency-check.js screens <anchor>   # écrans ↔ slices ↔ navigation',
         questions: 'consistency-check.js questions <anchor> # questions ouvertes vs ADR',
-        findings: 'consistency-check.js findings <anchor>  # constats routés et promus'
+        findings: 'consistency-check.js findings <anchor>  # constats routés et promus',
+        premises: 'consistency-check.js premises <anchor>  # prémisses retirées sous un livrable approuvé'
       },
       note: 'Vérifie les écarts ENTRE artefacts. Aucun contrôle unitaire ne peut les voir.'
     });

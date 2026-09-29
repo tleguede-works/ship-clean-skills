@@ -177,6 +177,20 @@ Un `fail` ici n'est pas une suggestion : corrige avant de présenter le document
 
 **Pourquoi deux commandes.** `forge-guard` lit un document à la fois : il vérifie qu'il existe, qu'il est au bon chemin, que son statut est cohérent. Il ne peut pas voir qu'un plan contredit l'architecture qu'il est censé implémenter. `consistency-check` ne fait que cela, et c'est le seul outil qui le fasse — parce que le motif le plus coûteux d'un projet n'est pas une spec incomplète, c'est **un artefact ultérieur qui révèle un défaut d'un artefact antérieur déjà approuvé**. Compté 13 fois sur un projet réel, avec cette phrase à côté : *« Aucun contrôle du gate ne l'attrape. »*
 
+**Déclare de quoi un livrable dépend.** Un livrable approuvé se justifie par des exigences du PRD, et cette dépendance doit être **nommée** :
+
+```bash
+node scripts/state.js register <anchor> deliverable conventions .forge/conventions.md --requires=B11,C1,C2
+```
+
+`consistency-check premises` compare ces IDs à l'état réel du PRD et signale une exigence **retirée** dont un livrable approuvé dépend encore. Sans cette déclaration, un document reste approuvé sur une prémisse que le PRD a abandonnée : sur un test grandeur nature, `conventions.md` justifiait PostgreSQL par « la réponse à l'exigence multi-tenant strict » pendant que le PRD mettait le multi-tenant hors scope faute de second client. Aucun contrôle ne le voyait.
+
+**Une exigence retirée garde son ID**, en tête de l'entrée `## 9. Hors scope` : `- **C102** — Multi-tenant strict — raison : …`. Retirer une exigence en lui ôtant son identifiant la rend introuvable, et la contradiction redevient indétectable — le contrôle refuse d'ailleurs un retrait sans ID, parce qu'un retrait non traçable est un retrait non déclaré.
+
+**Un ID ne désigne qu'une seule exigence.** Si `C1` est « multi-tenant strict » en hors scope et « un seul serveur » en contraintes, toute référence à `C1` devient ambiguë — y compris celle de ce contrôle, qui accuserait alors le mauvais livrable. Le contrôle refuse la collision ; numérote les exigences retirées dans une plage à part (B1xx, C1xx) pour ne pas emprunter un identifiant vivant.
+
+`conventions.md` est le cas le plus fréquent : c'est un document vivant, et un amendement du PRD l'oblige. Réamende-le, repasse-le `stale` puis `approved`, et relance `consistency-check premises`.
+
 ### Phase 0 — Bootstrap
 
 But : établir le contexte du projet et générer la base des conventions avant toute réflexion produit.

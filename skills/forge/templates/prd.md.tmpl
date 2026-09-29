@@ -130,9 +130,19 @@ version: 1
 
 ## 9. Hors scope (explicitement)
 
-<!-- Ce qui est consciemment exclu, maintenant et plus tard. -->
+<!--
+  Une exigence retirée garde son ID. C'est la règle qui rend le retrait
+  traçable : si l'ID disparaît avec l'exigence, plus rien ne peut dire qu'un
+  livrable déjà approuvé reposait dessus, et la contradiction devient
+  indétectable. `consistency-check premises` lit cette section pour le
+  vérifier — il ne peut le faire que si l'ID est là.
 
-- {{FONCTIONNALITÉ EXCLUE}} — raison : {{POURQUOI}}
+  Format : `B7 — titre` ou `C3 — titre` ou `E5 — titre`, puis la raison.
+  L'ID doit être celui que l'exigence portait dans les sections 4, 5 ou 6.
+  Ne jamais réattribuer un ID retiré à autre chose.
+-->
+
+- {{B7}} — {{FONCTIONNALITÉ EXCLUE}} — raison : {{POURQUOI}}
 
 ---
 

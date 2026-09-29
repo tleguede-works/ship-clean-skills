@@ -148,11 +148,33 @@ const FORBIDDEN_STATE_KEYS = [
  * Utilitaires terminal
  * ------------------------------------------------------------------ */
 
+/**
+ * Sortie de résultat.
+ *
+ * Les scripts sont conçus pour être enchaînés : `state.js … | node -e …`,
+ * comme le fait la documentation. Donc le résultat — y compris un refus — va
+ * sur stdout, pour rester lisible dans une chaîne de commandes.
+ */
 function out(obj) {
   process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
 }
 
+/**
+ * Échec : stderr, plus une copie sur stdout.
+ *
+ * Le fait d'écrire aussi sur stdout est délibéré, parce que le refus reste
+ * ainsi lisible dans un enchaînement. Mais stderr porte la version qui ne peut
+ * pas être perdue.
+ *
+ * Constaté sur un test grandeur nature : sept `state.js finding …` ont été
+ * lancés avec `> /dev/null`. Tous les sept avaient échoué — domaine de règle
+ * inconnu — et aucun n'a laissé de trace. La sortie de résultat et le signal
+ * d'échec étaient sur le même flux, donc le shell pouvait avaler l'échec
+ * exactement comme il avale une sortie normale. C'est le pire endroit pour
+ * perdre une information : le compte de ce qui a été enregistré dans l'état.
+ */
 function fail(obj, code = 1) {
+  process.stderr.write(JSON.stringify(obj, null, 2) + '\n');
   process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
   process.exit(code);
 }
