@@ -1,108 +1,19 @@
-name: ship-clean-skills
-description: Agent Skills for shipping software that holds together — exhaustive implementation planning from a vague idea, and coherent AI-agent rule sets.
-version: 1.0.0
-license: MIT
-keywords: [agent-skills, planning, specification, architecture, code-quality, rules]
----
-
-# ship-clean-skills
-
-Agent Skills for shipping software that holds together — from a vague idea to an
-implementation plan a low-capability model can execute without guessing.
-
-Conforms to the [Agent Skills specification](https://agentskills.io). Installs
-into OpenCode, Claude Code, Codex, Cursor and 30 other agents with one command.
-
-## Install
-
-```bash
-# See what's available, without installing
-npx skills add tleguede-works/ship-clean-skills --list
-
-# Install everything, globally, for OpenCode
-npx skills add tleguede-works/ship-clean-skills -g -a opencode -y
-
-# Or just the ones you need
-npx skills add tleguede-works/ship-clean-skills --skill forge -g -a opencode -y
-```
-
-Other agents: replace `opencode` with `claude-code`, `codex`, `cursor`, `windsurf`…
-See `npx skills add --help` for the full list.
-
-## Skills
-
-| Skill | What it does |
-|---|---|
-| **[`forge`](skills/forge/)** | Takes a rough product idea and turns it into an exhaustive implementation plan — PRD, roadmap, design, architecture, per-slice plans, test plan, impact analysis — precise enough that a weak model can implement a slice without ambiguity. Also runs the implementation, with executable exit criteria and optional autonomous validation. |
-| **[`project-rules-architect`](skills/project-rules-architect/)** | Generates a coherent, non-redundant set of AI-agent instruction files for a project — an entry file plus a rules directory, built from a template library selected by detected stack rather than copied wholesale. |
-| `cartographe` | *Planned.* Legacy codebases and migrations to a different stack. |
-
-### How they fit together
-
-They are complementary and have a **declared boundary**, not a shared pile of
-notes:
-
-| `forge` owns | `project-rules-architect` owns |
-|---|---|
-| `.forge/` — what to build, and where the work stands | `AGENTS.md`, `.opencode/rules/*.md` — what to follow |
-| `state.json` — status, paths, IDs, hashes | `DECISIONS.md` — why · `LEARNINGS.md` — what broke · `SESSION_LOG.md` — what happened |
-
-**A business or technical fact lives in a file owned by `project-rules-architect`.**
-`state.json` holds a pointer, not a copy. Forge routes findings into the right
-file instead of accumulating them.
-
-See [`skills/forge/references/skill-boundaries.md`](skills/forge/references/skill-boundaries.md).
-
-## Repository layout
-
-```
-skills/
-  <skill-id>/
-    SKILL.md          required — name + description in YAML frontmatter
-    references/       documents the agent reads on demand
-    scripts/          executable helpers
-    templates/        files copied and filled in
-    agents/           sub-agent contracts
-```
-
-**The repository root must not contain a `SKILL.md`** — the whole repo would
-then be detected as a single skill. This file is the README.
-
-Skill IDs come from the **directory path**, not the frontmatter `name`, and must
-match `^[a-z0-9]+(-[a-z0-9]+)*$`. Keep `name` aligned with the directory.
-
-## Contributing
-
-```bash
-npx skills init skills/my-skill      # scaffold
-$EDITOR skills/my-skill/SKILL.md
-
-node scripts/validate-repo.js        # must pass before you push
-node skills/forge/scripts/selftest.js
-```
-
-`validate-repo.js` refuses: a missing `SKILL.md` or `description`, an
-unportable or mismatched ID, a reference to a skill that does not exist, a
-misspelled skill ID, a `{{PLACEHOLDER}}` left in shipped content, a declared
-agent/script list that no longer matches the files on disk, and a script with a
-syntax error.
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Maintenance
-
-```bash
-npx skills check       # available updates
-npx skills update      # apply them
-npx skills list        # what is installed, and where
-```
-
-**Edit in this repository, never in an installed skill.** The CLI installs by
-symlink to a canonical copy it manages; a local edit to an installed skill is
-silently overwritten by the next `skills update`. That divergence is how a
-project ends up running a two-releases-old version of a skill without anyone
-noticing.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+{
+  "name": "ship-clean-skills",
+  "version": "1.0.0",
+  "description": "Agent Skills for shipping software that holds together — exhaustive implementation planning from a vague idea, and coherent AI-agent rule sets.",
+  "license": "MIT",
+  "keywords": [
+    "agent-skills",
+    "planning",
+    "specification",
+    "architecture",
+    "code-quality",
+    "rules"
+  ],
+  "scripts": {
+    "validate": "node scripts/validate-repo.js",
+    "test": "node scripts/validate-repo.js && node skills/forge/scripts/selftest.js"
+  },
+  "private": false
+}

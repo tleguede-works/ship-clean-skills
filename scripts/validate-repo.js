@@ -48,22 +48,74 @@ function listFiles(dir, acc = []) {
 }
 
 /* ------------------------------------------------------------------ *
- * Front matter — plat, suffisant pour name/description
+ * Front matter — parsing STRICT
  * ------------------------------------------------------------------ */
+
+/**
+ * Parse le front matter comme le fait un parseur YAML, pas comme le fait une
+ * regex tolérante.
+ *
+ * La distinction n'est pas académique. Un `SKILL.md` dont la description
+ * contient « `: ` » est accepté par le parseur souple d'OpenCode et rejeté par
+ * celui de `npx skills`, qui affiche alors « Nested mappings are not allowed in
+ * compact mappings » et saute le skill. Le fichier est alors valide pour un
+ * lecteur et invisible pour l'autre — le pire état possible, parce que rien ne
+ * signale la différence entre les deux.
+ *
+ * Un scalaire YAML non quoté ne peut contenir ni « `: ` » ni « ` #` ».
+ */
+const YAML_SCALAR_FORBIDDEN = /:\s|\s#/;
 
 function frontMatter(file) {
   const raw = fs.readFileSync(file, 'utf-8').replace(/^﻿/, '');
   if (!raw.startsWith('---')) return null;
   const end = raw.indexOf('\n---', 3);
   if (end === -1) return null;
+
   const data = {};
+  const errors = [];
+
   for (const line of raw.slice(3, end).split('\n')) {
     if (!line.trim() || line.trim().startsWith('#')) continue;
     const i = line.indexOf(':');
     if (i === -1) continue;
-    data[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    const key = line.slice(0, i).trim();
+    let value = line.slice(i + 1).trim();
+
+    // Retirer les guillemets d'un scalaire quoté, en notant qu'il l'est.
+    let quoted = false;
+    if ((value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
+        (value.startsWith("'") && value.endsWith("'") && value.length > 1)) {
+      value = value.slice(1, -1);
+      quoted = true;
+    } else if (YAML_SCALAR_FORBIDDEN.test(value)) {
+      const at = value.search(YAML_SCALAR_FORBIDDEN);
+      errors.push({
+        key,
+        problem: 'unquoted_scalar_contains_yaml_syntax',
+        excerpt: value.slice(Math.max(0, at - 30), at + 30),
+        fix: 'Envelopper la valeur dans des guillemets doubles : un scalaire YAML non quoté ne peut pas contenir ": " ni " #".'
+      });
+    }
+
+    if (value.startsWith('[') && value.endsWith(']')) {
+      const inner = value.slice(1, -1).trim();
+      data[key] = inner
+        ? inner.split(',').map(v => v.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+        : [];
+    } else {
+      data[key] = { __quoted: quoted, value };
+    }
   }
-  return { data, body: raw.slice(end + 4) };
+
+  return { data, body: raw.slice(end + 4), errors };
+}
+
+/** Valeur texte d'une clé, guillemets retirés. */
+function fmValue(fm, key) {
+  const v = fm && fm.data[key];
+  if (v === undefined) return undefined;
+  return (v && typeof v === 'object' && '__quoted' in v) ? v.value : v;
 }
 
 /* ------------------------------------------------------------------ *
@@ -124,18 +176,31 @@ for (const id of skillIds) {
   if (!fm) { missingFrontmatter.push(id); continue; }
   if (!ID_PATTERN.test(id)) badIds.push({ id, expected: '^[a-z0-9]+(-[a-z0-9]+)*$' });
 
-  const name = fm.data.name;
+  const name = fmValue(fm, 'name');
   // L'ID vient du chemin. Le `name` est un libellé d'affichage, mais s'il
   // diverge de l'ID, l'agent et l'utilisateur l'appellent par deux noms.
   if (name && name !== id) nameMismatch.push({ id, name });
   if (name === undefined) nameMismatch.push({ id, name: null });
 
-  const desc = fm.data.description;
+  const desc = fmValue(fm, 'description');
   if (!desc) missingDescription.push(id);
   else if (desc.length < 80) shortDescriptions.push({ id, length: desc.length });
 }
 
 check('every_skill_has_frontmatter', missingFrontmatter.length === 0, { missing: missingFrontmatter });
+
+// Le test le plus utile de ce fichier. Un front matter valide pour le parseur
+// d'OpenCode peut être rejeté par celui de `npx skills` : le skill devient
+// alors invisible au moment de l'installation, sans que rien ne le signale.
+const yamlErrors = [];
+for (const id of skillIds) {
+  const fm = frontMatter(path.join(SKILLS_DIR, id, 'SKILL.md'));
+  if (fm && fm.errors.length) yamlErrors.push({ skill: id, errors: fm.errors });
+}
+check('frontmatter_is_strict_yaml', yamlErrors.length === 0, {
+  offenders: yamlErrors,
+  rule: 'Un scalaire YAML non quoté ne peut pas contenir ": " ni " #". OpenCode et npx skills ne lisent pas le front matter de la même façon : quoter la valeur.'
+});
 check('skill_ids_are_portable', badIds.length === 0, { invalid: badIds, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' });
 check('skill_name_matches_directory', nameMismatch.length === 0, {
   mismatches: nameMismatch,
