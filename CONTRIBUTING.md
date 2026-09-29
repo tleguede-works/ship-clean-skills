@@ -67,14 +67,51 @@ verified, not assumed. So a local edit to an installed skill is not refused
 anywhere: it is silently replaced by the next `skills update`. Edit here.
 
 The repository's default branch is the distribution channel: `npx skills add`
-reads from it. Version with git tags per skill so an update is identifiable:
+reads from it.
+
+### One version for the repository
+
+Not one per skill. Forge and `project-rules-architect` hold a documented
+boundary, so they must move together; separate numbers would let that contract
+drift silently. `CHANGELOG.md` says which skill changed.
+
+### How a change becomes a release
+
+1. Branch, commit, push, open a pull request.
+2. Add an entry under `## [Unreleased]`, in the format
+   `### type(scope) — one-line summary`, followed by a paragraph explaining
+   **why**. The diff already says what.
+3. Merge to `main`.
+
+`.github/workflows/release.yml` then runs on its own: it verifies, decides
+whether there is anything to publish, bumps, commits, tags, and creates the
+release. Nothing is published when `[Unreleased]` is empty — a version number
+spent on an invisible change makes the history stop meaning anything.
 
 ```bash
-git tag forge-v2.0.0
-git push --tags
+node scripts/release.js current     # the version
+node scripts/release.js check       # VERSION ↔ CHANGELOG coherence (in CI)
+node scripts/release.js notes 1.2.0 # release body for a version
+node scripts/release.js bump --minor
 ```
 
-Because Forge and `project-rules-architect` hold a documented boundary, they
-must move together. Tag the pair in one commit. Two repos would let that
-contract drift silently — the exact failure class this repository's tooling
-exists to catch.
+Manual publication, when a version is genuinely warranted with no pending
+entry: `workflow_dispatch` with a level. The level is a floor, not a ceiling —
+if `[Unreleased]` holds a `feat`, a `patch` request publishes a minor.
+
+### Rules a pull request must respect
+
+The release workflow commits `VERSION` and `CHANGELOG.md` straight to `main`.
+Any open pull request touching those two files would therefore conflict at
+merge time — and the conflict surfaces between two published versions, which
+is the worst moment to discover it.
+
+So a pull request:
+
+- adds **only** inside `## [Unreleased]`
+- does **not** touch `VERSION`
+- does **not** rewrite an already published section
+
+Correcting a bad release is done with a new entry, not by editing history.
+`scripts/changelog-policy.js` enforces this in CI. It is checked with a real
+base (`--base main`), and also runs standalone to validate the file's shape.
