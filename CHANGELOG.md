@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-29
+
 ### feat(repo) — Versionnement, CHANGELOG et release automatisée
 
 Un seul numéro de version pour le dépôt. Forge référence project-rules-architect
