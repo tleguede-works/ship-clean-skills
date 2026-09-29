@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-09-29
+
 ### fix(forge) — Un livrable approuvé pouvait reposer sur une exigence retirée
 
 `consistency-check` est l'outil qui existe pour voir les écarts ENTRE artefacts.
