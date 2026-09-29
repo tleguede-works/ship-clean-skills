@@ -1,0 +1,171 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      level:
+        description: "Bump de version à forcer"
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+
+# Une seule release à la fois. Deux jobs de release concurrents se disputent
+# le même numéro de version, et le perdant écrit un tag qui ne correspond plus
+# à son contenu.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Vérifier
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.decide.outputs.should_release }}
+      level: ${{ steps.decide.outputs.level }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Contrat du dépôt
+        run: node scripts/validate-repo.js
+
+      - name: Suite du skill forge
+        run: node skills/forge/scripts/selftest.js
+
+      - name: Cohérence VERSION ↔ CHANGELOG
+        run: node scripts/release.js check
+
+      - name: Décider s'il faut publier
+        id: decide
+        env:
+          FORCE_LEVEL: ${{ inputs.level || '' }}
+        run: |
+          # Une section [Unreleased] vide signifie « rien à publier ». Publier
+          # quand même consommerait un numéro pour un changement invisible, et
+          # l'historique des versions finit par ne plus rien signifier.
+          if [ -n "$FORCE_LEVEL" ]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "level=$FORCE_LEVEL"    >> "$GITHUB_OUTPUT"
+            echo "forcée manuellement"
+            exit 0
+          fi
+
+          if node -e "
+            const fs=require('fs');
+            const t=fs.readFileSync('CHANGELOG.md','utf-8');
+            const m=t.match(/^## \[Unreleased\]\n([\s\S]*?)(?=\n## )/m);
+            const body=m?m[1]:'';
+            process.exit(/^###\s+(breaking|feat|fix|docs|chore|test|perf)/m.test(body)?0:1);
+          "; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            # breaking → major, feat → minor, sinon patch
+            if node -e "
+              const fs=require('fs');
+              const t=fs.readFileSync('CHANGELOG.md','utf-8');
+              const m=t.match(/^## \[Unreleased\]\n([\s\S]*?)(?=\n## )/m);
+              process.exit(/^###\s+breaking/m.test(m?m[1]:'')?0:1);
+            "; then level=major
+            elif node -e "
+              const fs=require('fs');
+              const t=fs.readFileSync('CHANGELOG.md','utf-8');
+              const m=t.match(/^## \[Unreleased\]\n([\s\S]*?)(?=\n## )/m);
+              process.exit(/^###\s+feat/m.test(m?m[1]:'')?0:1);
+            "; then level=minor
+            else level=patch
+            fi
+            echo "level=$level" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "rien à publier"
+          fi
+
+      - name: Résumé
+        run: |
+          {
+            echo "### Décision de release"
+            echo ""
+            echo "- publier : \`${{ steps.decide.outputs.should_release }}\`"
+            echo "- niveau   : \`${{ steps.decide.outputs.level }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Publier
+    needs: verify
+    if: needs.verify.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Bumper la version et figer la section
+        id: bump
+        run: node scripts/release.js bump --${{ needs.verify.outputs.level }}
+
+      - name: Committer VERSION et CHANGELOG
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION CHANGELOG.md
+          # --no-verify : ce commit est mécanique, il ne doit pas relancer la CI
+          git commit -m "chore(release): ${{ steps.bump.outputs.to }}" || {
+            echo "rien à committer"; exit 0;
+          }
+          git push
+
+      - name: Créer la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "v${{ steps.bump.outputs.to }}"
+          VERSION: ${{ steps.bump.outputs.to }}
+        run: |
+          # Extraire les notes de la section qui vient d'être publiée, pas le
+          # CHANGELOG entier : une release qui répète l'historique complet n'est
+          # pas lisible.
+          NOTES=$(node -e "
+            const fs=require('fs');
+            const t=fs.readFileSync('CHANGELOG.md','utf-8');
+            const re=new RegExp('^## \\\\[' + process.env.VERSION + '\\\\][\\\\s\\\\S]*?\\\\n(?=\\\\n## |$)','m');
+            const m=t.match(re);
+            process.stdout.write(m?m[0].split('\n').slice(1).join('\n').trim():'');
+          ")
+
+          {
+            echo "## ${{ steps.bump.outputs.to }}"
+            echo ""
+            echo "$(date -u +%Y-%m-%d)"
+            echo ""
+            echo "$NOTES"
+            echo ""
+            echo "---"
+            echo ""
+            echo "Installer : \`npx skills add tleguede-works/ship-clean-skills --skill <nom> -g -a opencode\`"
+          } > /tmp/notes.md
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "le tag $TAG existe déjà — rien à créer"
+            exit 0
+          fi
+
+          git tag -a "$TAG" -m "release ${{ steps.bump.outputs.to }}"
+          git push origin "$TAG"
+
+          gh release create "$TAG" /tmp/notes.md \
+            --title "$TAG" \
+            --notes-file /tmp/notes.md

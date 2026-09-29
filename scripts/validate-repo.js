@@ -400,7 +400,14 @@ check('no_unrendered_placeholders', unrendered.length === 0, {
  * ------------------------------------------------------------------ */
 
 const scriptIssues = [];
-const scripts = listFiles(SKILLS_DIR).filter(f => f.endsWith('.js'));
+// Les scripts du dépôt ET ceux des skills. Limiter le contrôle aux skills
+// laisserait validate-repo.js lui-même — le script qui vérifie tout le reste —
+// hors de tout contrôle de syntaxe.
+const scripts = [
+  ...listFiles(path.join(ROOT, 'scripts')),
+  ...listFiles(SKILLS_DIR)
+].filter(f => f.endsWith('.js'));
+
 for (const f of scripts) {
   try {
     require('child_process').execFileSync('node', ['--check', f], { stdio: 'pipe' });
@@ -410,7 +417,8 @@ for (const f of scripts) {
 }
 check('scripts_parse', scriptIssues.length === 0, {
   checked: scripts.length,
-  offenders: scriptIssues
+  offenders: scriptIssues,
+  rule: 'Un script qui ne se parse pas est une porte qui ne protège plus de rien.'
 });
 
 /* ------------------------------------------------------------------ *
