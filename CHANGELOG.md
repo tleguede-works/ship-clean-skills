@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-09-29
+
 ### docs(contributing) — Le circuit de release, décrit
 
 Comment une modification devient une version : une entrée dans `[Unreleased]`,
