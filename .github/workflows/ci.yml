@@ -29,6 +29,19 @@ jobs:
       - name: VERSION ↔ CHANGELOG
         run: node scripts/release.js check
 
+      # release.js est exécuté pour de vrai, dans une copie jetable. Une
+      # régression qui ferait publier une release vide ne serait visible
+      # qu'au moment de publier.
+      - name: release.js en bac à sable
+        run: node scripts/release-smoke.js
+
+      # Le workflow de release commite VERSION et CHANGELOG sur main. Sans
+      # cette règle, la prochaine pull request qui touche ces deux fichiers
+      # entre en conflit — et le conflit s'installe au pire moment, entre deux
+      # versions publiées.
+      - name: Politique CHANGELOG
+        run: node scripts/changelog-policy.js
+
   workflows:
     name: Syntaxe des workflows
     runs-on: ubuntu-latest

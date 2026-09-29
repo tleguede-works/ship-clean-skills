@@ -116,7 +116,24 @@ jobs:
 
       - name: Bumper la version et figer la section
         id: bump
-        run: node scripts/release.js bump --${{ needs.verify.outputs.level }}
+        run: |
+          set -euo pipefail
+          node scripts/release.js bump --${{ needs.verify.outputs.level }} > /tmp/bump.json
+          cat /tmp/bump.json
+
+          # Le script écrit son JSON sur stdout. Sans cette recopie dans
+          # GITHUB_OUTPUT, steps.bump.outputs.to reste VIDE en aval : le tag
+          # devient « v », le message de commit devient vide, git refuse le
+          # commit, et le « || exit 0 » masque l'échec. Le run rapportait alors
+          # « success » après avoir publié une release vide.
+          to=$(node -p "require('/tmp/bump.json').to")
+          from=$(node -p "require('/tmp/bump.json').from")
+          if [ -z "$to" ] || [ "$to" = "undefined" ]; then
+            echo "::error::le bump n'a pas renvoyé de version — arrêt plutôt que de publier une release vide"
+            exit 1
+          fi
+          echo "to=$to"   >> "$GITHUB_OUTPUT"
+          echo "from=$from" >> "$GITHUB_OUTPUT"
 
       - name: Committer VERSION et CHANGELOG
         run: |
@@ -124,9 +141,11 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add VERSION CHANGELOG.md
           # --no-verify : ce commit est mécanique, il ne doit pas relancer la CI
-          git commit -m "chore(release): ${{ steps.bump.outputs.to }}" || {
-            echo "rien à committer"; exit 0;
-          }
+          if git diff --cached --quiet; then
+            echo "::error::VERSION et CHANGELOG n'ont pas changé après bump — arrêt"
+            exit 1
+          fi
+          git commit -m "chore(release): ${{ steps.bump.outputs.to }}"
           git push
 
       - name: Créer la release
@@ -157,6 +176,23 @@ jobs:
             echo ""
             echo "Installer : \`npx skills add tleguede-works/ship-clean-skills --skill <nom> -g -a opencode\`"
           } > /tmp/notes.md
+
+          # Dernier rempart. Une release avec un tag non sémantique, des notes
+          # vides, ou une VERSION qui ne correspond pas est exactement le
+          # « mécanisme arbitraire » à éviter. Mieux vaut un run en échec qu'une
+          # release illisible dans l'historique.
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag « $TAG » non sémantique — refus de publier"
+            exit 1
+          fi
+          if [ -z "$(cat VERSION)" ] || [ "$(cat VERSION)" != "${TAG#v}" ]; then
+            echo "::error::VERSION ($(cat VERSION)) ne correspond pas au tag ${TAG#v}"
+            exit 1
+          fi
+          if [ -z "$NOTES" ]; then
+            echo "::error::notes de release vides pour $TAG — la section CHANGELOG correspondante est vide ou introuvable"
+            exit 1
+          fi
 
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "le tag $TAG existe déjà — rien à créer"
