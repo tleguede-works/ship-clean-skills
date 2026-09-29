@@ -42,6 +42,74 @@ const STATUS_VOCAB = {
   slice: ['identified', 'planned', 'in_progress', 'implemented', 'validated']
 };
 
+/** Ordre des phases. Source unique : state.js et forge-guard.js lisent ici. */
+const PHASE_KEYS = [
+  '0_bootstrap', '1_prd', '2_roadmap', '3_design', '4_architecture',
+  '5_implementation_plan', '6_validation', '7_implementation', '8_final_validation'
+];
+
+/**
+ * Ce que chaque phase doit avoir produit pour pouvoir être approuvée.
+ *
+ * Sans ce contrat, une phase s'approuve sur sa seule parole : les contrôles
+ * valident les livrables *déclarés*, donc zéro déclaration donne zéro
+ * vérification, et tout passe au vert. Constaté sur un test grandeur nature —
+ * Phase 0 approuvée avec `deliverables: {}` et aucun `conventions.md`, puis
+ * toute la chaîne enchaînée sur cette base absente.
+ *
+ * `required` : livrables sans lesquels la phase n'a pas eu lieu.
+ * `atLeastOneOf` : phases dont la quantité suit le découpage, pas un compte fixe.
+ */
+const PHASE_REQUIREMENTS = {
+  '0_bootstrap': { required: ['conventions'] },
+  '1_prd': { required: ['prd'] },
+  '2_roadmap': { required: ['roadmap'] },
+  '3_design': { required: ['design-system'], atLeastOneOf: [['screen']] },
+  '4_architecture': { required: ['architecture'] },
+  '5_implementation_plan': { atLeastOneOf: [['plan']] },
+  '6_validation': { required: ['test-plan'] },
+  '7_implementation': {},
+  '8_final_validation': {}
+};
+
+/** Ce qui manque à une phase pour être complète. Liste vide = complète. */
+function missingPhaseRequirements(state, phaseKey) {
+  const spec = PHASE_REQUIREMENTS[phaseKey];
+  if (!spec) return [];
+
+  const missing = [];
+  for (const key of spec.required || []) {
+    const entry = (state.deliverables || {})[key];
+    if (!entry) missing.push({ key, why: 'aucun livrable enregistré pour cette phase' });
+    else if (!entry.path) missing.push({ key, why: 'enregistré sans chemin de fichier' });
+  }
+
+  // Un plan de slice est enregistré comme slice avec un plan, ou comme
+  // livrable selon la version — on accepte les deux formes plutôt que d'imposer
+  // une topologie que le skill ne contrôle pas ailleurs.
+  const bucketFor = kind => {
+    if (kind === 'plan') {
+      const asDeliverable = Object.keys(state.deliverables || {})
+        .filter(k => /^plan[-_/]/.test(k));
+      const asSlice = Object.values(state.slices || {}).filter(s => s.plan_path || s.plan);
+      return asDeliverable.length + asSlice.length;
+    }
+    const bucket = state[kind === 'screen' ? 'screens' : kind === 'slice' ? 'slices'
+      : kind === 'foundation' ? 'foundations' : 'deliverables'] || {};
+    return Object.keys(bucket).length;
+  };
+
+  for (const group of spec.atLeastOneOf || []) {
+    if (!group.some(kind => bucketFor(kind) > 0)) {
+      missing.push({
+        key: group.join('|'),
+        why: `aucun élément de type ${group.join(' ou ')} — la phase n'a rien produit`
+      });
+    }
+  }
+  return missing;
+}
+
 /** Clés de state.json autorisées (schema strict, cf. guard state-schema). */
 const ALLOWED_STATE_KEYS = [
   'version', 'forge_skill_version', 'product', 'project', 'reference_projects',
@@ -391,5 +459,6 @@ module.exports = {
   resolveAnchor,
   statePath, readState, writeState, ensureLayout, deliverables, findDeliverableByPath,
   appendLog, readLog,
-  looksLikeForgeDeliverable
+  looksLikeForgeDeliverable,
+  PHASE_KEYS, PHASE_REQUIREMENTS, missingPhaseRequirements
 };

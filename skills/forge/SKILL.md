@@ -160,12 +160,16 @@ Fast Track ne supprime pas la validation, il supprime la **répétition**.
 
 Exécute-les dans l'ordre. **Chaque phase se termine par un gate de validation humaine explicite — n'entame jamais la phase suivante sans un "approved" clair.** C'est la règle la plus importante de ce skill.
 
+**Une phase ne peut pas être approuvée sans avoir produit ce qu'elle doit produire.** `complete-phase` et `set-phase … approved` refusent une phase dont les livrables manquent, et `forge-guard` le signale avant le gate via `current_phase_has_deliverables`. Le refus nomme le livrable absent et donne la commande pour l'enregistrer.
+
+Ce contrat n'est pas une formalité. Les contrôles valident les livrables *déclarés* : zéro déclaration donne zéro vérification, et tout passe au vert. Constaté sur un test grandeur nature — une Phase 0 approuvée avec `deliverables: {}` et aucun `conventions.md`, puis toute la chaîne enchaînée sur cette base absente, sans qu'aucun contrôle ne bronche.
+
 **Comment formuler un gate.** Pour un document de spécification : *"Est-ce qu'il manque des cas d'usage, ou des contraintes que tu vois déjà ?"* Pour une décomposition : *"Tu valides ce découpage en slices, ou il y a des regroupements/scissions à faire ?"* Pour un plan : *"Est-ce que l'ordre d'implémentation te semble logique, ou tu vois des dépendances qui manquent ?"* N'avance que sur un mot d'approbation explicite.
 
 **Avant chaque gate**, lance les garde-fous. Ils sont déterministes, instantanés, et coûtent zéro token :
 
 ```bash
-node scripts/forge-guard.js all <anchor>        # chemins, état, synchronisation, placeholders, versions
+node scripts/forge-guard.js all <anchor>        # chemins, état, contrat de phase, synchronisation, placeholders, versions
 node scripts/consistency-check.js all <anchor>   # écarts ENTRE artefacts
 ```
 

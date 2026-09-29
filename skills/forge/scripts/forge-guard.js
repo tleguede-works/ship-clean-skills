@@ -240,6 +240,58 @@ function checkPathsExist(root) {
   record('deliverable_files_present', missing.length === 0, { missing });
 }
 
+/**
+ * La phase courante a-t-elle produit ce qu'elle doit produire ?
+ *
+ * `deliverable_files_present` ne peut pas le dire : il boucle sur les
+ * livrables *déclarés*, donc zéro déclaration donne zéro vérification et un
+ * contrôle vert. Ce contrôle regarde l'autre côté — la phase, et ce que le
+ * contrat `PHASE_REQUIREMENTS` en attend. Il échoue donc sur une phase
+ * genuinely inachevée, ce qui est exactement le cas qu'il faut voir.
+ */
+function checkPhaseRequirements(root) {
+  const state = loadStateOrFail(root);
+
+  // Si la lib n'expose pas le contrat, ce contrôle ne doit pas disparaître en
+  // silence : un `return` précoce transforme une porte en décor, et le rapport
+  // affiche un vert qui ne couvre rien. Mieux vaut un échec bruyant.
+  if (typeof L.missingPhaseRequirements !== 'function' || !L.PHASE_KEYS) {
+    record('current_phase_has_deliverables', false, {
+      error: 'forge-lib n\'expose pas PHASE_KEYS / missingPhaseRequirements',
+      rule: 'Un contrôle qui ne peut pas s\'exécuter doit échouer, pas rendre la main.'
+    });
+    return;
+  }
+
+  const current = state.current_phase;
+  // On ne juge que la phase en cours, pas les phases futures : le roadmap n'a
+  // pas à exister tant qu'on n'y est pas.
+  const currentKey = L.PHASE_KEYS[parseInt(current, 10)];
+  if (!currentKey) return;
+
+  const buckets = {
+    deliverable: state.deliverables || {},
+    screen: state.screens || {},
+    slice: state.slices || {},
+    foundation: state.foundations || {}
+  };
+  const missing = L.missingPhaseRequirements(state, currentKey);
+  const phaseStatus = (state.phases[currentKey] || {}).status;
+
+  record('current_phase_has_deliverables', missing.length === 0, {
+    current_phase: current,
+    phase: currentKey,
+    phase_status: phaseStatus,
+    missing,
+    declared: Object.fromEntries(
+      Object.entries(buckets).map(([k, v]) => [k, Object.keys(v).length])
+    ),
+    rule: 'Un contrôle vert sur zéro livrable déclaré confirme le vide au lieu de le ' +
+          'signaler. Le gate de la phase refusera cette approbation de toute façon ; ' +
+          'il vaut mieux le voir ici.'
+  });
+}
+
 function checkHashes(root) {
   const state = loadStateOrFail(root);
   const drifted = [];
@@ -534,7 +586,7 @@ function checkHashDrift(root) {
 const CHECKS = {
   paths: (root) => checkPaths(root),
   strays: (root, flags) => checkStrays(root, flags.includes('--relocate')),
-  state: (root) => { checkStateSchema(root); checkStatusVocab(root); checkPathsExist(root); checkHashes(root); },
+  state: (root) => { checkStateSchema(root); checkStatusVocab(root); checkPathsExist(root); checkPhaseRequirements(root); checkHashes(root); },
   sync: (root, flags) => checkSync(root, flags.includes('--fix')),
   placeholders: (root) => checkPlaceholders(root),
   facts: (root) => checkFacts(root),
@@ -547,6 +599,7 @@ const CHECKS = {
     checkStateSchema(root);
     checkStatusVocab(root);
     checkPathsExist(root);
+    checkPhaseRequirements(root);
     checkHashes(root);
     checkSync(root, flags.includes('--fix'));
     checkPlaceholders(root);

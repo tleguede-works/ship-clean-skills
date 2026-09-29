@@ -113,6 +113,14 @@ function initProject(project, name, references = []) {
   return res;
 }
 
+/** Un projet neuf, isolé, pour un test qui a besoin de son propre état. */
+function freshProject(label) {
+  const dir = path.join(tmpRoot, label);
+  fs.mkdirSync(dir, { recursive: true });
+  initProject(dir, label);
+  return dir;
+}
+
 /* ------------------------------------------------------------------ *
  * Bac à sable — créé avant tout test qui touche le disque
  * ------------------------------------------------------------------ */
@@ -1023,6 +1031,99 @@ test('SKILL.md porte la discipline de vérification et les deux niveaux d\'auton
 
 console.log(`\n${'─'.repeat(60)}`);
 if (failed === 0) {
+
+/* ------------------------------------------------------------------ *
+ * Contrat de phase — une phase ne s'approuve pas sur sa seule parole
+ * ------------------------------------------------------------------ */
+
+section('Contrat de phase');
+
+test('complete-phase refuse une phase sans le livrable qu\'elle doit produire', () => {
+  const project = freshProject('contrat-complete');
+  // Cas reproduit sur un test grandeur nature : Phase 0 approuvée alors que
+  // `conventions.md` n'a jamais été créé ni enregistré.
+  const res = run('state.js', ['complete-phase', project, '0_bootstrap']);
+  assert(res.code !== 0, 'complete-phase a approuvé une phase vide');
+  assert(res.json.error === 'phase_incomplete', `erreur inattendue : ${res.stdout}`);
+  const missing = res.json.missing.map(m => m.key);
+  assert(missing.includes('conventions'), `le manque de conventions n'est pas nommé : ${JSON.stringify(res.json.missing)}`);
+
+  // Et l'état ne doit pas avoir bougé : un refus qui écrit quand même est pire
+  // qu'un refus muet, parce qu'il laisse croire que la phase est close.
+  const state = readState(project);
+  assert(state.phases['0_bootstrap'].status === 'in_progress',
+    `la phase a été modifiée malgré le refus : ${state.phases['0_bootstrap'].status}`);
+});
+
+test('set-phase approved ne contourne pas le contrat', () => {
+  const project = freshProject('contrat-setphase');
+  const res = run('state.js', ['set-phase', project, '1_prd', 'approved']);
+  assert(res.code !== 0, 'set-phase approved a contourné le contrat');
+  assert(res.json.error === 'phase_incomplete', `erreur inattendue : ${res.stdout}`);
+});
+
+test('forge-guard signale la phase courante sans livrable', () => {
+  const project = freshProject('contrat-guard');
+  const res = run('forge-guard.js', ['all', project]);
+  assert(res.code !== 0 || res.json.pass === false,
+    'forge-guard a passé avec une phase courante sans livrable');
+  const c = (res.json.checks || []).find(x => x.check === 'current_phase_has_deliverables');
+  assert(c, 'le contrôle current_phase_has_deliverables est absent du rapport');
+  assert(c.status === 'fail', `le contrôle devrait échouer, il est : ${c.status}`);
+});
+
+test('forge-guard ne se désactive pas en silence si la lib perd le contrat', () => {
+  // Un contrôle qui fait `return` quand la lib n'expose pas ce qu'il attend
+  // devient un décor : le rapport affiche un vert qui ne couvre rien.
+  //
+  // Le projet est créé AVANT de casser la lib : `state.js init` lit lui aussi
+  // PHASE_KEYS, donc le créer pendant la fenêtre cassée testerait autre chose.
+  const project = freshProject('contrat-lib-morte');
+
+  const lib = path.join(SCRIPTS, 'lib', 'forge-lib.js');
+  const original = fs.readFileSync(lib, 'utf-8');
+  try {
+    fs.writeFileSync(lib, original.replace(
+      'PHASE_KEYS, PHASE_REQUIREMENTS, missingPhaseRequirements',
+      'PHASE_REQUIREMENTS'
+    ));
+    const res = run('forge-guard.js', ['all', project]);
+    const c = (res.json.checks || []).find(x => x.check === 'current_phase_has_deliverables');
+    assert(c, 'le contrôle a disparu du rapport');
+    assert(c.status === 'fail',
+      `le contrôle aurait dû échouer bruyamment, il est : ${c.status}`);
+    assert(/forge-lib/.test(c.error || ''), `l'erreur ne nomme pas la cause : ${JSON.stringify(c)}`);
+  } finally {
+    fs.writeFileSync(lib, original);
+  }
+  // La lib doit être revenue intacte, sinon les tests suivants mesurent n'importe quoi.
+  assert(fs.readFileSync(lib, 'utf-8') === original, 'la lib n\'a pas été restaurée');
+});
+
+test('chaque phase 0-6 déclare ce qu\'elle doit produire', () => {
+  const L = require('./lib/forge-lib');
+  for (const key of L.PHASE_KEYS.slice(0, 7)) {
+    const spec = L.PHASE_REQUIREMENTS[key];
+    assert(spec, `phase ${key} sans contrat`);
+    const hasExpectation = (spec.required && spec.required.length) ||
+      (spec.atLeastOneOf && spec.atLeastOneOf.length);
+    assert(hasExpectation,
+      `phase ${key} n'exige rien : elle peut s'approuver sans rien produire`);
+  }
+});
+
+test('une phase complète passe le contrat', () => {
+  const project = freshProject('contrat-satisfait');
+  fs.writeFileSync(path.join(project, '.forge', 'conventions.md'),
+    '---\nforge: true\nkind: deliverable\nkey: conventions\nstatus: draft\n---\n\n# Conventions\n');
+  const reg = run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  assert(reg.code === 0, `register a échoué : ${reg.stdout}${reg.stderr}`);
+  const res = run('state.js', ['complete-phase', project, '0_bootstrap']);
+  assert(res.code === 0, `une phase complète a été refusée : ${res.stdout}`);
+  const state = readState(project);
+  assert(state.phases['0_bootstrap'].status === 'approved', 'la phase n\'a pas été approuvée');
+});
+
   console.log(`\x1b[32m✓ ${passed} tests passés\x1b[0m`);
 } else {
   console.log(`\x1b[31m✗ ${failed} échec(s)\x1b[0m, ${passed} passés`);
