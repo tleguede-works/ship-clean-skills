@@ -27,6 +27,14 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### docs(contributing) — Le circuit de release, décrit
+
+Comment une modification devient une version : une entrée dans `[Unreleased]`,
+puis le workflow fait le reste. Aucune n'est publiée si la section est vide.
+Les règles qu'une pull request doit respecter sur `VERSION` et le CHANGELOG sont
+écrites avec leur raison — le workflow committant ces deux fichiers sur `main`,
+toute PR qui les touche entre en conflit au merge.
+
 ## [1.1.2] - 2026-09-29
 
 ### fix(ci) — Les notes de release ne se lisaient plus, et le garde-fou accusait le CHANGELOG
