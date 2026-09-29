@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-09-29
+
 ### fix(forge) — Une phase s'approuvait sans avoir rien produit
 
 `complete-phase` approuvait la phase quoi qu'il arrive, et `set-phase …
