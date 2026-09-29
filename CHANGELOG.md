@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-29
+
 ### fix(ci) — La release a publié un tag vide, en annonçant « success »
 
 `release.js` écrit son JSON sur stdout. Rien ne le recopiait dans
