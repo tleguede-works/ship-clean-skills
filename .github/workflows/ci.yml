@@ -22,3 +22,23 @@ jobs:
       # Forge a sa propre suite : c'est un skill exécutable, pas de la prose.
       - name: Forge selftest
         run: node skills/forge/scripts/selftest.js
+
+      # VERSION et CHANGELOG doivent raconter la même chose. Une divergence ici
+      # signifie qu'une version a été publiée sans être décrite, ou décrite
+      # sans être publiée.
+      - name: VERSION ↔ CHANGELOG
+        run: node scripts/release.js check
+
+  workflows:
+    name: Syntaxe des workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Une action de release mal écrite ne se voit qu'au moment de publier,
+      # c'est-à-dire quand c'est le plus coûteux.
+      - name: Valider le YAML de chaque workflow
+        run: |
+          for f in .github/workflows/*.yml; do
+            echo "-- $f"
+            python3 -c "import yaml; yaml.safe_load(open('$f')); print('   YAML valide')"
+          done
