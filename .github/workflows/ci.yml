@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Le dépôt lui-même : contrats de skills, références croisées, listes
+      # déclarées vs fichiers réels, placeholders non rendus, syntaxe.
+      - name: Validate repository
+        run: node scripts/validate-repo.js
+
+      # Forge a sa propre suite : c'est un skill exécutable, pas de la prose.
+      - name: Forge selftest
+        run: node skills/forge/scripts/selftest.js

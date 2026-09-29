@@ -1,0 +1,171 @@
+---
+type: screen
+slug: {{SCREEN_SLUG}}
+title: {{SCREEN_TITLE}}
+module: {{MODULE_NAME}}
+status: draft
+generated_at: {{DATE}}
+derived_from:
+  - .forge/prd.md
+  - .forge/design/design-system.md
+rule_ids: [{{RULE_IDS}}]
+edge_case_ids: [{{EDGE_CASE_IDS}}]
+flow: {{FLOW_NAME}}
+---
+
+# Écran — {{SCREEN_TITLE}}
+
+> Ce document est la **source de vérité** pour qu'une IA génère l'interface de cet écran.
+> Il est généré depuis ce gabarit, jamais recopié. Aucun `{{PLACEHOLDER}}` ne doit subsister.
+
+---
+
+## 1. Rôle de l'écran
+
+| | |
+|---|---|
+| **Archétype d'app** | {{ARCHETYPE}} |
+| **Module** | {{MODULE_NAME}} — rang {{MODULE_RANK}} dans la navigation |
+| **Route** | `{{ROUTE}}` |
+| **Type** | {{page / modal / drawer / sheet / wizard step}} |
+| **Utilisateurs** | {{QUELS_TYPES_UTILISATEURS}} |
+| **User stories servies** | {{US_IDS}} |
+| **Règles métier** | {{RULE_IDS}} |
+| **Edge cases** | {{EDGE_CASE_IDS}} |
+
+**Une phrase** : cet écran permet à {{PERSONA}} de {{INTENTION}} afin de {{BÉNÉFICE}}.
+
+**Pourquoi il est au rang {{RANK}} de la navigation** : {{RATIONALE_FREQUENCE}}
+
+---
+
+## 2. Direction visuelle de cet écran
+
+Repris du design system — **valeurs concrètes, jamais « à définir »**.
+
+| | |
+|---|---|
+| **Mood** | {{M — ex. « dense, opérationnel, calme »}} |
+| **Densité** | {{aérée / normale / dense}} — {{JUSTIFICATION}} |
+| **Niveau de contraste** | {{faible / moyen / fort}} — {{JUSTIFICATION}} |
+| **Surface** | {{--surface}} sur {{--background}} |
+| **Accent utilisé** | {{--primary}} — {{OÙ il sert, et pourquoi}} |
+| **Traitement photographique** | {{AUCUN / cadre defined / thumbnail}} |
+| **Référence** | {{ quel écran existant ressemble à celui-ci }} |
+
+### 2.1 Anti-générique — obligatoire
+
+Cet écran ne doit ressembler **à aucun** de ces défauts :
+
+- [ ] Pas de fond **blanc pur** `#FFFFFF` par défaut — le fond porte une valeur, même minime.
+- [ ] **Pas de carte ombrée pour tout.** L'ombre est une exception, pas le conteneur par défaut.
+- [ ] **Pas d'uniformité** : la hiérarchie vient d'un rapport d'échelles typographiques, pas d'un espacement constant.
+- [ ] **Pas de gris neutre générique** `#6B7280` par défaut — les neutres sont chosen, pas hérités.
+- [ ] **Pas de mise en page centrée symétrique** par défaut.
+- [ ] **Pas d'illustration d'appoint générique** (icôneemployé, gradient abstrait) à la place d'une vraie hiérarchie.
+- [ ] **Pas d'une seule famille de police** si la hiérarchie demande du contraste.
+
+**Choix assumé et non neutre** : {{QU'EST-CE QUE CET ÉCRAN FAIT QU'UN ÉCRAN GÉNÉRIQUE NE FAIT PAS}}
+
+---
+
+## 3. Anatomie
+
+```
+{{SCHÉMA ASCII DE L'ARBRE DE COMPOSANTS, AVEC LES NOMS DE COMPOSANTS DU DESIGN SYSTEM}}
+```
+
+| # | Composant | Rôle | Source |
+|---|---|---|---|
+| 1 | {{COMPOSANT}} | {{RÔLE}} | design-system §2.{{N}} ou slice-local |
+
+---
+
+## 4. États — tous, sans exception
+
+| État | Déclencheur | Rendu | Feedback utilisateur |
+|---|---|---|---|
+| **Chargement** | {{DÉCLENCHEUR}} | {{SKELETON / SPINNER / RIEN}} | {{}} |
+| **Rempli** | {{DÉCLENCHEUR}} | {{}} | {{}} |
+| **Vide — jamais visité** | {{DÉCLENCHEUR}} | {{CTA principale}} | {{}} |
+| **Vide — aucune donnée** | {{DÉCLENCHEUR}} | {{illustration ? texte ?}} | {{}} |
+| **Erreur de chargement** | {{DÉCLENCHEUR}} | {{message + retry}} | {{}} |
+| **Erreur de soumission** | {{DÉCLENCHEUR}} | {{champ-level ou toast}} | {{}} |
+| **Succès** | {{DÉCLENCHEUR}} | {{confirmation ?}} | {{}} |
+| **Hors-ligne / permissions** | {{DÉCLENCHEUR}} | {{}} | {{}} |
+| **Lecture seule** | {{DÉCLENCHEUR}} | {{}} | {{}} |
+
+> Un état non décrit est un état non implémenté. Si une colonne est `{{}}`, c'est que l'état n'a pas été pensé.
+
+---
+
+## 5. Interactions
+
+| Élément | Événement | Comportement | Feedback visuel | État résultant | ID |
+|---|---|---|---|---|---|
+| {{ELEMENT}} | {{tap / submit / scroll}} | {{}} | {{}} | {{}} | {{B4}} |
+
+- **Focus / clavier** : {{}}
+- **Gestes** : {{swipe, pull-to-refresh, long-press…}}
+- **Animations** : {{durée + easing, tokens du design system}}
+- **Retour arrière** : {{}}
+
+---
+
+## 6. Responsive
+
+| Breakpoint | Comportement | Ce qui se replie / disparaît |
+|---|---|---|
+| **Mobile** | {{}} | {{}} |
+| **Tablet** | {{}} | {{}} |
+| **Desktop** | {{}} | {{}} |
+
+- **Cible tactile** : {{taille min des zones cliquables}}
+- **Débordement** : {{ce qui est garanti de ne jamais déborder}}
+
+---
+
+## 7. Accessibilité
+
+- [ ] Contraste {{ratio}} pour le texte courant
+- [ ] Contraste {{ratio}} pour les grands textes
+- [ ] Navigation clavier complète sur {{desktop}}
+- [ ] Focus visible (tokens `--focus-ring`)
+- [ ] {{ARIA}} pour {{composants customs}}
+- [ ] {{TEXT_ALTERNATIF}} pour {{images}}
+- [ ] Langue et direction de lecture correctes
+
+---
+
+## 8. Données
+
+| Champ | Type | Origine | Requis | Erreur possible |
+|---|---|---|---|---|
+| {{CHAMP}} | {{TYPE}} | {{API / cache / local}} | {{oui/non}} | {{}} |
+
+- **Chargement** : {{pagination / infinite scroll / tout d'un bloc}}
+- **Cache / hors-ligne** : {{}}
+- **Données sensibles** : {{ce qui n'est jamais rendu ni loggé}}
+
+---
+
+## 9. Traçabilité
+
+| ID | Origine | Manifestation sur cet écran |
+|---|---|---|
+| {{B1}} | PRD | {{où c'est visible à l'écran}} |
+| {{E1}} | PRD | {{état d'écran correspondant}} |
+| {{C1}} | PRD | {{contrainte respectée}} |
+
+---
+
+## 10. Checklist de gate
+
+- [ ] Les 9 états sont décrits avec un rendu concret.
+- [ ] Chaque élément interactif a un comportement et un feedback.
+- [ ] Le responsive est défini à **chaque** breakpoint du design system.
+- [ ] La section Anti-générique est cochée et justifiée.
+- [ ] Aucune valeur de design n'est laissée à « à définir ».
+- [ ] Chaque ID B*/E*/C* de l'écran apparaît en section 9.
+- [ ] `node scripts/forge-guard.js placeholders <anchor>` ne signale rien ici.
+- [ ] L'écran reste cohérent avec `.forge/design/design-system.md`.

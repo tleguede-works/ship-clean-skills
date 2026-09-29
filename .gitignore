@@ -1,0 +1,12 @@
+node_modules/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+
+# Ne jamais commiter une copie installée d'un skill : c'est ainsi qu'un projet
+# se met à tourner une version périmée sans que personne ne le voie.
+.opencode/skills/
+.claude/skills/
+.agents/skills/

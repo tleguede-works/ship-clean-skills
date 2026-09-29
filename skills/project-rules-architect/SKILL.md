@@ -1,0 +1,444 @@
+---
+name: project-rules-architect
+description: Generate or overhaul a coherent, non-redundant set of AI coding-agent instruction files for a project — a canonical entry file (AGENTS.md) plus a rules directory, wired into the target tool (OpenCode's opencode.json, Cursor's .cursor/rules/*.mdc, CLAUDE.md, or AGENTS.md alone). Built on a library of specialised rule templates selected by detected stack, not by copying a whole profile. Use this whenever the user wants to bootstrap rules for a new project, add rules to an existing one, regenerate rules for a new stack, or complains that AI-generated rule files are spaghetti — overlapping, redundant, contradictory, too vague, ignored by the agent, or inconsistent in depth from one file to the next. Also use when the user asks how to structure AGENTS.md, asks to preserve or migrate a codebase's existing conventions, or wants a repeatable process instead of re-prompting from scratch on every project. — Génère ou refond un ensemble cohérent et non redondant de fichiers d'instructions pour agents IA : un fichier d'entrée canonique (AGENTS.md) plus un répertoire de règles, branchés sur l'outil cible. Construit sur une bibliothèque de gabarits spécialisés choisis selon la stack détectée, plutôt que de copier un profil complet. Utiliser pour initialiser les règles d'un nouveau projet, en ajouter à un projet existant, régénérer les règles pour une nouvelle stack, ou quand les fichiers de règles générés sont spaghetti — redondants, contradictoires, vagues, ignorés par l'agent, ou incohérents en profondeur d'un fichier à l'autre. Utiliser aussi pour structurer AGENTS.md, ou pour donner un processus reproductible au lieu de réexpliquer les conventions à chaque session.
+---
+
+# Project Rules Architect
+
+Produces a rule set the agent will actually follow — not a style guide it skims
+and ignores. The failure this skill exists to prevent: someone asks for "all the
+rules, act like a senior dev," gets fifteen files of inconsistent depth, half of
+them contradicting each other, wired into nothing so none of it loads, and six
+months later nobody trusts the rules enough to maintain them.
+
+**The shape of the solution:** a library of specialised rule templates —
+universal, per-domain, and per-technology — selected by probing the project, not
+copied wholesale. One fact lives in exactly one template. Everything the agent
+needs before it can act is in the entry file; everything else is a file it loads
+when relevant.
+
+Read `references/research-summary.md` once per session before drafting — the
+evidence behind every principle below. Read `references/postmortems.md` whenever
+this run consolidates existing rules, adopts a project's conventions, or ports a
+pattern from another project. Both are real, previously-caught failures, not
+hypothetical ones. Don't re-derive them.
+
+## Working alongside a planning skill
+
+If the project also runs a planning skill (Forge, or any equivalent that owns a
+`.forge/` directory), the two must not both claim ownership of the same facts.
+Two memory systems with no stated boundary produce competing sources of truth,
+and the drift is silent.
+
+| This skill owns | The planning skill owns |
+|---|---|
+| `AGENTS.md`, `{{rules dir}}/*.md` — what to follow | `.forge/*.md` — what to build |
+| `DECISIONS.md` — why a choice was made | `state.json` — status, paths, IDs, hashes |
+| `LEARNINGS.md` — what broke, and its correction | `.forge/audit/` — incidents of the planning process |
+| `SESSION_LOG.md` — what happened | — |
+| manifest versions — the resolved truth | — |
+
+**The rule: a business or technical fact lives in a file this skill owns.**
+The planning skill's state file holds a pointer, not a copy. A state file
+containing prose is not a state file — it is an undisciplined document, and it
+is neither sortable nor indexable, and it is wrong without any signal.
+
+**Two consequences for this skill's own work:**
+
+- **Corrections carry a domain.** Anything logged as a correction names the rule
+  file it will be promoted into. A correction with no target cannot be promoted.
+  See `postmortems.md` Case 5.
+- **Re-invocation may be triggered by the other skill.** If the planning skill
+  holds this project's state, it is the natural caller for a promotion pass: it
+  is the component that observes corrections accumulating. If this skill is run
+  once at setup and never again, a documented promotion path is inert.
+
+Do not create a second decision store, a second corrections log, or a second
+version table. If the other skill's state file needs to point at a rule, add the
+pointer there; do not copy the rule.
+
+---
+
+## The six principles
+
+Everything this skill produces obeys these. If a draft violates one, fix the
+draft, not the principle.
+
+1. **Operational policy, not documentation — with three tiers, not two.** Sort
+   every sentence into exactly one bucket before deciding to cut it:
+
+   | Tier | Test | Example | Action |
+   |---|---|---|---|
+   | Tutorial prose | Explains something the model knows from training | A 20-line example showing what a Server Component is | Cut |
+   | **Operational prose** | Answers "what should the agent DO when X?" or "is X acceptable?" — even with no backtick command | "Split by responsibility, not by lines — a 250-line single-responsibility file is fine" | **Keep.** Rewrite tighter if possible; do not delete. |
+   | Verifiable command | A literal invocation with a pass/fail outcome | `npm run lint` exits 0 | Keep |
+
+   The test for the middle tier: *can you imagine the agent violating this?* If
+   yes, it's a decision rule, not documentation, regardless of whether it has a
+   command. "We value clean code" fails — nothing to violate. "Split by
+   responsibility, not by lines" passes — an agent could easily split a 250-line
+   file wrongly just to hit a count.
+
+2. **One fact, one location.** Never state the same rule in two files. If it's
+   cross-cutting, it lives in exactly one template and everything else
+   references it by name. This is the single largest source of spaghetti — not
+   bad individual rules, but the same rule drifting into two phrasings over time
+   until they disagree. **The audit is a grep, not a judgement call**, and the
+   cross-reference must name a section, not a file. "See `security.md`" is weak;
+   "see `security.md` §Token Handling" survives a refactor of the file.
+
+3. **Ranked, not stacked, priorities.** "Ship fast" + "full coverage" + "5-minute
+   CI budget" with no ranking means the agent picks silently and you find out
+   later. Every set of rules that could conflict gets an explicit order, in the
+   entry file, referenced by everyone else.
+
+4. **Start from a skeleton, grow from corrections — for FRESH rule sets only,
+   and there are three situations, not two.**
+   - **Bootstrap** (no existing rules): ship a lean, correct skeleton plus a
+     living-learnings section. Don't enumerate every hypothetical rule on day
+     one — that's the randomness problem, guessing at situations that haven't
+     happened.
+   - **Consolidation** (existing rules being reorganised): every existing rule
+     already represents a lesson learned. **Reorganise and dedupe; do not
+     curate down.** Applying "start lean" pressure here produces exactly the
+     silent content loss in `postmortems.md` Case 1. The only content you're
+     licensed to remove without asking is tutorial prose and true duplicates.
+   - **Adoption** (existing *code*, with or without existing rules): run
+     `references/existing-project-protocol.md` in full. Detect the conventions
+     the code actually has, then preserve or migrate. **This is the case the
+     skill previously had no handling for, and it's the one that produces rules
+     contradicting a working codebase.**
+
+5. **Porting a pattern is not porting content.** The *pattern* is portable —
+   what triggers a check, what gets verified, what file it's logged to. The
+   concrete content is not: file names, library names, framework conventions
+   belong to the source project and must be re-derived from this project's
+   actual stack. **A rule file that references a file, library, or tool not
+   present in this project is contamination** (`postmortems.md` Case 2 — and
+   note that a grep for library names doesn't catch process vocabulary; a
+   separate pass is needed for that). **Corollary, learned the hard way: a
+   generated rule file may never name its own source template or profile.** A
+   surviving "per the profiles" or a framework symbol from the wrong stack is
+   both contamination and a dangling reference.
+
+6. **Budgets are ceilings, not targets.** The line and token figures exist to
+   catch bloat, not to be minimised. A complete 1,200-line set beats an 800-line
+   one with silent gaps. **If you're under budget, stop cutting** — there's no
+   reward for being further under. If you're over, look for tutorial prose
+   first; if there isn't any, add more scoped files rather than trimming
+   operational content.
+
+6b. **The budget is per-target, and it must be measured — the read-back test
+   cannot detect it.**
+
+   The ~500-line figure in `research-summary.md` is *Cursor's own guidance*, and
+   it **assumes activation modes**: a scoped file only loads when its files are
+   open. **It does not transfer to a target with no scoping.**
+
+   | Target | Scoping | Budget | |
+   |---|---|---|---|
+   | Cursor `.mdc` | 4 activation modes | ~500 lines **always-apply** | `mdc-frontmatter-spec.md` |
+   | OpenCode `instructions` glob | **none — every file, every session** | **the whole rules directory**, hard total | Step 3b |
+   | `AGENTS.md` alone | none | one file; if it outgrows one, change target | — |
+
+   **On a target with no scoping, splitting a file saves nothing.** The glob
+   loads it either way. The only levers are the total, and not putting
+   trigger-based content in a file that loads unconditionally.
+
+   **And the read-back test in Step 6 will not catch an oversized set.** It
+   answers from the entry file, which is small and front-loaded — a 2×
+   over-budget set passes it. Measure the total separately, in Step 3b, or not
+   at all.
+
+## The template library
+
+`references/templates/` — three tiers. **You select from it; you never copy it
+wholesale, and you never edit it during a run.**
+
+| Tier | Directory | Emitted |
+|---|---|---|
+| Core | `templates/core/` | Always. Five files: entry file, architecture, workflow, coding standards, security |
+| Domain | `templates/domain/` | Selected by detection. Ten files: data & state, errors & async states, forms, UI components, accessibility, testing, performance, i18n, design system, external system contracts |
+| Technology | `templates/tech/` | Selected by detection. Seven overlays, plus four variant deltas in `tech/variants/` |
+
+**Selection is a lookup, not a judgement call** — `references/stack-detection.md`
+is the table, and every emitted template records the signal that triggered it.
+Every omitted template records the row that excluded it. "No test runner
+configured" is a finding worth surfacing; silence is not an acceptable reason.
+
+**Variants are deltas, not replacements.** A variant states which files change
+and how. Applying two variants means applying two delta files — never write a
+combined variant, and never let a delta restate what it modifies.
+
+**When you need to know *why* a template is shaped the way it is** — because you
+are changing a template, adding one, or checking what a change would drop — read
+`provenance/synthesis-provenance.md`. It maps every rule from the three source
+projects to its template, with what was merged, deduplicated, cut, and left
+project-specific.
+
+**No run reads it.** It is the audit trail for the consolidation that produced
+this library, and it is 441 lines of history. Keeping it in `references/` and
+instructing every run to read it was an error: a file in the library is a file an
+agent reads, and this one has no recurring value.
+
+## Workflow
+
+### Step 1 — Probe, then interview
+
+**Run the detection probe first** (`stack-detection.md`). Read the manifests,
+match the table, produce a proposed template set. Don't ask what the repository
+already says.
+
+**Then ask only the gaps the probe can't close.** Usually one or two questions:
+
+- **Target format** — the one question that can't be inferred. See
+  `references/target-formats.md`. **If the user has already stated a preferred
+  structure, that is the specification, not a default to improve on.**
+- **Variants that are decisions rather than detections** — router, rendering
+  strategy, whether a state library is wanted. A component-library axis is
+  settled by what's installed; a data-access axis is a decision, so ask.
+- **Monorepo or single app**, and for a monorepo, which services are in scope.
+- **Team or solo** — affects how much day-one scaffolding is worth it.
+- **Anything already decided** — closed decisions, an existing memory system, a
+  design contract, a deployment story.
+
+**If the user says "just generate something reasonable for X," don't force the
+interview.** State the assumptions you're filling in and proceed. Confirm only
+what would silently produce the wrong architecture — the target format is the one
+that qualifies.
+
+### Step 2 — Verify against real sources
+
+**Before writing any technology-specific rule, work down the ladder in
+`references/documentation-sources.md`.** The project itself first — the
+manifest's exact version, the installed source, the shipped type definitions.
+Then what the framework bundles for agents. Then configured MCP servers, checked
+rather than assumed. Then official documentation **for the exact pinned
+version**. Then the installed CLI's own help. Web search last.
+
+**Every technology-specific claim carries a provenance marker** naming its rung,
+or it's marked as a project decision with its ADR. **A claim you can't source
+becomes a question, a proposed ADR, or an unconfirmed entry in
+`external-system-contracts.md` — never a rule with a hedge.** "Probably X, but
+verify" carries a rule's authority and a guess's reliability, and the agent acts
+on it.
+
+**Do not skip this step because the framework is familiar.** The failure it
+prevents is invisible: the code compiles, looks idiomatic, and calls an API that
+moved two releases ago.
+
+### Step 3 — Choose the mode
+
+Run the mode probe (`existing-project-protocol.md` §Mode detection). It's a
+lookup:
+
+- **No instruction files present** → Step 4.
+- **Instruction files present** → **run the full existing-project protocol**,
+  and in particular **Step A: detect the project's actual conventions before
+  drafting a single rule.** Read the code, not the manifest. Record each
+  convention with a `file:line` reference. Produce the gap report, show it to the
+  user, and let them choose per dimension between preserving the project's
+  conventions and staging a migration. **A rule contradicting a working
+  implementation is worse than no rule** — the agent will either follow the rule
+  and break the code, or follow the code and distrust the whole file.
+
+**A project with a README and no instruction files is a bootstrap, not an
+adoption.** A README is documentation, not rules.
+
+**On a project with no code yet:** the detection probe matches the manifest and
+nothing else. Every conditional-domain signal — a form, a test runner, a
+localisation layer, a design contract, an external system — requires existing
+code, so on day one the probe returns the core tier plus whatever the manifest
+names, and the domain selection becomes a **question, not a lookup**. Say that
+plainly rather than presenting a table that turned out to have nothing to match,
+and do not report the day-one omissions as findings — "no test runner
+configured" is true and worthless before any code exists.
+
+### Step 3b — Measure the set before delivering it
+
+```bash
+# the target's actual instruction surface
+find .opencode/rules -name '*.md' -exec cat {} + | wc -l
+wc -l AGENTS.md
+```
+
+Compare against the budget for the target chosen in Step 1 (Principle 6b). If it
+is over:
+
+- **Move trigger-based content out of always-loaded files.** A section that
+  applies only when a diff touches auth, or only inside one monorepo service, is
+  being paid for on every session it does not apply to. This is the only lever
+  that works on a glob-loaded target.
+- **Compress the framing, never the rule.** A rule loses its justification clause
+  before it loses its threshold, its command, or its ban.
+- **Cut whole rules last**, and tutorial prose only. Budgets are ceilings, not
+  targets — but a set 2× over a ceiling is a defect, not thoroughness.
+
+### Step 4 — Draft
+
+Fill each selected template. Three things to get right:
+
+- **Section order is fixed and it is a priority order**: commands → definition of
+  done → escalation → task-organised sections → versions and banned patterns →
+  style last. An agent needs to know how to build before it needs to know how to
+  format. **Style is last and is the first thing cut.**
+- **Task-organised sections, not flat bullet dumps** — "when writing X", "when
+  reviewing X". This is where operational-prose decision rules live, and they're
+  the first thing lost in a flat list.
+- **Point at one canonical example already in the codebase** rather than pasting
+  a code sample. Pasted code goes stale silently; a file reference doesn't.
+- **Carry the why on the rule, in one clause.** A template's `GENERATOR NOTES`
+  block is deleted on emit, so anything an agent would need in order to apply a
+  rule to a case the template didn't anticipate has to live on the rule itself
+  (`rule-file-template.md` §The Generator Notes contract). Derivation belongs in
+  the notes; application belongs on the rule.
+
+**Three operations, and they are not interchangeable** — know which one you're
+doing before merging anything:
+
+| Operation | What happens | When |
+|---|---|---|
+| **Absorb** | Full content transfers to the target at comparable depth; the source is deleted because its content now lives there | The source's rules genuinely belong in the target's scope |
+| **Reference** | The source stays; the target points at it by name **and section** | The source is too large or too specific to inline |
+| ~~Delete and mention once~~ | Replacing substantive rules with a grep or a one-liner | **Never.** This is silent content loss wearing a structural disguise |
+
+**After absorbing anything, verify immediately** — before moving to the next
+file, while the source is still open:
+
+1. List every discrete rule in the source: numbered items, thresholds, banned
+   patterns, decision rules. Not just commands.
+2. Confirm each appears in the target at comparable depth — a full sentence or
+   an enforcing command, not a passing mention.
+3. **If the rule count drops, something was lost — not condensed.** A 94-line
+   source producing three bullets in the target is a signal, not a success.
+
+### Step 5 — Audit
+
+Run `references/audit-checklist.md` in full before showing anything to the user.
+The sections that catch what the others can't:
+
+- **Content preservation** — for a consolidation. Redundancy and contradiction
+  checks compare the new set against *itself*; a set can be perfectly
+  non-redundant while having lost a third of its rules. Requires a reconciliation
+  count: *"N rules preserved, M absorbed with cross-references, K lines of
+  tutorial prose cut (listed)."* If you can't state that number, you haven't
+  checked.
+- **Cross-project contamination** — for an adoption or a port. Library names, file
+  names, **and process vocabulary** in a separate pass. Plus: every file named
+  inside a rule must exist in the delivered set.
+- **Contradiction with the code** — for an adoption. For each rule, confirm the
+  code doesn't already do the opposite in a load-bearing way. **No other check
+  catches this**, because it compares a rule set against a codebase, not against
+  itself.
+- **Provenance** — every technology-specific claim traceable to a rung of the
+  ladder or to an ADR.
+- **Promotion** — for a project with an `external-system-contracts.md`: no
+  finding sitting unpromised next to a rule it contradicts, and no finding that
+  has been generally true for several sessions without reaching a rule file.
+- **Divergence** — for a consolidation or an adoption with a migration: every
+  detected divergence is either a preserved rule or a migration target. An
+  unaccounted one is a rule that was silently dropped.
+
+**Also check:** every "always apply" rule genuinely applies to every session
+rather than being secretly scoped; every conflicting priority pair is ranked; no
+instruction fails all four checkability tests (a command, a glob match, a
+banned-list lookup, or the Principle 1 "would the agent violate this?" test) —
+**rewrite the ones that fail, don't cut them on sight**; per-file line counts as
+ceilings; every file is referenced from the index; the emitted index lists every
+emitted file and no others.
+
+### Step 6 — Wire, deliver, and set up the loop
+
+**Wire the target format — this is part of the deliverable, not a follow-up.**
+Generating Markdown without the file that makes the tool load it produces a
+complete-looking, entirely inert rule set (`target-formats.md`).
+
+**Merge, never overwrite.** An existing config file carries the user's model,
+provider, and tool configuration. Add the keys; don't replace the file.
+
+**Verify the wiring** before declaring done: the config parses; every path it
+points at exists; **a glob that matches nothing is a valid configuration that
+loads nothing.**
+
+Then tell the user three things:
+
+1. **Where the living-learnings section lives** — one canonical spot. A correction
+   is added when the agent gets something wrong *twice*, not speculatively. If the
+   project already has a cross-session memory system, wire learnings into it
+   rather than creating a parallel mechanism.
+2. **The read-back test.** From a cold session, ask the agent for its build
+   command, its definition of done, and which rule files govern a given area. If
+   it can't answer, the file is too long, too vague, or not being discovered.
+   **Fix that before adding more content** — more rules behind a broken wiring
+   are more rules that never load. In adoption mode there's a fourth question:
+   *what is this project's own pattern?* If the answer describes the template
+   rather than the project, the rules are wrong.
+3. **The audit result**, in the reconciliation form from Step 5.
+
+**If the templates were wrong** — a tech overlay's mechanism didn't apply, a
+domain template had a rule that didn't survive contact with the real project —
+**fix the template file, not just the delivered output.** The template is what
+the next project copies. A correction that isn't applied there helps nobody, and
+the same defect will ship again.
+
+## What to read, per mode
+
+Reading the wrong subset is how two runs of the same task produce different
+output. **Read exactly this table, and nothing else** unless the mode changes or
+a row says "on demand".
+
+| File | Bootstrap | Consolidation | Adoption |
+|---|---|---|---|
+| `SKILL.md` | ✔ | ✔ | ✔ |
+| `postmortems.md` | **✔** | ✔ | ✔ |
+| `stack-detection.md` | ✔ | ✔ | ✔ |
+| `documentation-sources.md` | ✔ | ✔ | ✔ |
+| `target-formats.md` | ✔ | ✔ | ✔ |
+| `research-summary.md` | ✔ | — | — |
+| `existing-project-protocol.md` | — | — | ✔ |
+| `audit-checklist.md` | Step 5 | Step 5 | Step 5 |
+| `rule-file-template.md` | on demand | on demand | on demand |
+| `architecture-decision-guide.md` | on demand | on demand | on demand |
+| `mdc-frontmatter-spec.md` | Cursor only | Cursor only | Cursor only |
+| `provenance/synthesis-provenance.md` | **never** | **never** | **never** |
+
+**`postmortems.md` is unconditional.** Copying a template into a project *is* a
+cross-project transplant — the exact operation Case 2 is about — so the
+contamination rules apply in every mode, including a bootstrap that reads as
+purely additive.
+
+**`synthesis-provenance.md` is never read during a run.** It is the audit trail
+for the one-time consolidation that produced this library. It is read when
+*maintaining* the library — adding a template, or deciding whether a rule is
+universal.
+
+## Reference files
+
+Everything, and what each is for. The table above says *when*; this says *what
+for*, for the rows you reach on demand.
+
+- **`templates/`** — the library. `core/` always, `domain/` and `tech/` by
+  detection, `tech/variants/` as deltas.
+- **`stack-detection.md`** — the selection table, the exclusion rows, monorepo
+  handling, and the reporting requirement. Owns the monorepo **layout**.
+- **`existing-project-protocol.md`** — mode detection, the light and full
+  convention-detection paths, the gap report, preserve-vs-migrate, the migration
+  stages.
+- **`documentation-sources.md`** — the verification ladder and the citation
+  requirement.
+- **`target-formats.md`** — per-environment entry file, rules location, and
+  **wiring file**, with the exact content to write. Owns the monorepo **wiring**.
+- `rule-file-template.md` — the section skeleton and ordering, the section-tagging
+  convention, and what a template may never contain.
+- `architecture-decision-guide.md` — the decision tree for file organisation and
+  activation modes. Defers format questions to `target-formats.md`.
+- `audit-checklist.md` — the pre-delivery checklist.
+- `postmortems.md` — real caught failures and the fix each produced. Read in
+  every mode.
+- `research-summary.md` — the evidence behind the principles, read once per
+  session in a bootstrap.
+- `mdc-frontmatter-spec.md` — Cursor `.mdc` frontmatter, the four activation
+  modes, precedence.
+- `../provenance/synthesis-provenance.md` — every source rule mapped to its
+  template, with what was merged, deduplicated, cut, and left project-specific.
+  **Maintained by hand; never read by a run.**

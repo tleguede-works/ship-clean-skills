@@ -1,0 +1,283 @@
+---
+type: design-system
+status: draft
+generated_at: {{DATE}}
+derived_from: .forge/prd.md
+---
+
+# Design System — {{PRODUCT_NAME}}
+
+> Ce document définit les fondations visuelles et les patterns d'interaction du produit.
+> Tous les écrans et composants y font référence. Modifier un token ici impacte tout le produit.
+
+---
+
+## 0. Direction visuelle
+
+> À remplir **avant** toute spécification d'écran. Cf. `references/design-quality.md`.
+> Sans ces trois ancres, la Phase 3 n'est pas terminée.
+
+| Ancre | Contenu |
+|---|---|
+| **Références** | {{Produits existants qui ont ce ton — ex. Linear, Stripe Dashboard}} |
+| **Ambiance** | {{Trois mots maximum — ex. dense, opérationnel, calme}} |
+| **Anti-références** | {{Ce qu'on refuse explicitement — ex. pas de cartes ombrées, pas de dégradés, pas d'illustration décorative}} |
+
+**Archétype d'application** : `{{ARCHETYPE}}` — cf. `references/archetypes.md`
+**Plateforme** : {{web / ios / android / desktop}}
+**Boucle de travail** : {{CE QUE L'UTILISATEUR FAIT, DANS QUEL ORDRE, À QUELLE FRÉQUENCE}}
+
+**Densité retenue** : {{aérée / normale / dense}} — {{JUSTIFICATION}}
+
+---
+
+## 1. Design tokens
+
+### 1.1 Couleurs
+
+| Token | Valeur | Usage |
+|---|---|---|
+| `--color-primary-50` | {{COLOR}} | {{USAGE}} |
+| `--color-primary-100` | {{COLOR}} | {{USAGE}} |
+| `--color-primary-200` | {{COLOR}} | {{USAGE}} |
+| `--color-primary-300` | {{COLOR}} | {{USAGE}} |
+| `--color-primary-400` | {{COLOR}} | {{USAGE}} |
+| `--color-primary-500` | {{COLOR}} | Couleur principale, CTA, liens |
+| `--color-primary-600` | {{COLOR}} | Hover state |
+| `--color-primary-700` | {{COLOR}} | Active state |
+| `--color-primary-800` | {{COLOR}} | {{USAGE}} |
+| `--color-primary-900` | {{COLOR}} | {{USAGE}} |
+| `--color-primary-950` | {{COLOR}} | {{USAGE}} |
+
+*(répéter pour secondary, accent, success, warning, error, info, neutral)*
+
+| Token | Valeur | Usage |
+|---|---|---|
+| `--color-background` | {{COLOR}} | Fond de page |
+| `--color-surface` | {{COLOR}} | Fond de carte, modal, dropdown |
+| `--color-surface-raised` | {{COLOR}} | Surfaces élevées |
+| `--color-text-primary` | {{COLOR}} | Texte principal |
+| `--color-text-secondary` | {{COLOR}} | Texte secondaire, labels |
+| `--color-text-disabled` | {{COLOR}} | Texte désactivé |
+| `--color-border` | {{COLOR}} | Bordures |
+| `--color-border-focus` | {{COLOR}} | Focus visible |
+
+### 1.2 Typographie
+
+| Token | Font family | Taille | Graisse | Line-height | Usage |
+|---|---|---|---|---|---|
+| `--font-sans` | {{FONT}} | — | — | — | Texte courant |
+| `--font-mono` | {{FONT}} | — | — | — | Code, données |
+| `--text-h1` | inherit | {{SIZE}} | {{WEIGHT}} | {{LINE}} | Titre de page |
+| `--text-h2` | inherit | {{SIZE}} | {{WEIGHT}} | {{LINE}} | Titre de section |
+| `--text-h3` | inherit | {{SIZE}} | {{WEIGHT}} | {{LINE}} | Titre de sous-section |
+| `--text-h4` | inherit | {{SIZE}} | {{WEIGHT}} | {{LINE}} | Titre de carte |
+| `--text-body` | inherit | {{SIZE}} | {{WEIGHT}} | {{LINE}} | Texte courant |
+| `--text-body-sm` | inherit | {{SIZE}} | {{WEIGHT}} | {{LINE}} | Texte secondaire |
+| `--text-caption` | inherit | {{SIZE}} | {{WEIGHT}} | {{LINE}} | Légendes, dates |
+| `--text-overline` | inherit | {{SIZE}} | {{WEIGHT}} | {{LINE}} | Labels, badges |
+
+### 1.3 Espacements
+
+| Token | Valeur | Usage |
+|---|---|---|
+| `--space-xs` | {{SIZE}} | Très petit espace |
+| `--space-sm` | {{SIZE}} | Petit espace, gap interne |
+| `--space-md` | {{SIZE}} | Espace standard |
+| `--space-lg` | {{SIZE}} | Grand espace, gap sections |
+| `--space-xl` | {{SIZE}} | Très grand espace |
+| `--space-2xl` | {{SIZE}} | Sections |
+| `--space-3xl` | {{SIZE}} | Marges de page |
+
+### 1.4 Ombres
+
+| Token | Valeur | Usage |
+|---|---|---|
+| `--shadow-none` | none | Défaut |
+| `--shadow-sm` | {{SHADOW}} | Cartes au repos, dropdowns |
+| `--shadow-md` | {{SHADOW}} | Cartes au hover, modales |
+| `--shadow-lg` | {{SHADOW}} | Modales larges, drawers |
+| `--shadow-xl` | {{SHADOW}} | Éléments flottants prioritaires |
+
+### 1.5 Bordures
+
+| Token | Valeur | Usage |
+|---|---|---|
+| `--radius-none` | 0 | — |
+| `--radius-sm` | {{RADIUS}} | Inputs, petites cartes |
+| `--radius-md` | {{RADIUS}} | Cartes, modales |
+| `--radius-lg` | {{RADIUS}} | Grandes surfaces |
+| `--radius-full` | 9999px | Pills, badges, avatars |
+
+### 1.6 Animations
+
+| Token | Valeur | Usage |
+|---|---|---|
+| `--duration-fast` | {{DURATION}}ms | Hover, focus |
+| `--duration-normal` | {{DURATION}}ms | Transitions, ouverture modale |
+| `--duration-slow` | {{DURATION}}ms | Animations d'entrée de page |
+| `--ease-default` | {{EASING}} | Transitions standard |
+| `--ease-in` | {{EASING}} | Apparition |
+| `--ease-out` | {{EASING}} | Disparition |
+
+### 1.7 Breakpoints
+
+| Token | Valeur | Usage |
+|---|---|---|
+| `--bp-mobile` | {{MAX-WIDTH}} | Smartphone portrait |
+| `--bp-tablet` | {{MAX-WIDTH}} | Tablette, petit laptop |
+| `--bp-desktop` | {{MAX-WIDTH}} | Écran standard |
+| `--bp-wide` | {{MAX-WIDTH}} | Grand écran |
+
+---
+
+## 2. Composants primitifs
+
+<!-- Un bloc par composant. Définition exhaustive de chaque état et variante. -->
+
+### {{COMPOSANT_NAME}}
+
+**Rôle** : {{UNE PHRASE}}
+
+**Variantes** :
+
+| Variante | Apparence | Usage |
+|---|---|---|
+| {{VARIANT}} | {{APPARENCE}} | {{QUAND L'UTILISER}} |
+
+**Tailles** :
+
+| Taille | Dimensions | Usage |
+|---|---|---|
+| sm | {{DIMENSIONS}} | {{USAGE}} |
+| md | {{DIMENSIONS}} | {{USAGE}} |
+| lg | {{DIMENSIONS}} | {{USAGE}} |
+
+**États** :
+
+| État | Déclencheur | Apparence |
+|---|---|---|
+| default | — | {{APPARENCE}} |
+| hover | souris au-dessus | {{APPARENCE}} |
+| active | clic en cours | {{APPARENCE}} |
+| focus | navigation clavier | {{APPARENCE}} |
+| disabled | action impossible | {{APPARENCE}} |
+| loading | action en cours | {{APPARENCE}} |
+
+**Slots** :
+
+| Slot | Requis | Contenu |
+|---|---|---|
+| {{SLOT_NAME}} | {{oui/non}} | {{CONTENU}} |
+
+*(répéter pour chaque composant primitif : Button, Input, Select, Checkbox, Radio, Toggle, Textarea, Card, Modal, Drawer, Dropdown, Tooltip, Toast, Badge, Avatar, Table, Pagination, Tabs, Breadcrumb, Spinner, Skeleton...)*
+
+---
+
+## 3. Patterns de navigation
+
+### 3.1 Structure
+
+```
+{{LAYOUT_STRUCTURE}}
+```
+
+### 3.2 Navigation principale
+
+> L'ordre des entrées est une **déclaration de priorité**. Il suit la fréquence de la
+> boucle de travail, pas l'organigramme du domaine.
+> Cf. `references/module-prioritization.md` — cette section n'est pas facultative.
+
+- **Type** : {{sidebar / topbar / bottom nav / tabs}}
+- **Comportement responsive** : {{COMMENT ÇA S'ADAPTE}}
+- **Plateau** : {{N}} items principaux ({{MAX 5}} — le reste part en overflow)
+
+| Rang | Module | Libellé | Fréq. (1-5) | Centralité (1-5) | Justification |
+|---|---|---|---|---|---|
+| 1 | {{MODULE}} | {{LIBELLÉ}} | {{}} | {{}} | {{POURQUOI ICI, ET PAS AILLEURS}} |
+| 2 | {{MODULE}} | {{LIBELLÉ}} | {{}} | {{}} | {{}} |
+| 3 | {{MODULE}} | {{LIBELLÉ}} | {{}} | {{}} | {{}} |
+
+**Overflow (« Plus » / kebab / tiroir)** :
+
+| Module | Libellé | Raison du placement en overflow |
+|---|---|---|
+| {{MODULE}} | {{LIBELLÉ}} | {{}} |
+
+> **« Accueil » n'est pas premier par défaut** — il l'est parce qu'il est le plus
+> utilisé, ou parce qu'il ouvre la boucle de travail. Sinon, l'entrée la plus
+> fréquente passe en premier.
+
+L'ordre retenu est ensuite enregistré de façon vérifiable :
+
+```bash
+node scripts/state.js set-nav <anchor> '{ "archetype": "...", "items": [ ... ] }'
+```
+
+### 3.3 Breadcrumbs
+
+- **Visibilité** : {{toujours / sur desktop uniquement / jamais}}
+- **Format** : Accueil > {{SECTION}} > {{PAGE}}
+
+### 3.4 Transitions entre pages
+
+- **Type** : {{pas de transition / fondu / slide / ...}}
+- **Durée** : `--duration-normal`
+
+---
+
+## 4. Grille et layout
+
+### 4.1 Grille de base
+
+```
+{{GRID_SYSTEM — ex. 12 colonnes, gap --space-md, max-width --bp-desktop}}
+```
+
+### 4.2 Layouts type
+
+| Layout | Structure | Usage |
+|---|---|---|
+| Page standard | {{STRUCTURE}} | {{USAGE}} |
+| Page avec sidebar | {{STRUCTURE}} | {{USAGE}} |
+| Page plein écran | {{STRUCTURE}} | {{USAGE}} |
+| Split screen | {{STRUCTURE}} | {{USAGE}} |
+
+---
+
+## Checklist de gate
+
+Cf. `references/design-quality.md` — cette checklist n'est pas qu'une formality, elle est le filtre anti-générique.
+
+**Direction**
+- [ ] Les trois ancres sont écrites : références, ambiance, anti-références.
+- [ ] L'archétype est identifié et justifié.
+- [ ] La densité est choisie consciemment et justifiée.
+- [ ] Un skill de design a été utilisé, ou son absence est justifiée dans l'audit.
+
+**Tokens**
+- [ ] Tous les design tokens ont une **valeur concrète** (pas « à voir plus tard »).
+- [ ] Aucun `{{PLACEHOLDER}}` résiduel — `node scripts/forge-guard.js placeholders <anchor>` ne signale rien.
+- [ ] La palette couvre tous les états (default, hover, active, disabled, error, success).
+- [ ] La palette n'est pas une palette par défaut (`#3B82F6`, `#6B7280`, `#EF4444`).
+- [ ] Le fond n'est pas du blanc pur non choisi.
+- [ ] L'échelle typographique a un ratio réel entre ses niveaux.
+
+**Composants**
+- [ ] Les composants primitifs sont exhaustifs pour le périmètre du produit.
+- [ ] Chaque composant a tous ses états documentés.
+- [ ] L'ombre n'est pas le séparateur par défaut.
+
+**Navigation**
+- [ ] La navigation est définie pour desktop ET mobile.
+- [ ] **L'ordre des entrées est justifié par la fréquence**, avec un score et une raison par item.
+- [ ] La barre principale ne dépasse pas 5 items ; le reste est en overflow documenté.
+- [ ] « Accueil » est premier **pour une raison** (cf. `references/module-prioritization.md`).
+- [ ] L'ordre est enregistré via `state.js set-nav`.
+
+**Layout**
+- [ ] La grille et les layouts couvrent tous les cas d'usage du PRD.
+- [ ] Les animations et transitions sont nommées (pas « une jolie transition »).
+- [ ] Au moins un choix visuel est assumé et contestable.
+
+**Statut** : `draft` → en attente de validation.

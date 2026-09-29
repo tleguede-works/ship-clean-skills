@@ -1,0 +1,178 @@
+---
+type: prd
+status: draft
+generated_at: {{DATE}}
+version: 1
+---
+
+# Product Requirements Document — {{PRODUCT_NAME}}
+
+> Ce document décrit CE QUE le produit fait, POUR QUI, et POURQUOI.
+> Il ne décrit PAS comment il sera implémenté (technologie, architecture, design visuel).
+>
+> Toute règle métier, edge case et contrainte porte un identifiant stable (B*, E*, C*) 
+> qui servira de colonne vertébrale à toute la traçabilité du projet.
+
+---
+
+## 1. Résumé exécutif
+
+### 1.1 Problème
+
+{{QUEL PROBLÈME CE PRODUIT RÉSOUT-IL ? 2-3 phrases, concret, utilisateur, pas technique.}}
+
+### 1.2 Solution
+
+{{COMMENT LE PRODUIT RÉSOUT-IL CE PROBLÈME ? 2-3 phrases. La proposition de valeur en une phrase.}}
+
+### 1.3 Utilisateurs cibles
+
+{{QUI SONT LES UTILISATEURS ? Segments, personas, contexte d'usage.}}
+
+### 1.4 Différenciation
+
+{{EN QUOI CE PRODUIT EST-IL DIFFÉRENT DE L'EXISTANT ?}}
+
+---
+
+## 2. Utilisateurs et personas
+
+| Persona | Rôle | Contexte | Niveau technique | Besoin principal | Fréquence d'usage |
+|---|---|---|---|---|---|
+| {{NAME}} | {{RÔLE}} | {{CONTEXTE}} | {{NIVEAU}} | {{BESOIN}} | {{FRÉQUENCE}} |
+
+---
+
+## 3. User stories
+
+<!-- Priorité : P1 (doit avoir), P2 (devrait avoir), P3 (pourrait avoir), P4 (pas maintenant) -->
+
+### US-{{N}} : {{TITRE}}
+
+- **En tant que** {{RÔLE}}
+- **Je veux** {{ACTION}}
+- **Afin de** {{BÉNÉFICE}}
+
+**Priorité** : {{P1/P2/P3/P4}}
+**Dépendances** : {{US-IDs ou "aucune"}}
+
+**Critères d'acceptation** :
+- [ ] {{CRITÈRE VÉRIFIABLE}}
+- [ ] {{CRITÈRE VÉRIFIABLE}}
+
+---
+
+## 4. Règles métier
+
+<!-- Une ligne par règle. IDs B1, B2, B3... jamais réutilisés. -->
+
+| ID | Règle | User story liée | Notes |
+|---|---|---|---|
+| B1 | {{RÈGLE}} | US-{{N}} | {{NOTES}} |
+
+---
+
+## 5. Contraintes
+
+<!-- Une ligne par contrainte. IDs C1, C2, C3... -->
+
+| ID | Contrainte | Type | Impact |
+|---|---|---|---|
+| C1 | {{CONTRAINTE}} | {{légale / technique / métier / budget / temps}} | {{IMPACT}} |
+
+---
+
+## 6. Edge cases
+
+<!-- Une ligne par edge case. IDs E1, E2, E3... -->
+
+| ID | Cas | Déclencheur | Comportement attendu | Sévérité |
+|---|---|---|---|---|
+| E1 | {{CAS}} | {{DÉCLENCHEUR}} | {{COMPORTEMENT}} | {{low / medium / high / critical}} |
+
+---
+
+## 7. Exigences non-fonctionnelles
+
+### 7.1 Performance
+
+- {{EXIGENCE}}
+
+### 7.2 Sécurité
+
+- {{EXIGENCE}}
+
+### 7.3 Accessibilité
+
+- {{EXIGENCE}}
+
+### 7.4 Internationalisation
+
+- {{SI APPLICABLE}}
+
+### 7.5 Disponibilité / Résilience
+
+- {{EXIGENCE}}
+
+---
+
+## 8. Risques et inconnues
+
+| Risque | Probabilité | Impact | Mitigation |
+|---|---|---|---|
+| {{RISQUE}} | {{LOW/MEDIUM/HIGH}} | {{LOW/MEDIUM/HIGH}} | {{MITIGATION}} |
+
+### Inconnues
+
+- ⚠️ {{INCONNUE — hypothèse à valider avant ou pendant le développement}}
+
+---
+
+## 9. Hors scope (explicitement)
+
+<!-- Ce qui est consciemment exclu, maintenant et plus tard. -->
+
+- {{FONCTIONNALITÉ EXCLUE}} — raison : {{POURQUOI}}
+
+---
+
+## 10. Critères de succès
+
+<!-- Comment saura-t-on que le produit est un succès ? Métriques, comportements, retours. -->
+
+- {{CRITÈRE MESURABLE}}
+
+---
+
+## 11. Glossaire
+
+| Terme | Définition |
+|---|---|
+| {{TERME}} | {{DÉFINITION}} |
+
+---
+
+## 12. Points à clarifier
+
+<!-- Toute ambiguïté non résolue. Jamais mélangé avec les faits établis ci-dessus. -->
+
+- ⚠️ {{POINT À ÉCLAIRCIR AVANT LA PHASE 4 (ARCHITECTURE)}}
+
+*(si aucun : "Tous les points identifiés ont été clarifiés et intégrés au document.")*
+
+---
+
+## Checklist de gate
+
+- [ ] Le problème est défini de manière concrète, pas en jargon.
+- [ ] Tous les types d'utilisateurs sont identifiés (y compris admin, support...).
+- [ ] Chaque user story a des critères d'acceptation vérifiables.
+- [ ] Chaque règle métier a un ID stable (B*).
+- [ ] Chaque edge case identifié a un ID stable (E*).
+- [ ] Chaque contrainte a un ID stable (C*).
+- [ ] Les exigences non-fonctionnelles couvrent performance, sécurité et accessibilité.
+- [ ] Les risques et inconnues sont listés.
+- [ ] Le hors scope est explicite.
+- [ ] Aucune règle ou contrainte n'est laissée implicite.
+
+**Statut** : `draft` → en attente de validation.

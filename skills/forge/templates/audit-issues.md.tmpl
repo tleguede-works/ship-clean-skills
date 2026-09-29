@@ -1,0 +1,107 @@
+---
+type: audit-issues
+status: open
+generated_at: {{DATE}}
+---
+
+# Journal d'incidents — {{PRODUCT_NAME}}
+
+> Ce fichier est le **journal de bord des problèmes rencontrés pendant l'exécution de Forge**.
+> Il est destiné à être lu, pas juste archivé.
+>
+> Deux usages :
+> 1. **Pendant le projet** — comprendre et corriger un blocage en cours de route.
+> 2. **Après le projet** — alimenter l'amélioration du skill lui-même. `scripts/audit-report.js`
+>    agrège ces incidents et les journaux d'audit de plusieurs projets pour faire apparaître
+>    les **récurrences**.
+>
+> Un incident qui n'est pas écrit n'a pas eu lieu. C'est la seule donnée qui permet
+> d'améliorer Forge au fil des projets.
+
+---
+
+## Convention
+
+| Champ | Valeurs |
+|---|---|
+| **Gravité** | `bloquant` (a empêché d'avancer) · `majeur` (a coûté du temps ou du contournement) · `mineur` |
+| **Origine** | `forge` (faiblesse du skill) · `projet` (spécification insuffisante) · `environnement` (outil, réseau, modèle) |
+| **Phase** | `0` … `8` |
+
+**L'origine est le champ le plus important.** C'est lui qui distingue « Forge a mal guidé » de « le PRD était ambigu ». Un skill qui s'améliore est un skill qui sait compter ses propres échecs.
+
+---
+
+## Format d'un incident
+
+```markdown
+### INC-001 — <titre court>
+
+- **Date** : 2026-09-27T14:32:00Z
+- **Gravité** : bloquant
+- **Origine** : forge
+- **Phase** : 4
+- **Symptôme** : ce qui s'est produit, factuellement
+- **Cause racine** : pourquoi Forge en est arrivé là
+- **Contournement** : ce qui a été fait pour avancer
+- **Coût** : temps perdu, invites supplémentaires,.retravail
+- **Action corrective** : ce qu'il faudrait changer dans Forge
+- **Statut** : ouvert / corrigé / accepté
+```
+
+---
+
+## Incidents
+
+<!-- Un bloc par incident, du plus récent au plus ancien. -->
+
+### INC-001 — {{TITRE}}
+
+- **Date** : {{DATE}}
+- **Gravité** : {{bloquant / majeur / mineur}}
+- **Origine** : {{forge / projet / environnement}}
+- **Phase** : {{0-8}}
+- **Symptôme** : {{CE QUI S'EST PRODUIT, FACTUELLEMENT}}
+- **Cause racine** : {{POURQUOI FORGE EN EST ARRIVÉ LÀ}}
+- **Contournement** : {{CE QUI A ÉTÉ FAIT POUR AVANCER}}
+- **Coût** : {{TEMPS PERDU, RETRAVAIL}}
+- **Action corrective** : {{CE QU'IL FAUDRAIT CHANGER DANS FORGE}}
+- **Statut** : ouvert
+
+---
+
+## Récurrences observées
+
+> À remplir en fin de projet : quels schémas d'incident se répètent ?
+
+| Schéma | Occurrences | Phase | Cause commune |
+|---|---|---|---|
+| {{}} | {{}} | {{}} | {{}} |
+
+---
+
+## Améliorations proposées pour Forge
+
+| # | Proposition | Origine | Impact estimé |
+|---|---|---|---|
+| 1 | {{}} | {{INC-00X}} | {{fort / moyen / faible}} |
+
+---
+
+## Ce qui a bien fonctionné
+
+> Utile autant que les problèmes : empêche de casser ce qui marche lors d'une évolution du skill.
+
+| Élément | Commentaire |
+|---|---|
+| {{}} | {{}} |
+
+---
+
+## Checklist de gate
+
+- [ ] Tout incident `bloquant` ou `majeur` est écrit avec sa cause racine.
+- [ ] Chaque incident a une **origine** (`forge` / `projet` / `environnement`).
+- [ ] Les incidents d'origine `forge` ont une action corrective formulée.
+- [ ] Les récurrences sont identifiées.
+- [ ] Le journal d'audit machine (`run-log.jsonl`) est cohérent avec ce fichier.

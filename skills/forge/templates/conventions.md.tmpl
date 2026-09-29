@@ -1,0 +1,171 @@
+---
+type: conventions
+status: draft
+generated_at: {{DATE}}
+---
+
+# Conventions techniques — {{PRODUCT_NAME}}
+
+> Document unique. Tous les plans d'implémentation (Phase 5) y font référence plutôt que de reformuler ces règles.
+> Ce document démarre en Phase 0 avec ce qui est connu, s'enrichit en Phase 4, et peut être amendé à tout moment.
+> Toute règle vague ("gestion d'erreur cohérente") doit être reformulée en règle concrète avant validation.
+> Les sections marquées `À DÉCIDER EN PHASE 4` seront complétées lors de la conception de l'architecture.
+
+---
+
+## Stack technique cible
+
+| Domaine | Choix | Version | Justification |
+|---|---|---|---|
+| Langage | {{LANGUAGE}} | {{VERSION}} | {{WHY}} |
+| Framework | {{FRAMEWORK}} | {{VERSION}} | {{WHY}} |
+| Base de données | {{DATABASE}} | {{VERSION}} | {{WHY}} |
+| ORM / Query builder | {{ORM}} | {{VERSION}} | {{WHY}} |
+| State management | {{STATE}} | {{VERSION}} | À DÉCIDER EN PHASE 4 |
+| Formulaires | {{FORMS}} | {{VERSION}} | À DÉCIDER EN PHASE 4 |
+| Validation | {{VALIDATION}} | {{VERSION}} | À DÉCIDER EN PHASE 4 |
+| HTTP client | {{HTTP}} | {{VERSION}} | {{WHY}} |
+| Styling | {{STYLING}} | {{VERSION}} | {{WHY}} |
+| Composants UI | {{UI_LIB}} | {{VERSION}} | {{WHY}} |
+| Icônes | {{ICONS}} | {{VERSION}} | {{WHY}} |
+| Tests unitaires | {{UNIT_TEST}} | {{VERSION}} | {{WHY}} |
+| Tests composants | {{COMPONENT_TEST}} | {{VERSION}} | {{WHY}} |
+| Tests E2E | {{E2E_TEST}} | {{VERSION}} | À DÉCIDER EN PHASE 4 |
+| Lint | {{LINT}} | {{VERSION}} | {{WHY}} |
+| Format | {{FORMAT}} | {{VERSION}} | {{WHY}} |
+| Package manager | {{PKG_MGR}} | {{VERSION}} | {{WHY}} |
+
+---
+
+## Structure de dossiers cible
+
+```
+{{TARGET_FOLDER_STRUCTURE}}
+```
+
+---
+
+## Conventions de nommage
+
+| Élément | Règle | Exemple |
+|---|---|---|
+| Fichier composant | {{RULE}} | {{EXAMPLE}} |
+| Fichier service/utilitaire | {{RULE}} | {{EXAMPLE}} |
+| Fichier de validation | {{RULE}} | {{EXAMPLE}} |
+| Fichier de type | {{RULE}} | {{EXAMPLE}} |
+| Fichier de test | {{RULE}} | {{EXAMPLE}} |
+| Routes / URLs | {{RULE}} | {{EXAMPLE}} |
+| Props de composant | {{RULE}} | {{EXAMPLE}} |
+| Fonctions | {{RULE}} | {{EXAMPLE}} |
+| Constantes | {{RULE}} | {{EXAMPLE}} |
+
+---
+
+## Conventions de code
+
+### Typage
+
+- {{RULE}}
+
+### Composants
+
+- {{RULE}}
+
+### State management
+
+- {{RULE}}
+
+### Formulaires
+
+- {{RULE}}
+
+### Data fetching
+
+- {{RULE}}
+
+---
+
+## Gestion d'erreur standard
+
+### Erreurs réseau
+
+```
+{{ERROR_HANDLING_PATTERN}}
+```
+
+### Erreurs de validation
+
+```
+{{VALIDATION_ERROR_PATTERN}}
+```
+
+### Erreurs serveur
+
+```
+{{SERVER_ERROR_PATTERN}}
+```
+
+---
+
+## Stratégie de tests
+
+### Tests unitaires
+
+- Framework : {{FRAMEWORK}}
+- Pattern : {{PATTERN}}
+- Emplacement : {{LOCATION}}
+- Commande : {{COMMAND}}
+
+### Tests de composants
+
+- Framework : {{FRAMEWORK}}
+- Pattern : {{PATTERN}}
+- Mocking : {{MOCKING_STRATEGY}}
+- Emplacement : {{LOCATION}}
+- Commande : {{COMMAND}}
+
+### Tests E2E
+
+- Framework : {{FRAMEWORK}}
+- Pattern : {{PATTERN}}
+- Emplacement : {{LOCATION}}
+- Commande : {{COMMAND}}
+
+---
+
+## Patterns retenus
+
+| Pattern | Quand l'utiliser | Exemple |
+|---|---|---|
+| {{PATTERN}} | {{WHEN}} | {{EXAMPLE}} |
+
+---
+
+## Commandes
+
+```bash
+{{DEV_COMMAND}}
+{{BUILD_COMMAND}}
+{{LINT_COMMAND}}
+{{TYPECHECK_COMMAND}}
+{{TEST_COMMAND}}
+{{TEST_E2E_COMMAND}}
+```
+
+---
+
+## Ce qui n'appartient PAS à ce document
+
+Toute règle spécifique à une seule slice va dans le plan d'implémentation de cette slice, signalée comme déviation dans la section "Déviations par rapport à conventions.md".
+
+---
+
+## Checklist de gate
+
+- [ ] Toute décision (nommage, structure, gestion d'erreur, tests) est actionnable.
+- [ ] La stack cible est entièrement spécifiée (framework, state, forms, HTTP, styling, tests).
+- [ ] Le document ne contient aucune règle spécifique à une seule slice.
+- [ ] Les commandes (dev, build, lint, test) sont documentées et fonctionnelles.
+- [ ] Aucune section marquée `À DÉCIDER EN PHASE 4` ne subsiste après la Phase 4.
+
+**Statut** : `draft` → enrichi à chaque phase, verrouillé en Phase 4.

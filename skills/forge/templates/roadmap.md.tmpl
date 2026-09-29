@@ -1,0 +1,135 @@
+---
+type: roadmap
+status: draft
+generated_at: {{DATE}}
+derived_from: .forge/prd.md
+version: 1
+---
+
+# Roadmap — {{PRODUCT_NAME}}
+
+> Ce document définit CE QUI sera livré et QUAND.
+> Inspiré du PRD (`.forge/prd.md`). Chaque règle métier citée référence son ID source (B*).
+>
+> La roadmap est vivante — elle évolue avec les retours utilisateurs et les découvertes techniques.
+
+---
+
+## 1. Vision par version
+
+| Version | Thème / Promesse | Critère de succès principal | Cible |
+|---|---|---|---|
+| MVP | {{PROMESSE_MINIMALE}} | {{CRITÈRE}} | {{DATE_CIBLE}} |
+| V1 | {{PROMESSE_V1}} | {{CRITÈRE}} | {{DATE_CIBLE}} |
+| V2 | {{PROMESSE_V2}} | {{CRITÈRE}} | {{DATE_CIBLE}} |
+
+---
+
+## 2. MVP — Minimum Viable Product
+
+> Le plus petit ensemble qui résout le problème principal et peut être utilisé par de vrais utilisateurs.
+
+### 2.1 Périmètre
+
+| User story (PRD) | Règles métier (B*) | Justification de l'inclusion |
+|---|---|---|
+| US-{{N}} : {{TITRE}} | {{B1, B3...}} | {{POURQUOI C'EST DANS LE MVP}} |
+
+### 2.2 Ce qui n'est PAS dans le MVP
+
+| Élément | Raison de l'exclusion | Risque de l'exclusion | Version cible |
+|---|---|---|---|
+| US-{{N}} : {{TITRE}} | {{POURQUOI}} | {{RISQUE}} | V1 / V2 |
+
+### 2.3 Risques spécifiques au MVP
+
+| Risque | Probabilité | Impact | Mitigation |
+|---|---|---|---|
+| {{RISQUE}} | {{LOW/MEDIUM/HIGH}} | {{LOW/MEDIUM/HIGH}} | {{MITIGATION}} |
+
+---
+
+## 3. V1 — Première version complète
+
+### 3.1 Ajouts par rapport au MVP
+
+| User story (PRD) | Règles métier (B*) | Justification |
+|---|---|---|
+| US-{{N}} : {{TITRE}} | {{B5, B7...}} | {{POURQUOI EN V1}} |
+
+### 3.2 Ce qui est repoussé en V2+
+
+| Élément | Raison | Risque |
+|---|---|---|
+| US-{{N}} : {{TITRE}} | {{POURQUOI PAS EN V1}} | {{RISQUE}} |
+
+### 3.3 Risques spécifiques à la V1
+
+| Risque | Probabilité | Impact | Mitigation |
+|---|---|---|---|
+| {{RISQUE}} | {{LOW/MEDIUM/HIGH}} | {{LOW/MEDIUM/HIGH}} | {{MITIGATION}} |
+
+### 3.4 Dépendances inter-versions
+
+| La V1 dépend de | Nature | Critique ? |
+|---|---|---|
+| {{FONCTIONNALITÉ / INFRA / EXTERNE}} | {{technique / produit / externe}} | {{oui / non}} |
+
+---
+
+## 4. V2 et au-delà
+
+### 4.1 Backlog V2
+
+| User story (PRD) | Priorité | Raison d'être en V2 | Dépend de |
+|---|---|---|---|
+| US-{{N}} : {{TITRE}} | {{P2/P3}} | {{POURQUOI EN V2}} | {{RETOURS V1 / FONCTIONNALITÉ}} |
+
+### 4.2 Idées pour le futur (V3+)
+
+- {{IDÉE}} — dépend des retours sur {{FONCTIONNALITÉ}}.
+
+---
+
+## 5. Compromis assumés
+
+<!-- La section la plus importante. Chaque exclusion est un compromis conscient. -->
+
+| Compromis | Ce qu'on perd | Ce qu'on gagne | Risque à long terme |
+|---|---|---|---|
+| {{EXCLURE X DU MVP}} | {{PERTE}} | {{GAIN}} | {{RISQUE}} |
+
+---
+
+## 6. Effort relatif par version
+
+| Version | Slices estimées | Taille relative | Facteurs de risque |
+|---|---|---|---|
+| Fondations | {{N}} | M | Transverse, bloque tout |
+| MVP | {{N}} | {{S/M/L/XL}} | {{RISQUES}} |
+| V1 | {{N}} | {{S/M/L/XL}} | {{RISQUES}} |
+| V2 | {{N}} | {{S/M/L/XL}} | {{RISQUES}} |
+
+*Les tailles sont relatives au projet, pas absolues. S = 1-3 slices simples, M = 4-7 slices, L = 8-12 slices, XL = 13+ slices ou slices complexes.*
+
+---
+
+## 7. Dépendances externes
+
+| Dépendance | Impacte quelle version | Statut | Risque si indisponible |
+|---|---|---|---|
+| {{API TIERS, SERVICE, LIBRAIRIE...}} | {{MVP / V1 / V2}} | {{disponible / en attente / incertain}} | {{RISQUE}} |
+
+---
+
+## Checklist de gate
+
+- [ ] Le MVP résout le problème principal du PRD.
+- [ ] Chaque exclusion est justifiée (pas juste "pas le temps").
+- [ ] Les risques par version sont identifiés.
+- [ ] Les dépendances externes sont listées avec leur statut.
+- [ ] L'effort relatif est cohérent entre versions.
+- [ ] Aucune fonctionnalité P1 n'est en V2 sans justification exceptionnelle.
+- [ ] Le document ne contient pas de jargon d'implémentation.
+
+**Statut** : `draft` → en attente de validation.

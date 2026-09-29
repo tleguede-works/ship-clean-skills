@@ -1,0 +1,176 @@
+---
+type: test-plan
+status: draft
+generated_at: {{DATE}}
+derived_from: .forge/prd.md
+---
+
+# Plan de tests global — {{PRODUCT_NAME}}
+
+> Ce document définit la stratégie de test pour l'ensemble du produit.
+> Il est la référence pour toutes les slices — chaque plan d'implémentation y fait référence pour les patterns de test.
+
+---
+
+## 1. Stratégie de test
+
+### 1.1 Pyramide des tests
+
+```
+        ┌──────┐
+        │ E2E  │  ← Playwright : parcours utilisateur critiques
+        ├──────┤
+        │ Int. │  ← Tests d'intégration : interaction entre slices
+        ├──────┤
+        │Comp. │  ← Tests de composants : UI isolée
+        ├──────┤
+        │ Unit │  ← Tests unitaires : fonctions, services, algorithmes
+        └──────┘
+```
+
+### 1.2 Frameworks et outils
+
+| Niveau | Framework | Commande | Emplacement |
+|---|---|---|---|
+| Unitaires | {{Jest / Vitest / Pytest}} | `{{COMMAND}}` | `__tests__/` à côté des fichiers |
+| Composants | {{Testing Library / Vue Test Utils}} | `{{COMMAND}}` | `__tests__/` à côté des composants |
+| Intégration | {{Jest / Vitest / Supertest}} | `{{COMMAND}}` | `tests/integration/` |
+| E2E | {{Playwright / Cypress}} | `{{COMMAND}}` | `tests/e2e/` |
+| UI visuelle | Chrome MCP | manuel / scripté | — |
+
+---
+
+## 2. Règles de couverture
+
+### 2.1 Obligations par type d'ID
+
+| ID type | Couverture minimale | Type de test |
+|---|---|---|
+| B* (règle métier) | 1+ test unitaire | Unitaire |
+| V* (validation) | 1+ test unitaire + 1+ test composant | Unitaire + Composant |
+| E* (edge case) | 1+ test dédié | Unitaire / Intégration selon le cas |
+| C* (contrainte) | 1+ test de vérification | Variable selon la contrainte |
+
+### 2.2 Obligations par type d'élément
+
+| Élément | Tests requis |
+|---|---|
+| Fonction pure / service | Test unitaire : succès + échec + edge cases |
+| Hook / state | Test unitaire : tous les state transitions |
+| Composant UI | Test de rendu + test d'interaction + test de chaque état |
+| Formulaire | Test de soumission + test de validation + test d'erreur |
+| Écran / Page | Test d'intégration : rendu avec données mockées |
+| API endpoint | Test d'intégration : succès + chaque code d'erreur documenté |
+| Flow utilisateur | Test E2E : happy path + au moins un chemin d'erreur |
+
+---
+
+## 3. Tests des fondations
+
+> Écrits et validés AVANT toute slice métier.
+
+### 3.1 Design system
+
+| Composant | Tests |
+|---|---|
+| {{COMPONENT}} | Rendu de chaque variante + chaque taille + chaque état |
+
+### 3.2 Authentification
+
+| Scénario | Type | IDs couverts |
+|---|---|---|
+| Login succès | E2E | — |
+| Login échec (mauvais mot de passe) | E2E | — |
+| Login échec (compte inexistant) | E2E | — |
+| Session expirée | E2E | — |
+| Refresh token | Unitaire | — |
+| Logout | E2E | — |
+| Route protégée sans auth | E2E | — |
+| Route protégée avec mauvais rôle | E2E | — |
+
+### 3.3 Gestion d'erreur
+
+| Scénario | Type |
+|---|---|
+| Erreur réseau (timeout) | Unitaire (mock) |
+| Erreur réseau (offline) | Unitaire (mock) |
+| Erreur serveur 500 | Unitaire (mock) |
+| Erreur validation 422 | Unitaire (mock) |
+| Toast d'erreur affiché | Composant |
+
+### 3.4 API Client
+
+| Scénario | Type |
+|---|---|
+| Retry sur erreur 5xx | Unitaire |
+| Timeout configuré | Unitaire |
+| Intercepteur d'auth (ajout du token) | Unitaire |
+| Intercepteur d'erreur (formatage standard) | Unitaire |
+
+---
+
+## 4. Tests de régression
+
+### 4.1 Suite minimale
+
+La suite de régression suivante doit passer avant chaque merge :
+
+- [ ] Tous les tests unitaires
+- [ ] Tous les tests de composants
+- [ ] Tests E2E des flows critiques :
+  - [ ] {{FLOW_CRITIQUE_1}}
+  - [ ] {{FLOW_CRITIQUE_2}}
+  - [ ] {{FLOW_CRITIQUE_3}}
+- [ ] Chrome MCP : pas de régression visuelle sur les écrans principaux
+
+### 4.2 Commande de régression
+
+```bash
+{{REGRESSION_COMMAND}}
+```
+
+---
+
+## 5. Vérifications Chrome MCP
+
+> Exécutées manuellement ou via script après chaque slice UI, et en régression.
+
+### 5.1 Checklist standard par écran
+
+- [ ] **Overflows horizontaux** : aucun élément ne dépasse sur mobile (375px), tablette (768px), desktop (1280px).
+- [ ] **Éléments hors écran** : aucun bouton, input, ou CTA en dehors du viewport.
+- [ ] **Responsive** : le layout s'adapte sans casser à chaque breakpoint.
+- [ ] **Navigation** : les boutons retour du navigateur fonctionnent.
+- [ ] **États visuels** : chaque état défini dans le plan est visuellement correct.
+- [ ] **Cohérence** : les mêmes composants ont le même aspect sur tous les écrans.
+- [ ] **Accessibilité de base** : contrastes suffisants, labels sur les inputs, focus visible.
+
+### 5.2 Écrans critiques
+
+| Écran | Vérifications spécifiques |
+|---|---|
+| {{SCREEN}} | {{VÉRIFICATIONS}} |
+
+---
+
+## 6. Environnements de test
+
+| Environnement | Usage | Base de données | Variables |
+|---|---|---|---|
+| CI | Tests automatisés à chaque push | {{DB}} | `.env.test` |
+| Local | Développement | {{DB}} | `.env.local` |
+| Staging | Tests E2E manuels | {{DB}} | `.env.staging` |
+
+---
+
+## Checklist de gate
+
+- [ ] La pyramide des tests est définie (pas de "on testera plus tard").
+- [ ] Chaque type d'ID (B*, E*, C*) a une obligation de couverture.
+- [ ] Les tests de fondation sont définis avant les slices métier.
+- [ ] La suite de régression est documentée avec sa commande.
+- [ ] Les vérifications Chrome MCP sont listées écran par écran.
+- [ ] Les environnements de test sont définis.
+- [ ] Les commandes de test sont documentées et fonctionnelles.
+
+**Statut** : `draft` → en attente de validation.

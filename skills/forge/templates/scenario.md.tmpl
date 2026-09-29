@@ -1,0 +1,157 @@
+---
+type: scenario
+name: {{SCENARIO_NAME}}
+status: draft
+generated_at: {{DATE}}
+archetype: {{ARCHETYPE}}
+domain: {{RENTAL_TENANCY | BILLING | BOOKING | SUBSCRIPTION | OTHER}}
+temporal: true
+derived_from:
+  - .forge/prd.md
+  - .forge/architecture.md
+implementation: test/scenarios/{{SLUG}}.{{EXT}}
+---
+
+# Scénario — {{SCENARIO_TITLE}}
+
+> Un **récit**, pas une liste d'assertions. Ce document est relu par un humain.
+> Le test qui l'exécute est à côté ; s'ils divergent, c'est ce document qui gagne.
+
+---
+
+## 1. Le récit
+
+<!-- Une phrase. Qui fait quoi, dans quel ordre, sur quelle durée. -->
+
+{{ACTOR}} {{DOES_THAT}}, {{IN_THIS_ORDER}}, {{OVER_THIS_PERIOD}}.
+
+**Pourquoi ce scénario existe** : {{LE_QUEL_RÉALITÉ_MÉTIER_IL_PROUVE}}
+
+---
+
+## 2. Propriété prouvée
+
+<!-- Écrire l'invariant AVANT le test. C'est cette question que les tests
+     unitaires ne posent pas, et c'est elle qui attrape les défauts d'ordre. -->
+
+| | |
+|---|---|
+| **Invariant final** | {{CE QUI DOIT RESTER VRAI À LA FIN, QUELLE QUE SOIT LA CHRONOLOGIE}} |
+| **Défaut que ce scénario cherche** | {{LE DÉFAUT D'ORDONNEMENT QU'IL EST CAPABLE DE VOIR}} |
+| **Ce qu'un test unitaire ne voit pas ici** | {{...}} |
+
+---
+
+## 3. Mode d'écriture
+
+| Question | Réponse |
+|---|---|
+| Le scénario **écrit-il** des données ? | {{oui / non}} |
+| Si oui, par quel **port applicatif** ? | {{LE PORT — jamais SQL direct, jamais une réimplémentation}} |
+| Si non, d'où vient l'état initial ? | {{FIXTURE IDENTIFIÉE COMME TELLE}} |
+
+> **Un scénario qui écrit ce que l'application écrit est un faux vert.**
+> Si le port n'existe pas, ce n'est pas un blocage du test : c'est un constat.
+> ```bash
+> node scripts/state.js finding <anchor> --domain=architecture.md --severity=majeur \
+>   "Le scénario {{SCENARIO_NAME}} ne peut pas écrire : aucun port applicatif ne l'expose" \
+>   "Extraire l'écriture dans un port, puis brancher le scénario dessus"
+> ```
+
+---
+
+## 4. Fixture — état initial
+
+| Entité | Valeur | Créée par |
+|---|---|---|
+| {{ENTITÉ}} | {{VALEUR RÉALISTE}} | {{commande applicative / fixture}} |
+
+**Cas limites volontairement inclus dans la fixture** : {{CE QUE LA FIXTURE DOIT CONTENIR POUR QUE LE SCÉNARIO SOIT INTÉRESSANT}}
+
+> Données de test réalistes, pas « Jean Dupont / 1234,56 ». Une fixture
+>Warnings qui ne ressemble à rien ne révèle rien.
+
+---
+
+## 5. Chronologie
+
+| # | Date | Événement | Écrit ? | Ce qui doit être vrai juste après |
+|---|---|---|---|---|
+| 1 | {{J0}} | {{ÉVÉNEMENT}} | {{oui/non}} | {{ASSERTION}} |
+| 2 | {{J+}} | {{ÉVÉNEMENT}} | {{}} | {{}} |
+| 3 | {{ÉCHÉANCE}} | {{ÉVÉNEMENT — le point de bascule}} | {{}} | {{}} |
+| 4 | {{J+N}} | {{ÉVÉNEMENT de rattrapage}} | {{}} | {{}} |
+| 5 | {{J+N+1}} | {{RELECTURE}} | {{}} | {{}} |
+
+**Le point de bascule** (ligne 3) est la ligne la plus importante : c'est là que
+le temps change de régime. Si le scénario n'en a pas, il teste un cas nominal
+long, pas un cycle de vie.
+
+---
+
+## 6. Assertions par étape
+
+| # | Sur quoi | Assertion | ID |
+|---|---|---|---|
+| 1 | {{calcul applicatif}} | {{}} | {{B1}} |
+| 2 | {{état affiché}} | {{}} | {{B7}} |
+| 3 | {{historique}} | {{}} | {{E3}} |
+
+---
+
+## 7. Invariants finaux
+
+Vérifiés à la fin, quelles que soient les étapes intermédiaires.
+
+| # | Invariant | Comment il est vérifié |
+|---|---|---|
+| 1 | {{somme des allocations = montant versé}} | {{}} |
+| 2 | {{un compte non concerné est resté à sa valeur initiale}} | {{}} |
+| 3 | {{l'ordre des événements ne change aucun total}} | {{rejouer dans un autre ordre}} |
+| 4 | {{l'historique contient N événements, dans l'ordre, sans doublon}} | {{}} |
+
+---
+
+## 8. Chemin d'échec
+
+Un scénario n'est crédible que s'il a un pendant négatif.
+
+| Variante | Déclencheur | Ce qui doit échouer |
+|---|---|---|
+| {{}} | {{}} | {{}} |
+| {{}} | {{}} | {{}} |
+
+---
+
+## 9. Exécution
+
+```bash
+# Un seul scénario
+{{COMMANDE}}
+
+# Tous les scénarios
+{{COMMANDE}}
+```
+
+**Horloge** : {{injectée via … — et le test qui vérifie qu'elle est branchée}}
+
+**Base** : {{en mémoire / éphémère / conteneur}}, avec les contraintes actives : {{oui/non}}
+
+**Durée observée** : {{ms}} — un scénario qui prend plus de quelques secondes
+n'est pas un scénario headless, et ne sera pas exécuté.
+
+---
+
+## 10. Checklist de gate
+
+- [ ] Le récit tient en une phrase et dit l'ordre.
+- [ ] **L'invariant final est écrit** et l'a été avant le test.
+- [ ] Le point de bascule temporel existe dans la chronologie.
+- [ ] Le scénario n'écrit rien que l'application n'écrit pas — ou c'est un constat routé.
+- [ ] La fixture contient au moins un cas limite volontaire.
+- [ ] Les données de test sont réalistes.
+- [ ] Au moins un invariant est **indépendant de l'ordre**.
+- [ ] L'historique est vérifié en nombre et en ordre, pas seulement en solde final.
+- [ ] Un pendant d'échec existe.
+- [ ] L'horloge est injectée, **et un test vérifie qu'elle l'est**.
+- [ ] Le scénario tourne en headless, sans appareil.

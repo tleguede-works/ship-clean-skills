@@ -1,0 +1,272 @@
+---
+type: implementation-plan
+slice: {{SLICE_NAME}}
+module: {{MODULE_NAME}}
+status: draft
+generated_at: {{DATE}}
+derived_from:
+  - .forge/prd.md
+  - .forge/architecture.md
+  - .forge/design/design-system.md
+  - .forge/design/screens/
+conventions_ref: .forge/conventions.md
+---
+
+# Plan d'implémentation — {{SLICE_NAME}}
+
+> Ce document décrit *comment implémenter* cette slice. Il contient tout le nécessaire pour qu'un développeur (ou une IA) puisse implémenter la slice sans ambiguïté et sans avoir à consulter d'autres documents.
+>
+> **Exhaustivité obligatoire.** Chaque ID B*/E*/C* du PRD couvert par cette slice doit apparaître dans le tableau de traçabilité (§6). `node scripts/coverage-check.js slice . {{SLICE_NAME}}` vérifie mécaniquement ceci avant le gate.
+>
+> **Ce plan doit pouvoir être implémenté sans interprétation** par un modèle peu performant. Les contrats de données sont du code réel. Les algorithmes sont en pseudocode. Les pièges sont anticipés explicitement.
+
+---
+
+## Sources
+
+- **PRD** : `.forge/prd.md` — règles {{B_IDS}}, edge cases {{E_IDS}}
+- **Architecture** : `.forge/architecture.md` — entités {{ENTITY_NAMES}}, endpoints {{ENDPOINT_NAMES}}
+- **Design** : `.forge/design/screens/{{SCREEN_FILES}}`
+- **Design system** : `.forge/design/design-system.md`
+- **Conventions** : `.forge/conventions.md`
+
+---
+
+## 1. Résumé de la slice
+
+{{3-5 PHRASES — ce que fait cette slice, quel besoin utilisateur elle résout, où elle se situe dans le produit.}}
+
+**User stories couvertes** : US-{{N}} ({{TITRE}})
+
+**Règles métier couvertes** : B1, B3, B7
+**Edge cases couverts** : E2, E5
+
+---
+
+## 2. Contrats de données (code)
+
+> Traduction MÉCANIQUE des modèles de données de l'architecture vers la syntaxe de la stack cible.
+> Chaque champ ci-dessous doit correspondre à un champ défini dans `architecture.md`. Pas de champ inventé.
+
+### 2.1 Schémas de validation
+
+```{{LANGUAGE}}
+{{VALIDATION_SCHEMAS — Zod, Pydantic, classes Dart, yup, etc.}}
+```
+
+### 2.2 Types et interfaces
+
+```{{LANGUAGE}}
+{{TYPE_DEFINITIONS}}
+```
+
+### 2.3 Contrats API
+
+```{{LANGUAGE}}
+{{API_REQUEST_RESPONSE_TYPES}}
+```
+
+---
+
+## 3. Algorithmes critiques
+
+> Obligatoire pour toute règle métier (B*) à plus d'une branche conditionnelle ou plus d'une étape séquentielle.
+
+### {{ALGORITHM_NAME}} (couvre {{RULE_IDS}})
+
+```
+{{PSEUDOCODE_OR_CODE — chaque branche explicite, y compris les edge cases (E*)}}
+```
+
+*(répéter par algorithme, ou "Aucun algorithme critique dans cette slice — toutes les règles sont linéaires.")*
+
+---
+
+## 4. Plan composants
+
+### 4.1 Arbre de composants
+
+```
+{{COMPONENT_TREE}}
+```
+
+### 4.2 Composants
+
+| Composant | Type | Fichier cible | Props | State | Événements |
+|---|---|---|---|---|---|
+| {{COMPONENT}} | {{Server / Client}} | {{PATH}} | {{PROPS}} | {{STATE}} | {{EVENTS}} |
+
+### 4.3 États par écran
+
+#### Écran : {{SCREEN_NAME}}
+
+| État | Condition | Composants affichés | Données |
+|---|---|---|---|
+| vide | {{CONDITION}} | {{COMPONENTS}} | — |
+| chargement | {{CONDITION}} | {{COMPONENTS}} | — |
+| rempli | {{CONDITION}} | {{COMPONENTS}} | {{DATA}} |
+| erreur | {{CONDITION}} | {{COMPONENTS}} | {{ERROR}} |
+| vide-données | {{CONDITION}} | {{COMPONENTS}} | — |
+
+### 4.4 Formulaires
+
+*(si applicable)*
+
+| Formulaire | Bibliothèque | Schéma | Soumission | Gestion d'erreur |
+|---|---|---|---|---|
+| {{FORM}} | {{Formik / React Hook Form / ...}} | $2.1 | {{FLOW}} | {{PATTERN}} |
+
+---
+
+## 5. Gestion d'état (state management)
+
+| Donnée | Portée | Stockage | Initialisation | Mise à jour |
+|---|---|---|---|---|
+| {{DATA}} | {{global / page / composant / URL}} | {{Redux / Zustand / useState / URL params}} | {{HOW}} | {{HOW}} |
+
+---
+
+## 6. Traçabilité des règles
+
+### 6.1 Règles métier (B*)
+
+| ID | Règle (PRD) | Implémentée où | Approche |
+|---|---|---|---|
+| B1 | {{RÈGLE}} | {{LOCATION}} | {{APPROCHE}} |
+
+### 6.2 Edge cases (E*)
+
+| ID | Cas (PRD) | Approche de gestion | Où |
+|---|---|---|---|
+| E2 | {{CAS}} | {{APPROCHE}} | {{LOCATION}} |
+
+### 6.3 Contraintes (C*)
+
+*(si applicable)*
+
+| ID | Contrainte (PRD) | Comment elle est respectée |
+|---|---|---|
+| C1 | {{CONTRAINTE}} | {{COMMENT}} |
+
+---
+
+## 7. Pièges à éviter
+
+> Anticipe les erreurs d'interprétation les plus probables. Formulées en contraste explicite.
+
+- **{{PIÈGE}}** — ⚠️ Ne pas {{ERREUR_PROBABLE}}. Le comportement correct ({{RULE_ID}}) est {{COMPORTEMENT_CORRECT}}.
+
+*(si aucun : "Aucun piège d'interprétation identifié pour cette slice.")*
+
+---
+
+## 8. Dépendances
+
+| Dépend de | Nature | Statut | Fallback si absent |
+|---|---|---|---|
+| {{SLICE / FONDATION}} | {{API / data / UI / event}} | {{implémenté / planned}} | {{MOCK / SKIP / BLOCK}} |
+
+---
+
+## 9. Checklist de tâches
+
+### Phase 1 — Couche de données
+
+- [ ] Schémas de validation ($2.1)
+- [ ] Types et interfaces ($2.2)
+- [ ] Fonctions API client ($2.3)
+- [ ] Tests unitaires de la couche données
+
+### Phase 2 — Logique métier
+
+- [ ] Service : {{SERVICE_NAME}} (algorithme $3.{{NAME}})
+- [ ] Tests unitaires des règles métier (B*)
+- [ ] State management ($5)
+
+### Phase 3 — Interface utilisateur
+
+- [ ] Composant : {{COMPONENT_NAME}} ($4.2)
+- [ ] Écran : {{SCREEN_NAME}} ($4.3)
+- [ ] Formulaire : {{FORM_NAME}} ($4.4)
+- [ ] Tests de composants
+
+### Phase 4 — Intégration
+
+- [ ] Vérification des permissions
+- [ ] Navigation et routage
+- [ ] Tests d'intégration
+
+### Phase 5 — Tests et polish
+
+- [ ] Tests E2E : {{SCENARIOS}}
+- [ ] Chrome MCP : overflows, responsive, états
+- [ ] Accessibilité
+- [ ] Messages d'erreur et états vides
+
+### Vérifications finales
+
+- [ ] Lint sans erreur
+- [ ] Typecheck clean
+- [ ] Tous les tests passent
+- [ ] `node scripts/coverage-check.js slice . {{SLICE_NAME}}` renvoie `pass: true`.
+
+---
+
+## 10. Critères d'acceptation
+
+- [ ] {{RULE_ID}} : {{CRITÈRE_VÉRIFIABLE}}
+- [ ] {{RULE_ID}} : {{CRITÈRE_VÉRIFIABLE}}
+- [ ] {{RULE_ID}} : {{CRITÈRE_VÉRIFIABLE}}
+
+---
+
+## 11. Plan de tests
+
+### 11.1 Tests unitaires
+
+| Cible | Scénarios | IDs couverts |
+|---|---|---|
+| {{FONCTION / SERVICE}} | {{SCÉNARIOS}} | {{B*, E*}} |
+
+### 11.2 Tests de composants
+
+| Composant | État | Scénario | IDs couverts |
+|---|---|---|---|
+| {{COMPONENT}} | {{ÉTAT}} | {{SCÉNARIO}} | {{B*, E*}} |
+
+### 11.3 Tests d'intégration
+
+| Flow | Scénario | IDs couverts |
+|---|---|---|
+| {{FLOW}} | {{SCÉNARIO}} | {{B*, E*}} |
+
+### 11.4 Tests E2E
+
+| Parcours utilisateur | Scénario | IDs couverts |
+|---|---|---|
+| {{PARCOURS}} | {{SCÉNARIO}} | {{B*, E*}} |
+
+### 11.5 Vérifications Chrome MCP
+
+| Vérification | Écran / Composant | État |
+|---|---|---|
+| Overflows horizontaux | {{SCREEN}} | {{mobile / tablet / desktop}} |
+| Responsive | {{SCREEN}} | Tous breakpoints |
+| Éléments hors écran | {{SCREEN}} | — |
+| Navigation (aller/retour) | {{FLOW}} | — |
+| États visuels corrects | {{COMPONENT}} | vide, chargement, erreur, succès |
+
+---
+
+## Checklist de gate
+
+- [ ] Sources explicitement référencées (PRD, architecture, design, conventions).
+- [ ] Chaque ID B*/E*/C* du périmètre apparaît dans §6 (traçabilité).
+- [ ] Les contrats de données ($2) sont du code réel, pas de la prose.
+- [ ] Les algorithmes ($3) sont en pseudocode/code, pas en prose.
+- [ ] La checklist de tâches ($9) couvre toutes les phases.
+- [ ] Les critères d'acceptation ($10) sont vérifiables individuellement.
+- [ ] Le plan de tests ($11) couvre tous les IDs.
+- [ ] `node scripts/coverage-check.js slice . {{SLICE_NAME}}` renvoie `pass: true`.
+
+**Statut** : `draft` → en attente de validation.

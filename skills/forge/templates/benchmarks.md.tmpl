@@ -1,0 +1,113 @@
+---
+type: benchmarks
+status: draft
+generated_at: {{DATE}}
+derived_from:
+  - .forge/prd.md
+  - .forge/roadmap.md
+archetype: {{ARCHETYPE}}
+---
+
+# Standards de référence — {{PRODUCT_NAME}}
+
+> Ce document compare le projet à ce qui **se fait déjà** pour un produit du même archétype.
+> Il n'est pas normatif : il rend les écarts **visibles**.
+>
+> Une application est rarement entièrement nouvelle. Il existe presque toujours
+> des produits similaires et des conventions établies que les utilisateurs
+ attendent déjà. Comparer plutôt qu'inventer.
+>
+> Cf. `references/archetypes.md` pour les standards par archétype.
+
+---
+
+## 1. Archétype
+
+| | |
+|---|---|
+| **Archétype principal** | {{ARCHETYPE}} |
+| **Archétype secondaire** | {{ARCHETYPE_2}} |
+| **Plateforme** | {{web / ios / android / desktop}} |
+| **Boucle de travail** | {{UNE_PHRASE : ce que l'utilisateur fait, dans quel ordre, à quelle fréquence}} |
+
+**Justification de l'archétype** : {{CE_QUI_DANS_LE_PRD_LE_CONFIRME}}
+
+---
+
+## 2. Produits de référence
+
+| Produit | URL | Ce qu'on lui reprend | Ce qu'on ne reprend pas |
+|---|---|---|---|
+| {{NOM}} | {{URL}} | {{}} | {{}} |
+| {{NOM}} | {{URL}} | {{}} | {{}} |
+
+> Si aucun produit de référence n'existe, l'indiquer explicitement : c'est un signal, pas un oubli. Dans ce cas, justifier l'absence de benchmark.
+
+---
+
+## 3. Grille de conformité à l'archétype
+
+Les sept questions de `references/archetypes.md` § Grille de comparaison.
+
+| # | Question | Réponse | Justification si écart |
+|---|---|---|---|
+| 1 | Module le plus frequent accessible en 1–2 sauts ? | {{conformité / écart}} | {{}} |
+| 2 | Navigation bornée (≤5 principaux) et justifiée ? | {{}} | {{}} |
+| 3 | Actions récurrentes sans navigation profonde ? | {{}} | {{}} |
+| 4 | Boucle principale couverte de bout en bout ? | {{}} | {{}} |
+| 5 | États d'erreur / hors-ligne traités si requis ? | {{}} | {{}} |
+| 6 | Modules attendance de l'archétype présents ou écartés ? | {{}} | {{}} |
+| 7 | Aucun module sans user story ? | {{}} | {{}} |
+
+**Verdict** : `{{PASS / REVISE / BLOCK}}`
+
+---
+
+## 4. Standards d'archétype retenus
+
+Ce que ce produit **adopte** explicitement de l'archétype.
+
+| Standard | Adopté | Comment |
+|---|---|---|
+| {{MODÈLE de navigation}} | {{oui / non}} | {{}} |
+| {{PLATEAU de navigation}} | {{oui / non}} | {{}} |
+| {{Boucle principale}} | {{oui / non}} | {{}} |
+| {{Traitement hors-ligne}} | {{oui / non}} | {{}} |
+| {{Densité}} | {{oui / non}} | {{}} |
+| {{Modules attendance}} | {{oui / non}} | {{}} |
+
+---
+
+## 5. Écarts assumés
+
+Chaque écart est un choix, pas un oubli. La colonne de droite dit pourquoi.
+
+| # | Écart par rapport à l'archétype | Décision | Justification | Réversibilité |
+|---|---|---|---|---|
+| 1 | {{}} | {{on s'écarte}} | {{}} | {{facile / coûteuse / irréversible}} |
+| 2 | {{}} | {{on s'écarte}} | {{}} | {{}} |
+
+> Un écart sans justification est un défaut. Le remplir est obligatoire.
+
+---
+
+## 6. Risques de biais
+
+| Risque | Probabilité | Impact | Mitigation |
+|---|---|---|---|
+| Sur-copie de {{produit de référence}} au détriment du contexte | {{}} | {{}} | {{}} |
+| Manque de convention de {{standard de l'archétype}} | {{}} | {{}} | {{}} |
+| Navigation calquée sur un autre archétype | {{}} | {{}} | {{}} |
+
+---
+
+## 7. Checklist de gate
+
+- [ ] L'archétype est identifié et justifié par le PRD.
+- [ ] La boucle de travail est écrite en une phrase.
+- [ ] Au moins deux produits de référence sont documentés, ou leur absence est justifiée.
+- [ ] Les sept questions de la grille de conformité sont répondues.
+- [ ] Chaque écart est justifié et son coût de réversibilité est indiqué.
+- [ ] Les standards retenus sont ceux **applicables**, pas une liste exhaustive.
+- [ ] Le verdict est écrit.
+- [ ] Ce document est écrit **avant** le gate d'architecture, pour servir de référence au `plan-validator` en Fast Track.

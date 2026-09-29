@@ -1,0 +1,217 @@
+---
+type: architecture
+status: draft
+generated_at: {{DATE}}
+derived_from: .forge/prd.md
+---
+
+# Architecture — {{PRODUCT_NAME}}
+
+> Ce document définit COMMENT le produit est structuré techniquement.
+> Il transforme les besoins du PRD en modules, slices, fondations, modèles de données et contrats d'API.
+>
+> **Règle de granularité** : toute entité, tout champ, tout endpoint est documenté — pas résumé, pas échantillonné.
+
+---
+
+## 1. Vue d'ensemble
+
+### 1.1 Stack technique
+
+| Domaine | Choix | Version | Justification |
+|---|---|---|---|
+| Langage | {{LANGUAGE}} | {{VERSION}} | {{WHY}} |
+| Framework | {{FRAMEWORK}} | {{VERSION}} | {{WHY}} |
+| Base de données | {{DATABASE}} | {{VERSION}} | {{WHY}} |
+| ORM / Query builder | {{ORM}} | {{VERSION}} | {{WHY}} |
+| State management | {{STATE}} | {{VERSION}} | {{WHY}} |
+| Validation | {{VALIDATION}} | {{VERSION}} | {{WHY}} |
+| HTTP client | {{HTTP}} | {{VERSION}} | {{WHY}} |
+| Styling | {{STYLING}} | {{VERSION}} | {{WHY}} |
+| Composants UI | {{UI_LIB}} | {{VERSION}} | {{WHY}} |
+| Tests unitaires | {{UNIT_TEST}} | {{VERSION}} | {{WHY}} |
+| Tests E2E | {{E2E_TEST}} | {{VERSION}} | {{WHY}} |
+| Lint / Format | {{LINT}} | {{VERSION}} | {{WHY}} |
+
+### 1.2 Structure de dossiers cible
+
+```
+{{TARGET_FOLDER_STRUCTURE}}
+```
+
+---
+
+## 2. Fondations
+
+> Implémentées en premier. Tout le reste en dépend.
+
+| Fondation | Responsabilité | Dépend de | Dépendue par |
+|---|---|---|---|
+| {{FONDATION}} | {{UNE PHRASE}} | — | {{SLICES}} |
+
+### 2.1 {{FONDATION_NAME}}
+
+**Périmètre** : {{CE QUE COUVRE CETTE FONDATION}}
+
+**Contrats** :
+
+*(si applicable)*
+```{{LANGUAGE}}
+{{CODE — interface, schéma, contrat que les slices consommeront}}
+```
+
+---
+
+## 3. Modules et slices
+
+### 3.1 Inventaire
+
+| Module | Slice | User stories (PRD) | Règles métier (B*) |
+|---|---|---|---|
+| {{MODULE}} | {{SLICE}} | US-{{N}}, US-{{M}} | B1, B3, B5 |
+
+### 3.2 {{MODULE_NAME}}
+
+#### Slice : {{SLICE_NAME}}
+
+- **User stories** : US-{{N}}
+- **Règles métier** : B1, B3
+- **Dépend de** : [fondations], [autres slices]
+- **Dépendue par** : [slices]
+- **Peut être parallélisée avec** : [slices]
+
+---
+
+## 4. Modèles de données
+
+### 4.1 {{ENTITY_NAME}}
+
+| Champ | Type | Nullable | Défaut | Contraintes | Description | Exemple |
+|---|---|---|---|---|---|---|
+| {{FIELD}} | {{TYPE}} | {{oui/non}} | {{DEFAULT}} | {{CONSTRAINTS}} | {{DESCRIPTION}} | {{EXAMPLE}} |
+
+*(répéter par entité)*
+
+### 4.2 Relations
+
+| Entité A | Relation | Entité B | Clé étrangère | Cascade |
+|---|---|---|---|---|
+| {{ENTITY_A}} | {{1-1 / 1-N / N-N}} | {{ENTITY_B}} | {{FK}} | {{CASCADE}} |
+
+---
+
+## 5. Contrats API
+
+### 5.1 {{ENDPOINT_NAME}}
+
+- **Méthode** : {{GET / POST / PUT / PATCH / DELETE}}
+- **Path** : {{/api/v1/resource/:id}}
+- **Auth** : {{none / bearer / session / api-key}}
+- **Rate limit** : {{SI APPLICABLE}}
+
+**Requête** :
+
+```
+{{REQUEST_SHAPE — body, query params, path params, headers}}
+```
+
+| Paramètre | Type | Requis | Description |
+|---|---|---|---|
+| {{PARAM}} | {{TYPE}} | {{oui/non}} | {{DESCRIPTION}} |
+
+**Réponse (succès)** :
+
+```json
+{
+  {{RESPONSE_SHAPE}}
+}
+```
+
+**Codes d'erreur** :
+
+| Code | Condition | Message |
+|---|---|---|
+| 400 | {{CONDITION}} | {{MESSAGE}} |
+| 401 | Non authentifié | "Authentication required" |
+| 403 | Permissions insuffisantes | "Forbidden" |
+| 404 | Ressource non trouvée | "{{RESOURCE}} not found" |
+| 409 | Conflit (ex. doublon) | {{MESSAGE}} |
+| 422 | Validation échouée | {{MESSAGE}} |
+| 429 | Rate limit dépassé | "Too many requests" |
+| 500 | Erreur serveur | "Internal server error" |
+
+*(répéter par endpoint)*
+
+---
+
+## 6. Graphe de dépendances
+
+### 6.1 Ordre d'implémentation topologique
+
+```
+Vague 0 (fondations) :
+  ├── design-system
+  ├── auth
+  ├── error-handling
+  ├── api-client
+  └── ...
+
+Vague 1 :
+  ├── {{SLICE}} (dépend de : fondations)
+  └── {{SLICE}} (dépend de : fondations)
+
+Vague 2 :
+  ├── {{SLICE}} (dépend de : V1.{{SLICE}})
+  └── ...
+
+Vague N :
+  └── ...
+```
+
+### 6.2 Parallélisme possible
+
+| Vague | Slices parallélisables |
+|---|---|
+| 1 | {{SLICE_A}}, {{SLICE_B}}, {{SLICE_C}} |
+| 2 | {{SLICE_D}}, {{SLICE_E}} |
+
+### 6.3 Cycles
+
+*(si détectés par `scripts/dependency-check.js`)*
+
+| Cycle | Slices impliquées | Sévérité | Résolution proposée |
+|---|---|---|---|
+| {{CYCLE}} | {{SLICES}} | {{bloquant / à surveiller}} | {{RÉSOLUTION}} |
+
+*(si aucun : "Aucun cycle de dépendances détecté.")*
+
+---
+
+## 7. Décisions d'architecture (ADR)
+
+| ID | Décision | Contexte | Options considérées | Choix | Justification | Conséquences |
+|---|---|---|---|---|---|---|
+| ADR-1 | {{DÉCISION}} | {{CONTEXTE}} | {{OPTION_A}}, {{OPTION_B}} | {{CHOIX}} | {{POURQUOI}} | {{CONSÉQUENCES}} |
+
+---
+
+## 8. Risques architecturaux
+
+| Risque | Probabilité | Impact | Mitigation |
+|---|---|---|---|
+| {{RISQUE}} | {{LOW/MEDIUM/HIGH}} | {{LOW/MEDIUM/HIGH}} | {{MITIGATION}} |
+
+---
+
+## Check list de gate
+
+- [ ] Chaque user story du PRD a une slice correspondante.
+- [ ] Chaque slice a une responsabilité claire et nommable en une phrase.
+- [ ] Les fondations sont identifiées et isolées des slices métier.
+- [ ] Tous les modèles de données sont définis champ par champ.
+- [ ] Tous les endpoints API listent leurs codes d'erreur de manière exhaustive.
+- [ ] Le graphe de dépendances est sans cycle.
+- [ ] L'ordre d'implémentation est cohérent avec les dépendances.
+- [ ] Les décisions d'architecture non triviales sont documentées en ADR.
+
+**Statut** : `draft` → en attente de validation.
