@@ -27,6 +27,55 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — Une phase s'approuvait sans avoir rien produit
+
+`complete-phase` approuvait la phase quoi qu'il arrive, et `set-phase …
+approved` faisait de même par le raccourci. `forge-guard` ne pouvait pas
+compenser : ses contrôles boucle sur les livrables **déclarés**, donc zéro
+déclaration donne zéro vérification, et le rapport affiche un vert.
+
+Constaté sur le premier test grandeur nature du skill : `state.js init`, puis
+directement `set-phase 1_prd in_progress` et `complete-phase 0_bootstrap`. La
+Phase 0 s'est approuvée avec `deliverables: {}` et aucun `conventions.md` sur
+le disque. Toute la chaîne pouvait s'enchaîner sur une base absente, et aucun
+contrôle n'avait rien à dire.
+
+`PHASE_REQUIREMENTS` déclare ce que chaque phase doit produire :
+
+| Phase | Exigé |
+|---|---|
+| 0 bootstrap | `conventions` |
+| 1 prd | `prd` |
+| 2 roadmap | `roadmap` |
+| 3 design | `design-system` + au moins un écran |
+| 4 architecture | `architecture` |
+| 5 plans | au moins un plan |
+| 6 validation | `test-plan` |
+
+Trois points d'entrée appliquent le contrat : `complete-phase`,
+`set-phase … approved`, et le nouveau contrôle `forge-guard
+current_phase_has_deliverables` — ce dernier avant le gate, pour que le manque
+se voie pendant qu'on peut encore le corriger. Le refus nomme le livrable
+absent et donne la commande qui le crée.
+
+Le contrat vit dans `forge-lib` : contrôle et gate lisent la même règle, sinon
+ils peuvent diverger — et c'est le contrôle qui précède le désaccord.
+
+### fix(forge) — Le contrôle que je venais d'ajouter ne contrôlait rien
+
+`checkPhaseRequirements` testait `L.phaseRequirements`, un export qui
+n'existait pas, et faisait `return` si absent. Le contrôle disparaissait donc
+du rapport en laissant `pass: true` — exactement la panne qu'il corrigeait, dans
+le correctif lui-même.
+
+Il échoue désormais bruyamment si la lib n'expose pas le contrat, et un test le
+vérifie en retirant l'export de la lib pour de vrai. Le test crée son projet
+**avant** de casser la lib : `state.js init` lit aussi `PHASE_KEYS`, donc le
+créer pendant la fenêtre cassée aurait testé autre chose.
+
+6 tests ajoutés (72 → 78), dont le refus des deux commandes d'approbation, le
+contrôle de `forge-guard`, le chemin heureux, et la non-disparition du contrôle.
+
 ## [1.1.3] - 2026-09-29
 
 ### docs(contributing) — Le circuit de release, décrit

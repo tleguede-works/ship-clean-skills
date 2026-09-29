@@ -23,12 +23,13 @@ const L = require('./lib/forge-lib');
 
 const SKILL_VERSION = '2.0.0';
 
-const PHASE_KEYS = [
-  '0_bootstrap', '1_prd', '2_roadmap', '3_design', '4_architecture',
-  '5_implementation_plan', '6_validation', '7_implementation', '8_final_validation'
-];
-
 const STATUSABLE_KINDS = ['deliverable', 'screen', 'slice', 'foundation', 'phase'];
+
+// Le contrat de phase vit dans forge-lib : forge-guard.js doit voir exactement
+// la même règle, sinon le contrôle et le gate peuvent diverger — et c'est le
+// contrôle qui ПREDIT le désaccord.
+const PHASE_KEYS = L.PHASE_KEYS;
+const missingRequirements = L.missingPhaseRequirements;
 
 /* ------------------------------------------------------------------ *
  * Chargement
@@ -464,6 +465,21 @@ function cmdSetPhase(root, phaseKey, status) {
   if (!state.phases[phaseKey]) {
     L.fail({ error: 'unknown_phase', phase: phaseKey, expected: PHASE_KEYS });
   }
+  // Passer une phase en `approved` par ce raccourci ne doit pas contourner le
+  // contrat : c'est le même geste que `complete-phase`.
+  if (status === 'approved') {
+    const missing = missingRequirements(state, phaseKey);
+    if (missing.length) {
+      L.fail({
+        error: 'phase_incomplete',
+        phase: phaseKey,
+        missing,
+        hint: 'Utilise `complete-phase` une fois les livrables enregistrés, ouproduis-les.',
+        rule: 'Une phase qui n\'a rien produit ne peut pas être approuvée : le contrôle vert ' +
+              'sur zéro livrable déclaré donne l\'illusion d\'une base vérifiée.'
+      });
+    }
+  }
   const previous = state.phases[phaseKey].status;
   state.phases[phaseKey].status = status;
   if (status === 'approved') state.phases[phaseKey].completed_at = new Date().toISOString();
@@ -480,6 +496,25 @@ function cmdCompletePhase(root, phaseKey) {
     L.fail({ error: 'unknown_phase', phase: phaseKey, expected: PHASE_KEYS });
   }
   const idx = PHASE_KEYS.indexOf(phaseKey);
+
+  // Le gate valide un livrable, pas une intention. Une phase sans livrable ne
+  // peut pas être approuvée : sinon les phases suivantes s'appuient sur une base
+  // qui n'existe pas, et le contrôle vert de `forge-guard` — qui ne valide que
+  // les livrables *déclarés* — confirme le vide au lieu de le signaler.
+  const missing = missingRequirements(state, phaseKey);
+  if (missing.length) {
+    L.fail({
+      error: 'phase_incomplete',
+      phase: phaseKey,
+      missing,
+      deliverables_present: Object.keys(state.deliverables || {}),
+      hint: `Enregistre les livrables manquants avant d'approuver : ` +
+        `node scripts/state.js register ${root} deliverable <clé> <chemin>`,
+      rule: 'Approuver une phase qui n\'a rien produit transfère le défaut en aval, ' +
+            'où il devient indétectable.'
+    });
+  }
+
   state.phases[phaseKey].status = 'approved';
   state.phases[phaseKey].completed_at = new Date().toISOString();
   state.current_phase = idx < PHASE_KEYS.length - 1 ? String(idx + 1) : String(PHASE_KEYS.length);
