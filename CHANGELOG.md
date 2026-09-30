@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-09-30
+
 ### test(release) — un test qui passait au vert sans avoir exercé le contrôle
 
 Le test du refus par tag ne testait rien. `gitSandbox` faisait `git init` puis
