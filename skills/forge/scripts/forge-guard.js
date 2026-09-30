@@ -320,21 +320,57 @@ function checkPhaseRequirements(root) {
   });
 }
 
+/**
+ * Tous les artefacts qui portent un `content_hash`, pas seulement les livrables.
+ *
+ * `state.js register` enregistre un `content_hash` pour les écrans et pour les
+ * plans de slice comme pour les livrables — mais le contrôle ne lisait que
+ * `deliverables`. Un écran donc pouvait être réécrit après son enregistrement,
+ * ligne par ligne, sans qu'aucun garde-fou ne le voie.
+ *
+ * Constaté sur un test grandeur nature : huit écrans réécrits après leur
+ * enregistrement (ratios recalculés, règles d'usage levées), et
+ * `content_hashes_current`始终 au vert. Le hash enregistré était périmé — donc
+ * faux, et personne ne le savait.
+ *
+ * Un hash enregistré et jamais relu n'est pas une protection : c'est une
+ * information qui ment.
+ */
+function hashTargets(state) {
+  const targets = [];
+  for (const [key, d] of Object.entries(state.deliverables || {})) {
+    if (d.path) targets.push({ kind: 'deliverable', key, path: d.path });
+  }
+  for (const [key, d] of Object.entries(state.screens || {})) {
+    if (d.path) targets.push({ kind: 'screen', key, path: d.path });
+  }
+  for (const [key, d] of Object.entries(state.slices || {})) {
+    if (d.plan_path) targets.push({ kind: 'slice', key, path: d.plan_path });
+  }
+  for (const [key, d] of Object.entries(state.foundations || {})) {
+    if (d.plan_path) targets.push({ kind: 'foundation', key, path: d.plan_path });
+  }
+  return targets;
+}
+
 function checkHashes(root) {
   const state = loadStateOrFail(root);
   const drifted = [];
-  for (const [key, d] of Object.entries(state.deliverables || {})) {
-    if (!d.path || !d.content_hash) continue;
-    const current = L.contentHash(L.toAbs(root, d.path));
+  const checked = hashTargets(state);
+  for (const t of checked) {
+    const d = (t.kind === 'deliverable' ? (state.deliverables || {}) : t.kind === 'screen' ? (state.screens || {})
+      : t.kind === 'slice' ? (state.slices || {}) : (state.foundations || {}))[t.key] || {};
+    if (!d.content_hash) continue;
+    const current = L.contentHash(L.toAbs(root, t.path));
     if (current && current !== d.content_hash) {
       drifted.push({
-        deliverable: key, path: d.path,
+        kind: t.kind, artifact: t.key, path: t.path,
         recorded: d.content_hash, actual: current,
         hint: 'Édition hors bande : le corps a changé sans passer par state.js hash.'
       });
     }
   }
-  record('content_hashes_current', drifted.length === 0, { drifted });
+  record('content_hashes_current', drifted.length === 0, { checked: checked.length, drifted });
 }
 
 /* ------------------------------------------------------------------ *
@@ -475,6 +511,13 @@ function collectStatusFiles(state) {
   return out;
 }
 
+function entryFor(state, item) {
+  const bucket = item.kind === 'deliverable' ? state.deliverables
+    : item.kind === 'screen' ? state.screens
+      : item.kind === 'slice' ? state.slices : state.foundations;
+  return (bucket || {})[item.key];
+}
+
 function checkSync(root, fix) {
   const state = loadStateOrFail(root);
   const items = collectStatusFiles(state);
@@ -483,6 +526,13 @@ function checkSync(root, fix) {
   for (const item of items) {
     const abs = L.toAbs(root, item.relPath);
     if (!fs.existsSync(abs)) {
+      // Un artefact enregistré dont le fichier n'a JAMAIS été écrit n'est pas une
+      // divergence : c'est le travail d'une phase qui n'a pas commencé — une slice
+      // déclarée en Phase 4, dont le plan est un livrable de Phase 5.
+      // Ce qui est une divergence, c'est un fichier qui existait — donc un
+      // `content_hash` enregistré — et qui a disparu.
+      const entry = entryFor(state, item);
+      if (!entry || !entry.content_hash) continue;
       divergences.push({ ...item, fileStatus: null, reason: 'file_missing' });
       continue;
     }
@@ -721,17 +771,22 @@ function checkFacts(root) {
 function checkHashDrift(root) {
   const state = loadStateOrFail(root);
   const drifted = [];
-  for (const [key, d] of Object.entries(state.deliverables || {})) {
-    if (!d.path || !d.content_hash) continue;
-    const current = L.contentHash(L.toAbs(root, d.path));
+  const checked = hashTargets(state);
+  for (const t of checked) {
+    const d = (t.kind === 'deliverable' ? (state.deliverables || {}) : t.kind === 'screen' ? (state.screens || {})
+      : t.kind === 'slice' ? (state.slices || {}) : (state.foundations || {}))[t.key] || {};
+    if (!d.content_hash) continue;
+    const current = L.contentHash(L.toAbs(root, t.path));
     if (current && current !== d.content_hash) {
-      drifted.push({ deliverable: key, path: d.path, recorded: d.content_hash, actual: current });
+      drifted.push({ kind: t.kind, artifact: t.key, path: t.path, recorded: d.content_hash, actual: current });
     }
   }
   record('no_content_drift', drifted.length === 0, {
+    checked: checked.length,
     drifted,
-    fix: 'node "$FORGE/scripts/state.js" hash <anchor> <deliverable>  — après avoir relu le changement',
-    rule: "Un hash qui ne match plus signifie une édition hors bande : le document est stale."
+    fix: 'node "$FORGE/scripts/state.js" register <anchor> <kind> <cle> <chemin> — pour remettre le hash d\'un ecran ou d\'un plan a jour',
+    rule: "Un hash qui ne match plus signifie une édition hors bande : le document est stale. " +
+          "Cela vaut pour un écran et pour un plan de slice, pas seulement pour un livrable."
   });
 }
 

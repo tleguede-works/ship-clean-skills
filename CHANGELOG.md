@@ -106,6 +106,48 @@ ne s'appelle pas « validité YAML » : il vérifie ce que GitHub rejette réell
 et cette suite de merges l'a démontré trois fois en deux jours — YAML valide, bash
 valide, et workflow refusé.
 
+### fix(forge) — Les hashs des écrans et des plans n'étaient jamais relus
+
+`state.js register` enregistre un `content_hash` pour les écrans et pour les
+plans de slice comme pour les livrables — mais `forge-guard` ne lisait que
+`deliverables`. Un écran pouvait donc être réécrit après son enregistrement, ligne
+par ligne, **sans qu'aucun garde-fou ne le voie**.
+
+Constaté sur le projet de test : neuf écrans réécrits après leur enregistrement
+(ratios recalculés, règles d'usage levées), et `content_hashes_current` au vert.
+Le hash enregistré était périmé — donc faux, et personne ne le savait.
+
+Le contrôle porte maintenant sur tout ce qui porte un hash : livrables, écrans,
+slices, fondations. Et `state.js hash` accepte ces quatre genres : sans cela, la
+seule façon de remettre un hash d'écran à jour était de réenregistrer, ce qui
+n'était pas la commande documentée.
+
+### fix(forge) — `consistency-check` échouait au gate de la Phase 4
+
+Au gate de l'architecture, `consistency-check all` sortait en échec sur les dix
+plans de slice qui n'existaient pas encore, et sur trois écrans sans slice liée —
+pour la raison exacte qu'on était en train de faire ce qu'on fait dans l'ordre
+prévu.
+
+Même famille que la transition de phase : un contrôle qui échoue pour une
+information qu'on n'a pas encore à produire apprend à être ignoré. Les deux
+contrôles sont désormais **conditionnés à la phase** :
+
+- `slice_plan_exists` n'exige les plans qu'une fois la Phase 5 franchie ; avant,
+  seule une **dérive** compte — un plan écrit (donc un hash enregistré) et disparu ;
+- `screens_have_slices` saute tant qu'aucun plan n'existe.
+
+### fix(forge) — Le hash d'un écran est vérifié, pas seulement celui d'un livrable
+### fix(forge) — `register` écrivait `path` là où tout le reste lit `plan_path`
+
+Pour une slice et une fondation, `register` n'écrivait que `path`, alors que
+`set-status`, `collectStatusFiles`, `start`, `consistency` et `forge-guard paths`
+lisent `plan_path`. Conséquence : `set-status` sur une slice ne trouvait pas de
+chemin, n'écrivait aucun front matter — et **n'enregistrait pas de divergence**,
+puisque rien ne manquait à ses yeux. Le statut vivait dans l'état, le `.md` disait
+`draft`, et le contrôle de synchronisation ne le voyait pas parce qu'il regardait le
+même champ vide.
+
 ### fix(forge) — Le contrôle des placeholders signalait sa propre checklist
 
 Un livrable qui écrit « aucun `{{PLACEHOLDER}}` résiduel » — donc qui **documente**

@@ -120,6 +120,16 @@ function checkSliceReality(root, state) {
   const slices = Object.entries(state.slices || {});
   if (!slices.length) return skip('slice_reality', 'aucune slice déclarée (Phase 4 non atteinte)');
 
+  // Les plans sont produits en Phase 5. Tant que cette phase n'est pas
+  // franchie, leur absence n'est pas un défaut : c'est l'ordre normal.
+  //
+  // Constaté sur un test grandeur nature : `consistency-check all` sortait en
+  // échec au gate de la Phase 4, sur les dix plans qui n'existaient pas encore —
+  // pour la raison exacte qu'on était en train de faire ce qu'on fait dans
+  // l'ordre prévu. Un contrôle qui échoue pour une information qu'on n'a pas
+  // encore à produire apprend à être ignoré.
+  const plansExpected = ((state.phases || {})['5_implementation_plan'] || {}).status === 'approved';
+
   const missingPlan = [];
   const missingTest = [];
   const falseDone = [];
@@ -129,7 +139,11 @@ function checkSliceReality(root, state) {
     const planExists = fs.existsSync(L.toAbs(root, rel));
     const { file, count } = countTestCases(root, name);
 
-    if (!planExists) missingPlan.push({ slice: name, expected: rel });
+    // Avant la Phase 5, seule une DERIVE compte — et « le fichier existait » se
+    // prouve par le `content_hash` enregistré au moment du `register`. Un plan
+    // enregistré sans hash n'a jamais été écrit : ce n'est pas une dérive, c'est
+    // le travail de la Phase 5 qui n'a pas commencé.
+    if (!planExists && (plansExpected || s.content_hash)) missingPlan.push({ slice: name, expected: rel });
     if (DONE.test(s.status || '') && count === 0) {
       // Le défaut le plus coûteux : rend le fichier de suivi FAUX, sans signal.
       falseDone.push({
@@ -146,7 +160,13 @@ function checkSliceReality(root, state) {
     if (file && count === 0) missingTest.push({ slice: name, file });
   }
 
-  record('slice_plan_exists', missingPlan.length === 0, { missing: missingPlan });
+  record('slice_plan_exists', missingPlan.length === 0, {
+    plans_expected: plansExpected,
+    missing: missingPlan,
+    rule: plansExpected
+      ? 'Une slice déclarée sans plan ne sera jamais implémentée.'
+      : 'Avant la Phase 5, un plan manquant est l\'ordre normal. Seul compte un plan ENREGISTRÉ dont le fichier a disparu.'
+  });
   record('slice_marked_done_has_tests', falseDone.length === 0, {
     suspect: falseDone,
     rule: 'Un statut « fait » sans cas de test est une affirmation, pas un fait. Présence du fichier ≠ test qui vérifie.'
@@ -268,12 +288,20 @@ function checkScreenCoverage(root, state) {
   //
   // La navigation, en revanche, se vérifie dès maintenant : elle est
   // déclarée dans le même document que les écrans.
-  if (slicesDeclared) {
+  // Le lien écran ↔ slice s'établit quand les plans existent. Avant la Phase 5,
+  // les slices sont déclarées par la Phase 4 sans plan : exiger le lien à ce
+  // stade, c'est exiger une information que la phase courante ne peut pas
+  // produire — même erreur que le lien initial, mais un an plus tard.
+  const plansWritten = planPaths(state).some(p => fs.existsSync(L.toAbs(root, p.rel)));
+
+  if (slicesDeclared && plansWritten) {
     const noSlice = screens.filter(s => !allPlans.includes(s) && !allSlices.includes(s));
     record('screens_have_slices', noSlice.length === 0, {
       screens_without_slice: noSlice,
       rule: "Un écran de design sans slice ne sera jamais implémenté — c'est le « trou de la décomposition »."
     });
+  } else if (slicesDeclared) {
+    skip('screens_have_slices', 'aucun plan de slice écrit — le lien écran ↔ slice se vérifie à partir de la Phase 5');
   } else {
     skip('screens_have_slices', 'aucune slice déclarée — le lien écran ↔ slice se vérifie à partir de la Phase 4');
   }
