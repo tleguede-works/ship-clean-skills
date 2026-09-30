@@ -6,3 +6,8 @@
 {"ts":"2026-09-30T17:11:22.915Z","type":"phase_status","phase":"1_prd","from":"not_started","to":"in_progress"}
 {"ts":"2026-09-30T17:11:22.975Z","type":"register","deliverable":"prd","path":".forge/prd.md","kind":"deliverable"}
 {"ts":"2026-09-30T17:11:36.937Z","type":"hash","kind":"deliverable","entry":"prd","content_hash":"sha256:206ed1d15020"}
+{"ts":"2026-09-30T17:23:30.958Z","type":"register_rejected","reason":"premature_artifact","kind":"deliverable","key":"roadmap","phase":"2_roadmap"}
+{"ts":"2026-09-30T17:24:41.285Z","type":"status_change","kind":"deliverable","key":"prd","from":"draft","to":"approved","mirrored":{"mirrored":true,"changed":true,"path":".forge/prd.md","from":"draft","to":"approved"}}
+{"ts":"2026-09-30T17:24:41.333Z","type":"gate_approved","phase":"1_prd","next_phase":"2"}
+{"ts":"2026-09-30T17:24:41.391Z","type":"phase_status","phase":"2_roadmap","from":"not_started","to":"in_progress"}
+{"ts":"2026-09-30T17:25:40.490Z","type":"register","deliverable":"roadmap","path":".forge/roadmap.md","kind":"deliverable"}

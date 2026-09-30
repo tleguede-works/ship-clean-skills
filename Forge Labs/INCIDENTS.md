@@ -1102,3 +1102,108 @@ règle de processus, pas un contrôle.
 Sur ce seul document : **5 corrections**, dont 3 trouvées par le contrôle et 2 par la
 relecture du diff. Le rapport est bon, et il ne dit pas la même chose que
 l'autre moitié.
+
+---
+
+## F-39 — Phase 2 (Onduleur) : la roadmap refuse d'attendre deux réponses, et le dit
+
+### Le découpage
+
+| version | slices | taille | part |
+|---|---|---|---|
+| Fondations | 5 | M | — |
+| **MVP** | **15** | XL | **65 % du P1** |
+| V1 | 27 | XL | 1,80 × MVP |
+| V2 | 13 | XL | 0,87 × MVP |
+
+Le P1 du PRD représente **23 slices**. Le MVP n'est donc **pas** le P1 : il en est
+les deux tiers, et ce ne sont **pas** les user stories les moins prioritaires qui
+sortent. Ce sont **US-3** (suivre une commande en cours) et la **profondeur du
+catalogue** — parce qu'aucun des cinq chiffres de la §8 n'en dépend.
+
+**Le MVP retire donc la seule raison d'ouvrir l'application entre deux commandes.**
+C'est assumé, et c'est même un **biais favorable à l'échec** : moins de raisons
+d'ouvrir l'onglet Commandes, donc une règle d'arrêt plus difficile à franchir, donc
+un franchissement plus probant. Un test plus dur à tricher est un meilleur test.
+
+Sortent aussi du MVP : US-7 (favoris), US-8 (notification, native donc C11), US-10
+(adresses), US-9 (retour, Q1 sans réponse), l'étiquetage des rails, et les six
+écarts déjà assumés au PRD §7.
+
+### La décision la plus interesting : ne pas attendre Q3 et Q4
+
+Le PRD demandait si le roadmap pouvait être written avant deux réponses du
+marchand — Q3 (peut-il retrouver les commandes d'invité ?) et Q4 (fréquence
+d'achat annuelle) — **et disait lui-même que ces deux réponses décident de la valeur
+du projet**.
+
+La réponse est **non, et pour une raison que le PRD n'avait pas vue** : ces réponses
+portent sur la moyenne de **tous** les clients, alors que la seule population qui
+ouvrira l'onglet Commandes est celle des **comptes rapprochés** — et cette
+population n'existe qu'après la publication, **une seule fois**, à cause de B3 qui
+rend le rapprochement définitif.
+
+Attendre coûterait un délai sur **la mauvaise population**, *et* une fenêtre de
+publication pendant laquelle la population de réussites est consommée. Le bitmap ne
+se rouvre pas.
+
+Le MVP produit donc les deux nombres qui transforment l'attente en **diagnostic** :
+
+| | Commandes ouvertes bas | Commandes ouvertes élevé |
+|---|---|---|
+| **Correspondances réussies bas** | ce n'est pas la fréquence qui manque, c'est la donnée du marchand (Q3) | l'historique n'est pas là pour être trouvé (Q3) |
+| **Correspondances réussies élevé** | l'historique est là et ne sert à rien : il n'y a rien de nouveau à venir (Q4) | l'hypothèse du PRD tient |
+
+**Ce que vaut le MVP dans le cas défavorable :** si Q3 et Q4 sont mauvaises,
+l'application n'a aucune valeur propre — c'est une boutique mobile moins bonne que
+le site gratuit, et le PRD le dit lui-même. Ce qu'elle produit, c'est une
+**décision**, écrite avant d'avoir les chiffres, donc non discutable après. La seule
+garantie qu'elle doive tenir pour être juste dans les deux cas est **ne jamais
+mentir** : d'où trois décisions et non trois fonctionnalités — l'état « aucune
+commande trouvée » est permanent et formulé en mots, il ne se présente jamais comme
+une panne, et il rend la main au site.
+
+### Six questions que la roadmap pose au PRD, et ne tranche pas
+
+| # | question |
+|---|---|
+| **Q-A** | La règle d'arrêt a-t-elle un **dénominateur minimum** en dessous duquel elle n'est pas une décision ? Sans lui, elle se tranche sur cinq personnes. |
+| **Q-B** | L'ouverture comptée est-elle celle du **jour de la création**, ou une ouverture ultérieure ? Les deux lectures donnent des verdicts opposés. Le MVP produit les deux chiffres ; c'est la règle qui doit dire lequel compte. |
+| **Q-C** | Où se fait la jointure « compte créé / Commandes ouverte », si C9 interdit tout identifiant de personne dans un événement ? L'outil d'audit la fait par un identifiant pseudo-aléatoire, qui reste un identifiant de personne. **La seule lecture conforme est un comptage côté serveur** — donc la base applicative passe de quatre choses énumérées à cinq. |
+| **Q-D** | Les deux demandes au marchand (surveiller son taux de conversion, porter le support des comptes sans historique) sont-elles compatibles avec B6 ? |
+| **Q-E** | E5 (suppression du compte) est-il bien P1 ? La roadmap le met dans le MVP pour cause de C9, et **le signale plutôt que de le décider**. |
+| **Q-F** | B9 promet **trois** niveaux de repli, E4 n'en nomme que deux. Le troisième doit être non vide **sans compte et sans travail marchand**. |
+
+Une roadmap qui réécrit son PRD n'est plus une roadmap. Ces six trous sont **laissés
+au PRD**.
+
+### Le gel de périmètre est écrit, pas laissé au jugement
+
+Risque du MVP : une mise à jour à chaud « évidente » modifie le produit sous le
+compteur, et la mesure est invalidée. La frontière est donc **écrite** :
+
+> Toute correction qui **restaure** le comportement prévu est permise. Toute capacité
+> nouvelle est interdite jusqu'à la lecture de la règle d'arrêt.
+
+La décision n'est pas laissée au jugement de celui qui code — sinon elle sera
+prise, un soir, par quelqu'un qui ne connaît pas la fenêtre de mesure.
+
+### La sixième lecture fausse d'un contrôle
+
+`register` a affiché `derived_from: None` sur la roadmap. J'ai lu « la provenance
+n'a pas été propagée » et j'ai commencé à chercher un défaut dans la propagation
+découverte en v1.4.2.
+
+**Il n'y avait pas de défaut.** Le champ `derived_from` n'était pas **présent** dans
+la sortie — mon `.get()` renvoyait `None` par absence de clé, pas par valeur nulle.
+L'état contenait bien `['.forge/prd.md']`.
+
+C'est la **sixième** fois dans ce dossier que je lis mal la sortie d'un outil, après
+les 283 fausses citations, les sept tables imaginaires, les 539 renvois, la borne de
+600 caractères, le `no_stray_characters` innocent, et les deux fixtures de test
+fausses. Le motif ne change pas : **un contrôle est juste sur son périmètre**, et je
+lui demande plus que son périmètre au lieu de lire ce qu'il a réellement dit.
+
+La conséquence est la même à chaque fois — du travail perdu, et un faux défaut
+annoncé. Ce n'est pas un défaut du skill. C'est une habitude, et elle est à changer
+côté lecteur, pas côté script.
