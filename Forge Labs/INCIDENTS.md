@@ -938,3 +938,79 @@ trace** dans l'architecture alors qu'elles sont au PRD, et le hors-MVP de
 
 Ce n'est pas un défaut de la boucle : c'est la mesure de sa limite. Elle rend
 visible ce qu'elle ne peut pas voir, au lieu de le supposer couvert.
+
+---
+
+## F-37 — Projet 2 (Onduleur) : le skill n'est PAS sur-entraîné sur Amberline
+
+**But de ce lancement.** Amberline a servi à construire les contrôles. Le risque
+qu'un skill ainsi construit soit **accordé sur un seul projet** est réel : il
+produirait des contrôles qui ne marchent que sur la chose qui les a vue naître. On
+a donc ouvert un **deuxième projet**, archétype `mobile_consumer`, pile de
+techniques opposée, et lancé Phase 0 avec le skill inchangé.
+
+### Ce que le skill a fait, sans rien changer
+
+| étape | résultat |
+|---|---|
+| `state.js anchor` puis `init` | anchor résolu sur le `cwd`, projet créé sans incident |
+| `state.js register` | `conventions` enregistrée, `derived_from: None` — correct, elle n'a pas d'amont |
+| `forge-guard all` | **16 contrôles, 0 échec** |
+| `consistency-check all` | PASS (les contrôles inapplicables en Phase 0 rendent `skip`, pas `fail`) |
+
+**Le contrôle a bloqué, et il avait raison de bloquer.** `no_undecided_slots` a
+refusé la sortie de gate sur un marqueur `À DÉCIDER AVANT LA PHASE 1` — le runner
+de tests bout-en-bout. Le commanditaire avait lui-même écrit que ce choix engage
+une infrastructure qu'on ne reprend pas, et qu'il devait être tranché **avant la
+Phase 1**. Il était en Phase 0.
+
+C'est exactement la distinction que le gabarit explique et que le contrôle
+applique : un choix différable écrit en bloquant est **indiscernable** d'un choix
+bloquant écrit en différable, et on ne le voit qu'au moment où il est trop tard.
+Sur Amberline, cette distinction n'avait jamais été exercée : le projet n'avait
+jamais eu de case bloquante. **Un contrôle jamais vu bloquer est un contrôle
+inconnu** — celui-ci a bloqué du premier coup, sur un projet neuf.
+
+### La décision que le contrôle a forcée
+
+Le commanditaire a tranché : **Maestro, en local, sur le development build, sans
+runner en intégration continue** — pour une raison qui tient à C11 : la promotion
+vers le canal de production est une étape manuelle distincte, donc un test qui vise
+un build publié ne peut pas être un portail de fusion. Un émulateur Android sur
+runner partagé n'est pas l'appareil.
+
+Et il a nommé ce que la décision **ne couvre pas** : notifications push, démarrage
+à froid, hors-ligne et âge du cache, le rendu en 2 s, l'appareil réel. Cinq trous,
+écrits. C'est la forme que le skill exige partout ailleurs — *un trou nommé vaut
+mieux qu'un trou absent* — appliquée ici par la main qui tranche, et non par un
+script.
+
+### Le défaut trouvé : la corruption est dans la **prose de l'agent**, avant tout document
+
+Trois fragments, dans la sortie de l'agent qui joue le commanditaire, sur deux
+invocations distinctes :
+
+| fragment | ce qu'il devrait être |
+|---|---|
+| `首屏 occupy la place de tout le reste` | « occupe la place » |
+| `mes collections underneath` | « dessous » |
+| `une découverte/docscover…` | phrase tronquée |
+| `Leganthropetype est mobile_consumer` | « L'archétype » |
+| `sans jamais en tirer l advantage` | « l'avantage » |
+
+C'est **la même famille** que F-29 (`méthode` écrit avec un caractère grec et un
+caractère hébreu dans un écran approuvé) et que l'INC-002 du projet de référence
+(caractère CJK injecté). Mais le contrôle `no_stray_characters` **ne l'a pas vu**,
+et il ne pouvait pas : il inspecte les **documents livrés**, or ici la corruption
+n'a jamais atteint un document — elle est dans la **prose de l'agent**, en amont.
+
+**C'est un trou du skill, et il est de la bonne famille** : le contrôle existe,
+il est testé, il a attrapé un vrai cas — mais son **périmètre** commence après le
+point où le défaut apparaît. Un contrôle ne peut pas juger ce qu'on ne lui montre
+pas : ici, le texte de l'agent n'est écrit nulle part, il n'existe que dans la
+réponse de la sous-commande.
+
+Ce n'est pas corrigible par un script de plus. C'est corrigible par une **convention
+de transcription** : ce qui entre dans un livrable depuis une sortie d'agent est
+relu, parce que la corruption naît au point d'entrée. C'est à trancher avec le
+commanditaire.
