@@ -1,0 +1,655 @@
+{
+  "version": 2,
+  "forge_skill_version": "2.0.0",
+  "product": {
+    "name": "Amberline",
+    "created_at": "2026-09-30T08:12:34.112Z",
+    "description": "",
+    "archetype": "dashboard"
+  },
+  "project": {
+    "path": "/workspaces/ship-clean-skills/Forge Labs/bi-dashboard",
+    "anchor_source": "cwd",
+    "stack": {},
+    "package_manager": null,
+    "testing": {}
+  },
+  "reference_projects": [],
+  "run": {
+    "id": "run-muntuxfk",
+    "started_at": "2026-09-30T08:12:34.112Z",
+    "mode": "guided",
+    "fast_track": null
+  },
+  "current_phase": "4",
+  "phases": {
+    "0_bootstrap": {
+      "status": "approved",
+      "completed_at": "2026-09-30T08:15:00.520Z"
+    },
+    "1_prd": {
+      "status": "approved",
+      "completed_at": "2026-09-30T08:36:51.289Z"
+    },
+    "2_roadmap": {
+      "status": "approved",
+      "completed_at": "2026-09-30T09:00:01.281Z"
+    },
+    "3_design": {
+      "status": "approved",
+      "completed_at": "2026-09-30T12:21:33.457Z"
+    },
+    "4_architecture": {
+      "status": "in_progress"
+    },
+    "5_implementation_plan": {
+      "status": "not_started"
+    },
+    "6_validation": {
+      "status": "not_started"
+    },
+    "7_implementation": {
+      "status": "not_started"
+    },
+    "8_final_validation": {
+      "status": "not_started"
+    }
+  },
+  "deliverables": {
+    "conventions": {
+      "path": ".forge/conventions.md",
+      "type": "conventions",
+      "status": "approved",
+      "content_hash": "sha256:ad6357229cfc",
+      "updated_at": "2026-09-30T08:36:51.207Z",
+      "requires": [
+        "B7",
+        "B9",
+        "B14",
+        "C1",
+        "C3",
+        "C4",
+        "C10"
+      ]
+    },
+    "prd": {
+      "path": ".forge/prd.md",
+      "type": "prd",
+      "status": "approved",
+      "content_hash": "sha256:068f63c64923",
+      "updated_at": "2026-09-30T08:47:45.590Z",
+      "version": "1"
+    },
+    "benchmarks": {
+      "path": ".forge/benchmarks.md",
+      "type": "benchmarks",
+      "status": "approved",
+      "content_hash": "sha256:b50b32504d88",
+      "updated_at": "2026-09-30T08:34:48.709Z",
+      "requires": [
+        "B5",
+        "B7",
+        "C1"
+      ]
+    },
+    "roadmap": {
+      "path": ".forge/roadmap.md",
+      "type": "roadmap",
+      "status": "approved",
+      "content_hash": "sha256:306ae8cf579a",
+      "updated_at": "2026-09-30T09:00:01.234Z",
+      "version": "1",
+      "requires": [
+        "B1",
+        "B2",
+        "B5",
+        "B7",
+        "B9",
+        "B17",
+        "C6"
+      ]
+    },
+    "design_system": {
+      "path": ".forge/design/design-system.md",
+      "type": "design-system",
+      "status": "approved",
+      "content_hash": "sha256:e845dc92cdd5",
+      "updated_at": "2026-09-30T12:21:25.563Z",
+      "requires": [
+        "B5",
+        "B6",
+        "B11",
+        "B17",
+        "E1",
+        "E2",
+        "E11"
+      ]
+    },
+    "architecture": {
+      "path": ".forge/architecture.md",
+      "type": "architecture",
+      "status": "draft",
+      "content_hash": "sha256:1e8d8e08f7de",
+      "updated_at": "2026-09-30T12:24:51.072Z",
+      "requires": [
+        "B1",
+        "B2",
+        "B4",
+        "B5",
+        "B6",
+        "B7",
+        "B8",
+        "B9",
+        "B10",
+        "B11",
+        "B13",
+        "B14",
+        "B15",
+        "B16",
+        "B17",
+        "B22",
+        "B23",
+        "B24",
+        "B25",
+        "B26",
+        "B27",
+        "C1",
+        "C3",
+        "C4",
+        "C6",
+        "C7",
+        "C8",
+        "C9",
+        "C10",
+        "C11"
+      ]
+    }
+  },
+  "index": {
+    "nav": {
+      "archetype": "dashboard",
+      "platform": "web",
+      "core_loop": "consulter les indicateurs du jour -> voir lesquels sont hors cible -> descendre d un indicateur jusqu aux lignes qui le composent",
+      "items": [
+        {
+          "key": "indicateurs",
+          "label": "Indicateurs",
+          "rank": 1,
+          "frequency": 5,
+          "task_criticality": 5,
+          "rationale": "Le manager ouvre le produit pour lire une valeur, chaque matin. C est la premiere etape de la boucle surveiller -> detecter -> investiguer."
+        },
+        {
+          "key": "tableau-de-bord",
+          "label": "Tableaux de bord",
+          "rank": 2,
+          "frequency": 4,
+          "task_criticality": 4,
+          "rationale": "Frequent, mais moins que l indicateur : on lit un indicateur tous les jours, on consulte un tableau de bord a l approche d une reunion."
+        },
+        {
+          "key": "definitions",
+          "label": "Definitions",
+          "rank": 3,
+          "frequency": 2,
+          "task_criticality": 5,
+          "rationale": "Coeur du produit (B1, B2) et centralite maximale, mais utilise par le controleur de gestion seulement. Frequence 2 le place en 3e : le mettre plus haut aurait place l outil du rare au-dessus de la lecture du jour."
+        },
+        {
+          "key": "acces",
+          "label": "Acces et journal",
+          "rank": 4,
+          "frequency": 1,
+          "task_criticality": 4,
+          "rationale": "Usage mensuel ou lors d un controle. Preoccupation de conformite, pas boucle de travail."
+        }
+      ],
+      "primary_count": 4,
+      "overflow_count": 0,
+      "rationale": "Quatre entrees, aucune reserve. Un module qui n existe pas dans la version courante ne figure pas dans la navigation : une entree qui ne mene nulle part est un module vide, et le standard de l archetype l interdit. A l arrivee de US-10 en V1, explorer entre au rang 3 et definitions glisse au rang 4.",
+      "updated_at": "2026-09-30T08:54:16.946Z"
+    },
+    "impl_waves": [
+      {
+        "wave": 0,
+        "nodes": [
+          "auth",
+          "query-engine",
+          "design-primitives",
+          "access-log",
+          "error-handling"
+        ]
+      },
+      {
+        "wave": 1,
+        "nodes": [
+          "definition-declarer",
+          "restriction-lignes",
+          "journal-acces"
+        ]
+      },
+      {
+        "wave": 2,
+        "nodes": [
+          "definition-signer",
+          "consultation-indicateur",
+          "partage-dashboard"
+        ]
+      },
+      {
+        "wave": 3,
+        "nodes": [
+          "seuil-et-etat",
+          "historique-indicateur",
+          "drill-down",
+          "export-provenance"
+        ]
+      }
+    ]
+  },
+  "screens": {
+    "indicateurs": {
+      "path": ".forge/design/screens/indicateurs.md",
+      "type": "screen",
+      "status": "approved",
+      "content_hash": "sha256:e30d0e73ea9d",
+      "updated_at": "2026-09-30T12:21:25.605Z",
+      "requires": [
+        "B4",
+        "B5",
+        "B6",
+        "B13",
+        "B14",
+        "B17",
+        "B22",
+        "E1",
+        "E2",
+        "E3",
+        "E8",
+        "E15"
+      ]
+    },
+    "indicateur-detail": {
+      "path": ".forge/design/screens/indicateur-detail.md",
+      "type": "screen",
+      "status": "approved",
+      "content_hash": "sha256:673678472a3c",
+      "updated_at": "2026-09-30T12:21:25.648Z",
+      "requires": [
+        "B4",
+        "B5",
+        "B6",
+        "B14",
+        "B18",
+        "B22",
+        "B24",
+        "E3",
+        "E8",
+        "E11",
+        "E16",
+        "E17",
+        "E19"
+      ]
+    },
+    "decomposition": {
+      "path": ".forge/design/screens/decomposition.md",
+      "type": "screen",
+      "status": "approved",
+      "content_hash": "sha256:2a9556f2c6f8",
+      "updated_at": "2026-09-30T12:21:25.692Z"
+    },
+    "tableau-de-bord": {
+      "path": ".forge/design/screens/tableau-de-bord.md",
+      "type": "screen",
+      "status": "approved",
+      "content_hash": "sha256:e2b8ff9a9f28",
+      "updated_at": "2026-09-30T12:21:25.734Z"
+    },
+    "tableau-de-bord-composition": {
+      "path": ".forge/design/screens/tableau-de-bord-composition.md",
+      "type": "screen",
+      "status": "approved",
+      "content_hash": "sha256:5a9e650d3d91",
+      "updated_at": "2026-09-30T12:21:25.780Z"
+    },
+    "definition-formulaire": {
+      "path": ".forge/design/screens/definition-formulaire.md",
+      "type": "screen",
+      "status": "approved",
+      "content_hash": "sha256:02fdc1583158",
+      "updated_at": "2026-09-30T12:21:25.867Z"
+    },
+    "definition-signature": {
+      "path": ".forge/design/screens/definition-signature.md",
+      "type": "screen",
+      "status": "approved",
+      "content_hash": "sha256:c2d716a04f8e",
+      "updated_at": "2026-09-30T12:21:25.911Z"
+    },
+    "acces-journal": {
+      "path": ".forge/design/screens/acces-journal.md",
+      "type": "screen",
+      "status": "approved",
+      "content_hash": "sha256:c14320ea7b67",
+      "updated_at": "2026-09-30T12:21:25.965Z"
+    },
+    "definitions": {
+      "path": ".forge/design/screens/definitions.md",
+      "type": "screen",
+      "status": "approved",
+      "content_hash": "sha256:184b3f5c816a",
+      "updated_at": "2026-09-30T12:21:25.823Z",
+      "requires": [
+        "B1",
+        "B2",
+        "B3",
+        "B4",
+        "B17",
+        "B22",
+        "B26",
+        "E4",
+        "E8",
+        "E15"
+      ]
+    }
+  },
+  "foundations": {
+    "auth": {
+      "path": ".forge/plans/auth.md",
+      "type": "foundation",
+      "status": "identified",
+      "content_hash": "sha256:059459ad47a4",
+      "updated_at": "2026-09-30T10:10:43.996Z",
+      "depends_on": [],
+      "depended_on_by": [
+        "definition-declarer",
+        "definition-signer",
+        "consultation-indicateur",
+        "restriction-lignes",
+        "partage-dashboard",
+        "journal-acces"
+      ],
+      "impl_wave": 0,
+      "plan_path": ".forge/plans/auth.md",
+      "slice": "auth"
+    },
+    "query-engine": {
+      "path": ".forge/plans/query-engine.md",
+      "type": "foundation",
+      "status": "identified",
+      "content_hash": "sha256:34f5bdaecee1",
+      "updated_at": "2026-09-30T10:10:44.040Z",
+      "depends_on": [],
+      "depended_on_by": [
+        "consultation-indicateur",
+        "historique-indicateur",
+        "drill-down",
+        "restriction-lignes",
+        "export-provenance"
+      ],
+      "impl_wave": 0,
+      "plan_path": ".forge/plans/query-engine.md",
+      "slice": "query-engine"
+    },
+    "design-primitives": {
+      "path": ".forge/plans/design-primitives.md",
+      "type": "foundation",
+      "status": "identified",
+      "content_hash": "sha256:eec91eff240b",
+      "updated_at": "2026-09-30T10:10:44.085Z",
+      "depends_on": [],
+      "depended_on_by": [
+        "definition-declarer",
+        "consultation-indicateur"
+      ],
+      "impl_wave": 0,
+      "plan_path": ".forge/plans/design-primitives.md",
+      "slice": "design-primitives"
+    },
+    "access-log": {
+      "path": ".forge/plans/access-log.md",
+      "type": "foundation",
+      "status": "identified",
+      "content_hash": "sha256:e8144d464c5d",
+      "updated_at": "2026-09-30T10:10:44.126Z",
+      "depends_on": [],
+      "depended_on_by": [
+        "historique-indicateur",
+        "journal-acces"
+      ],
+      "impl_wave": 0,
+      "plan_path": ".forge/plans/access-log.md",
+      "slice": "access-log"
+    },
+    "error-handling": {
+      "path": ".forge/plans/error-handling.md",
+      "type": "foundation",
+      "status": "identified",
+      "content_hash": "sha256:faac9df5d045",
+      "updated_at": "2026-09-30T10:10:44.169Z",
+      "depends_on": [],
+      "depended_on_by": [
+        "consultation-indicateur"
+      ],
+      "impl_wave": 0,
+      "plan_path": ".forge/plans/error-handling.md",
+      "slice": "error-handling"
+    }
+  },
+  "modules": {},
+  "slices": {
+    "definition-declarer": {
+      "path": ".forge/plans/definition-declarer.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:8bc3aef5a4a4",
+      "updated_at": "2026-09-30T10:10:44.213Z",
+      "depends_on": [
+        "auth",
+        "design-primitives"
+      ],
+      "depended_on_by": [
+        "definition-signer",
+        "consultation-indicateur",
+        "partage-dashboard"
+      ],
+      "impl_wave": 1,
+      "plan_path": ".forge/plans/definition-declarer.md",
+      "slice": "definition-declarer"
+    },
+    "definition-signer": {
+      "path": ".forge/plans/definition-signer.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:9fcf75ad1db3",
+      "updated_at": "2026-09-30T10:10:44.254Z",
+      "depends_on": [
+        "auth",
+        "definition-declarer"
+      ],
+      "depended_on_by": [
+        "historique-indicateur"
+      ],
+      "impl_wave": 2,
+      "plan_path": ".forge/plans/definition-signer.md",
+      "slice": "definition-signer"
+    },
+    "consultation-indicateur": {
+      "path": ".forge/plans/consultation-indicateur.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:c106337a9431",
+      "updated_at": "2026-09-30T10:10:44.298Z",
+      "depends_on": [
+        "query-engine",
+        "auth",
+        "design-primitives",
+        "definition-declarer",
+        "error-handling"
+      ],
+      "depended_on_by": [
+        "seuil-et-etat",
+        "drill-down",
+        "export-provenance"
+      ],
+      "impl_wave": 2,
+      "plan_path": ".forge/plans/consultation-indicateur.md",
+      "slice": "consultation-indicateur"
+    },
+    "seuil-et-etat": {
+      "path": ".forge/plans/seuil-et-etat.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:abb730313df8",
+      "updated_at": "2026-09-30T10:10:44.341Z",
+      "depends_on": [
+        "consultation-indicateur"
+      ],
+      "depended_on_by": [],
+      "impl_wave": 3,
+      "plan_path": ".forge/plans/seuil-et-etat.md",
+      "slice": "seuil-et-etat"
+    },
+    "historique-indicateur": {
+      "path": ".forge/plans/historique-indicateur.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:bf3c5edf3a16",
+      "updated_at": "2026-09-30T10:10:44.389Z",
+      "depends_on": [
+        "query-engine",
+        "definition-signer",
+        "access-log"
+      ],
+      "depended_on_by": [],
+      "impl_wave": 3,
+      "plan_path": ".forge/plans/historique-indicateur.md",
+      "slice": "historique-indicateur"
+    },
+    "drill-down": {
+      "path": ".forge/plans/drill-down.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:ddee2012817f",
+      "updated_at": "2026-09-30T10:10:44.438Z",
+      "depends_on": [
+        "query-engine",
+        "consultation-indicateur"
+      ],
+      "depended_on_by": [],
+      "impl_wave": 3,
+      "plan_path": ".forge/plans/drill-down.md",
+      "slice": "drill-down"
+    },
+    "restriction-lignes": {
+      "path": ".forge/plans/restriction-lignes.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:23334ae9472d",
+      "updated_at": "2026-09-30T10:10:44.485Z",
+      "depends_on": [
+        "auth",
+        "query-engine"
+      ],
+      "depended_on_by": [
+        "export-provenance"
+      ],
+      "impl_wave": 1,
+      "plan_path": ".forge/plans/restriction-lignes.md",
+      "slice": "restriction-lignes"
+    },
+    "partage-dashboard": {
+      "path": ".forge/plans/partage-dashboard.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:0405a0d7b188",
+      "updated_at": "2026-09-30T10:10:44.528Z",
+      "depends_on": [
+        "auth",
+        "definition-declarer"
+      ],
+      "depended_on_by": [],
+      "impl_wave": 2,
+      "plan_path": ".forge/plans/partage-dashboard.md",
+      "slice": "partage-dashboard"
+    },
+    "export-provenance": {
+      "path": ".forge/plans/export-provenance.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:2e0a8e3b4a78",
+      "updated_at": "2026-09-30T10:10:44.576Z",
+      "depends_on": [
+        "query-engine",
+        "restriction-lignes",
+        "consultation-indicateur"
+      ],
+      "depended_on_by": [],
+      "impl_wave": 3,
+      "plan_path": ".forge/plans/export-provenance.md",
+      "slice": "export-provenance"
+    },
+    "journal-acces": {
+      "path": ".forge/plans/journal-acces.md",
+      "type": "slice",
+      "status": "identified",
+      "content_hash": "sha256:c3a731986574",
+      "updated_at": "2026-09-30T10:10:44.618Z",
+      "depends_on": [
+        "auth",
+        "access-log"
+      ],
+      "depended_on_by": [],
+      "impl_wave": 1,
+      "plan_path": ".forge/plans/journal-acces.md",
+      "slice": "journal-acces"
+    }
+  },
+  "gates_pending": [],
+  "audit": {
+    "log": ".forge/audit/run-log.jsonl",
+    "issues": ".forge/audit/issues.md",
+    "metrics": ".forge/audit/metrics.json",
+    "counts": {
+      "init": 1,
+      "register": 81,
+      "gate_revise": 2,
+      "status_change": 38,
+      "gate_approved": 7,
+      "finding_raised": 2,
+      "phase_status": 3,
+      "nav_prioritized": 2,
+      "sync": 2,
+      "dependency_declared": 15
+    }
+  },
+  "divergences": [],
+  "findings": [
+    {
+      "id": "F-001",
+      "domain": "architecture.md",
+      "severity": "majeur",
+      "origin": "forge",
+      "status": "open",
+      "summary": "Aucun signataire de definition n'est nomme : B2 (signataire distinct de l'auteur) et US-2 inapplicables, tout le MVP tombe",
+      "correction": "Nommer les titulaires du role signataire avant la premiere signature ; la regle signer_id != author_id est deja tranchee",
+      "artifact": null,
+      "raised_at": "2026-09-30T08:34:30.219Z",
+      "promoted_to": null,
+      "resolved_at": null
+    },
+    {
+      "id": "F-002",
+      "domain": "security.md",
+      "severity": "critique",
+      "origin": "forge",
+      "status": "open",
+      "summary": "B7 exige de demontrer l'isolation par ligne sur des lignes reelles (E5, E10) ; sans entrepot de test seede, le critere de securite n'est pas verifiable",
+      "correction": "Obtenir l'accord d'infrastructure avec l'equipe data sur une fixture seedee avant la Phase 4",
+      "artifact": null,
+      "raised_at": "2026-09-30T08:34:30.270Z",
+      "promoted_to": null,
+      "resolved_at": null
+    }
+  ]
+}
