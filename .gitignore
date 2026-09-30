@@ -14,3 +14,8 @@ node_modules/
 # Archives dentree : volumineuses, hors produit.
 *.zip
 package-lock.json
+
+# Artefacts de construction locale : le snapshot est reconstruit à chaque
+# version, jamais versionné. Un `dist/` commité ferait verifier l'archive d'une
+# version périmée en croyant vérifier la courante.
+dist/

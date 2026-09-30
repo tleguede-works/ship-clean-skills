@@ -25,18 +25,55 @@ const SCRIPTS = path.join(SKILL_DIR, 'scripts');
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
 const failures = [];
+const skipNotes = [];
+
+/**
+ * Les tests sont mis en file et exécutés séquentiellement à la fin.
+ *
+ * La file existe parce qu'un contrôle peut avoir besoin d'un moteur : `ddl-exec`
+ * charge PostgreSQL (WebAssembly), dont l'initialisation est asynchrone. Avant
+ * cette file, un test asynchrone aurait été.jeté par terre et **compté comme
+ * passé** — le pire des verdicts, parce qu'il dit avoir testé ce qu'il n'a pas
+ * testé. Les tests synchrones existants sont inchangés : `await` sur `undefined`
+ * ne fait rien.
+ */
+const queue = [];
 
 function test(name, fn) {
-  try {
-    fn();
-    passed++;
-    console.log(`  \x1b[32m✓\x1b[0m ${name}`);
-  } catch (e) {
-    failed++;
-    failures.push({ name, message: e.message });
-    console.log(`  \x1b[31m✗\x1b[0m ${name}`);
-    console.log(`    \x1b[31m${e.message}\x1b[0m`);
+  queue.push({ name, fn });
+}
+
+/**
+ * Un test qui **ne peut pas** s'exécrer faute de moteur.
+ *
+ * Il est compté à part, jamais parmi les passés. Un test qui ne s'exécute pas
+ * et se compte comme passé est la pire des mensonges : il n'en vérifie aucun, et
+ * il ne dit rien.
+ */
+function testSkippable(name, fn) {
+  queue.push({ name, fn, skippable: true });
+}
+
+async function runQueue() {
+  for (const { name, fn, skippable } of queue) {
+    try {
+      await fn();
+      passed++;
+      console.log(`  \x1b[32m✓\x1b[0m ${name}`);
+    } catch (e) {
+      if (e && e.__skip) {
+        skipped++;
+        skipNotes.push({ name, why: e.why || e.message });
+        console.log(`  \x1b[33m—\x1b[0m ${name} \x1b[2m(non exécuté : ${e.why || e.message})\x1b[0m`);
+        continue;
+      }
+      failed++;
+      failures.push({ name, message: e.message });
+      console.log(`  \x1b[31m✗\x1b[0m ${name}`);
+      console.log(`    \x1b[31m${e.message}\x1b[0m`);
+    }
   }
 }
 
@@ -1066,11 +1103,9 @@ test('SKILL.md porte la discipline de vérification et les deux niveaux d\'auton
 });
 
 /* ------------------------------------------------------------------ *
- * Exécution — les tests se sont déroulés ci-dessus
+ * Exécution — la file est vidée ici, dans l'ordre d'écriture
  * ------------------------------------------------------------------ */
 
-console.log(`\n${'─'.repeat(60)}`);
-if (failed === 0) {
 
 /* ------------------------------------------------------------------ *
  * Contrat de phase — une phase ne s'approuve pas sur sa seule parole
@@ -2663,9 +2698,191 @@ test('SKILL.md branche design-check au gate de la Phase 3', () => {
   assert(/`design-check\.js`/.test(list), 'le script doit figurer dans le tableau de référence');
 });
 
-  console.log(`\x1b[32m✓ ${passed} tests passés\x1b[0m`);
-} else {
-  console.log(`\x1b[31m✗ ${failed} échec(s)\x1b[0m, ${passed} passés`);
-  for (const f of failures) console.log(`  - ${f.name}: ${f.message}`);
+runQueue().then(() => {
+  console.log(`\n${'─'.repeat(60)}`);
+  if (failed === 0) {
+    console.log(`\x1b[32m✓ ${passed} tests passés\x1b[0m` +
+      (skipped ? ` \x1b[33m(${skipped} non exécuté)\x1b[0m` : ''));
+  } else {
+    console.log(`\x1b[31m✗ ${failed} échec(s)\x1b[0m, ${passed} passés` +
+      (skipped ? `, ${skipped} non exécutés` : ''));
+    for (const f of failures) console.log(`  - ${f.name}: ${f.message}`);
+    for (const s of skipNotes) console.log(`  · ${s.name} : ${s.why}`);
+  }
+  process.exit(failed === 0 ? 0 : 1);
+});
+
+/* ------------------------------------------------------------------ *
+ * ddl-exec — exécuter ce qu'on écrit
+ * ------------------------------------------------------------------ */
+
+section('Exécution du DDL');
+
+/** Un projet dont l'architecture porte un DDL, et éventuellement une pose et une garde. */
+function ddlProject(label, ddl, { setup = '', refuse = '' } = {}) {
+  const project = freshProject(label);
+  const block = sql => (sql ? `\n\`\`\`sql\n${sql}\n\`\`\`\n` : '');
+  writeDeliverable(project, '.forge/architecture.md', {
+    type: 'architecture',
+    body: '# Architecture\n\n' + block(ddl) + block(setup) + block(
+      refuse ? `-- forge:ddl-refuse\n${refuse}` : '')
+  });
+  return project;
 }
-process.exit(failed === 0 ? 0 : 1);
+
+/** Le contrôle dit-il qu'il a exécuté, ou dit-il qu'il n'a pas exécuté ? */
+function executed(res, check) {
+  // Invoked alone, a command's JSON *is* the result; under `all` it is nested.
+  // On ne prend pas `res.json[check]` à l'aveugle : sous `guards`, `json.guards`
+  // est le **tableau** des gardes, pas le contrôle — et un tableau est truthy.
+  const c = (res.json && typeof res.json.check === 'string') ? res.json
+    : (res.json && res.json[check] && typeof res.json[check] === 'object' && !Array.isArray(res.json[check])
+        ? res.json[check]
+        : null);
+  assert(c && typeof c === 'object' && !Array.isArray(c),
+    `le contrôle ${check} doit répondre : ${JSON.stringify(res.json).slice(0, 200)}`);
+  if (c.status === 'skipped' || c.ran === false) {
+    const e = new Error(c.why_not_run || 'moteur absent');
+    e.__skip = true;
+    e.why = c.how_to_run ? `moteur absent — ${c.how_to_run}` : 'moteur absent';
+    throw e;
+  }
+  return c;
+}
+
+testSkippable('ddl : un CHECK qui contient une sous-requête est refusé par PostgreSQL', () => {
+  // Le défaut réel de ce dossier, trouvé trois fois dans une architecture, et
+  // que **aucune relecture ne voit** : la contrainte est écrite, commentée,
+  // justifiée — et PostgreSQL la refuse à la création, parce qu'un `CHECK` doit
+  // être évaluable sur la ligne seule.
+  //
+  // C'est le test négatif exigé par la règle : un contrôle jamais vu échouer
+  // n'est pas validé, il est inconnu.
+  const project = ddlProject('ddl-sous-requete', `
+CREATE TABLE author (id integer PRIMARY KEY);
+CREATE TABLE event (id integer PRIMARY KEY, author_id integer, act text);
+ALTER TABLE event ADD CONSTRAINT no_auto CHECK (
+  act NOT IN ('sign') OR author_id <> (SELECT id FROM author)
+);`);
+
+  const res = run('ddl-exec.js', ['execute', project]);
+  const c = executed(res, 'execute');
+  assert(!c.pass, `PostgreSQL doit refuser ce CHECK : ${JSON.stringify(c).slice(0, 300)}`);
+  const hit = c.errors.find(e => /subquery in check constraint/.test(e.error));
+  assert(hit, `le refus de PostgreSQL doit être rendu tel quel : ${JSON.stringify(c.errors)}`);
+  assert(/event/.test(hit.statement), `l'instruction fautive doit être nommée : ${hit.statement}`);
+});
+
+testSkippable('ddl : un DDL valide passe, et reste silencieux', () => {
+  // Le témoin propre. Un contrôle qui n'a vu qu'échouer ne sait pas distinguer
+  // « PostgreSQL a refusé » de « le contrôle est cassé ».
+  const project = ddlProject('ddl-valide', `
+CREATE TABLE author (id integer PRIMARY KEY);
+CREATE TABLE event (id integer PRIMARY KEY, author_id integer, act text);
+ALTER TABLE event ADD CONSTRAINT no_auto CHECK (act <> 'self' OR author_id > 0);
+ALTER TABLE event ADD CONSTRAINT act_domain CHECK (act IN ('sign','refuse'));`);
+
+  const res = run('ddl-exec.js', ['execute', project]);
+  const c = executed(res, 'execute');
+  assert(c.pass, `un DDL valide ne doit jamais échouer : ${JSON.stringify(c.errors)}`);
+  assert(c.statements_run >= 4, `les instructions doivent avoir été comptées : ${c.statements_run}`);
+  assert(!c.errors.length, `aucune erreur attendue : ${JSON.stringify(c.errors)}`);
+});
+
+testSkippable('ddl : une garde déclarée qui ne tient pas est dite inerte', () => {
+  // Le deuxième défaut réel : `IF NEW.status = OLD.status THEN RETURN NEW`
+  // en tête d'un trigger. La garde est écrite, commentée, et inerte — un
+  // `UPDATE` qui écrit `published_at` sans changer le statut passe au travers.
+  // On ne le voit pas en relisant : on le voit en essayant.
+  const project = ddlProject('ddl-garde-inerte', `
+CREATE TABLE indicator (id integer PRIMARY KEY, status text NOT NULL DEFAULT 'draft',
+  signed_at integer, published_at integer);
+CREATE FUNCTION guard() RETURNS trigger AS $f$
+BEGIN
+  IF NEW.status = OLD.status THEN RETURN NEW; END IF;
+  IF NEW.status = 'published' AND NEW.signed_at IS NULL THEN
+    RAISE EXCEPTION 'publier exige une signature';
+  END IF;
+  RETURN NEW;
+END $f$ LANGUAGE plpgsql;
+CREATE TRIGGER t BEFORE UPDATE ON indicator FOR EACH ROW EXECUTE FUNCTION guard();`,
+    {
+      setup: "INSERT INTO indicator (id, status) VALUES (1, 'draft');",
+      // La tentative que le document déclare interdite : publier sans signer.
+      // Elle passe, parce que la garde ne s'atteint que sur un changement de
+      // statut. C'est le défaut, et il est invisible à la relecture.
+      refuse: "UPDATE indicator SET published_at = 7 WHERE id = 1;"
+    });
+
+  const res = run('ddl-exec.js', ['guards', project]);
+  const c = executed(res, 'guards');
+  assert(c.guards_declared === 1, `une garde doit être déclarée : ${JSON.stringify(c)}`);
+  assert(!c.pass, `la garde contournée doit faire échouer : ${JSON.stringify(c.guards)}`);
+  assert(c.guards_dead === 1,
+    `la garde doit être déclarée INERTE, pas refusée : ${JSON.stringify(c.guards)}`);
+});
+
+testSkippable('ddl : une garde qui tient est confirmée, pas supposée', () => {
+  // Le témoin propre du précédent : la même architecture, la garde qui marche.
+  // Sans ce test, on ne sait pas si `guards` sait distinguer une garde inerte
+  // d'une garde qui refuse — il rendrait « inerte » dans tous les cas.
+  const project = ddlProject('ddl-garde-active', `
+CREATE TABLE indicator (id integer PRIMARY KEY, status text NOT NULL DEFAULT 'draft', published_at integer);
+CREATE FUNCTION guard() RETURNS trigger AS $f$
+BEGIN
+  IF NEW.published_at IS NOT NULL THEN
+    RAISE EXCEPTION 'published_at ne se pose pas ici';
+  END IF;
+  RETURN NEW;
+END $f$ LANGUAGE plpgsql;
+CREATE TRIGGER t BEFORE UPDATE ON indicator FOR EACH ROW EXECUTE FUNCTION guard();`,
+    {
+      setup: "INSERT INTO indicator (id, status) VALUES (1, 'draft');",
+      refuse: "UPDATE indicator SET published_at = 7 WHERE id = 1;"
+    });
+
+  const res = run('ddl-exec.js', ['guards', project]);
+  const c = executed(res, 'guards');
+  assert(c.pass, `une garde qui refuse doit passer : ${JSON.stringify(c)}`);
+  assert(c.guards_active === 1 && c.guards_dead === 0,
+    `la garde doit être comptée active : ${JSON.stringify(c.guards)}`);
+});
+
+test('ddl : une table modifiée sans être créée est signalée, une créée ne l\'est pas', () => {
+  // `completeness` ne dépend d'aucun moteur : c'est une résolution de pointeur,
+  // le document écrit les deux listes. Donc ce test s'exécute toujours.
+  const project = ddlProject('ddl-completude', `
+ALTER TABLE signature_event ADD CONSTRAINT c1 CHECK (act <> '');
+ALTER TABLE definition_version ADD CONSTRAINT c2 CHECK (version_no > 0);
+CREATE INDEX ix ON signature_event (occurred_at);`);
+
+  const res = run('ddl-exec.js', ['completeness', project]);
+  const c = executed(res, 'completeness');
+  assert(!c.pass, `des tables modifiées sans être créées doivent être signalées : ${JSON.stringify(c)}`);
+  const names = c.dangling_references.map(o => o.table).sort();
+  assert(names.length === 2 && names[0] === 'definition_version' && names[1] === 'signature_event',
+    `les deux tables doivent être nommées, et rien d'autre : ${JSON.stringify(c.dangling_references)}`);
+
+  // Témoin propre : un DDL qui crée ce qu'il modifie ne signale rien.
+  const ok = ddlProject('ddl-completude-ok', `
+CREATE TABLE signature_event (id integer PRIMARY KEY, act text);
+ALTER TABLE signature_event ADD CONSTRAINT c1 CHECK (act <> '');`);
+  const res2 = run('ddl-exec.js', ['completeness', ok]);
+  const c2 = executed(res2, 'completeness');
+  assert(c2.pass, `un DDL autonome ne doit rien signaler : ${JSON.stringify(c2)}`);
+  assert(c2.dangling_references.length === 0, `rien à signaler : ${JSON.stringify(c2)}`);
+});
+
+test('ddl : sans moteur, le contrôle DIT qu\'il n\'a rien exécuté', () => {
+  // Le contrat le plus important du script. Un contrôle qui rend `pass` sans
+  // avoir exécuté donne un vert parfait ; `completeness` peut se permettre ce
+  // luxe, `execute` non.
+  const src = fs.readFileSync(path.join(SCRIPTS, 'ddl-exec.js'), 'utf-8');
+  assert(/status: 'skipped'/.test(src), 'un contrôle sans moteur doit rendre `skipped`');
+  assert(/found_without_running/.test(src),
+    'il doit dire ce qu\'il n\'a PAS trouvé — sinon le vide passe pour une propreté');
+  assert(/how_to_run/.test(src), 'il doit dire comment le faire tourner');
+  assert(/dependencies/.test(JSON.stringify(require(path.join(SKILL_DIR, '..', '..', 'package.json')))) ||
+         /devDependencies/.test(fs.readFileSync(path.join(SKILL_DIR, '..', '..', 'package.json'), 'utf8')),
+    'le moteur doit être une dépendance de développement du dépôt, jamais du skill distribué');
+});

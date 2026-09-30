@@ -98,6 +98,30 @@ derived_from: .forge/prd.md
 |---|---|---|---|---|
 | {{ENTITY_A}} | {{1-1 / 1-N / N-N}} | {{ENTITY_B}} | {{FK}} | {{CASCADE}} |
 
+### 4.3 Contraintes en base, et preuves qu'elles tiennent
+
+**Une contrainte écrite dans ce document n'est ni compilée, ni typée, ni exécutée : elle n'est que relue.** Trois défauts de cette sorte ont survécu à trois gates sans que personne ne les voie :
+
+- un `CHECK` qui contient une sous-requête — **PostgreSQL le refuse à la création**, donc la contrainte n'existe pas ;
+- un trigger dont la garde est inatteignable (`IF NEW.statut = OLD.statut THEN RETURN NEW` en tête) — la porte est écrite, commentée, et ne protège rien ;
+- un champ que le trigger exige et que rien ne produit.
+
+Écris le DDL, puis **exécute-le** :
+
+```bash
+node "$FORGE/scripts/ddl-exec.js" all {{ANCHOR}}
+```
+
+Puis **déclare chaque garde**. Le nom de l'opération interdite n'est pas deviné par le contrôle : c'est le document qui le nomme.
+
+```sql
+-- forge:ddl-refuse
+-- {{CE QUE CETTE GARDE INTERDIT, ET CE QUI ARRIVE SI ELLE TOMBE}}
+{{OPERATION_INTERDITE}}
+```
+
+Si cette instruction **réussit**, la porte n'est pas une porte, et `ddl-exec guards` le dira — parce que c'est PostgreSQL qui l'a exécutée.
+
 ---
 
 ## 5. Contrats API

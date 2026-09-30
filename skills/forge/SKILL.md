@@ -522,7 +522,46 @@ Sans cette déclaration, `writeBack` écrase `impl_wave` sans rien dire, et deux
 
 Génère **`.forge/architecture.md`** depuis `templates/architecture.md.tmpl`.
 
-#### 4.5 Multi-perspective review
+#### 4.5 Le DDL s'exécute, ou n'est pas écrit
+
+**Un DDL dans un document n'est ni compilé, ni typé, ni exécuté.** Il n'est que relu. On ne voit donc ses défauts qu'au moment de l'écrire, quand on est son auteur et qu'on relit ce qu'on vient d'écrire.
+
+Trois défauts de ce genre ont survécu à trois gates dans un test grandeur nature, et **aucun ne se voyait à la relecture** :
+
+- `ALTER TABLE … ADD CONSTRAINT … CHECK (… <> (SELECT … FROM …))` — un `CHECK` qui contient une sous-requête. **PostgreSQL le refuse à la création**, parce qu'un `CHECK` doit être évaluable sur la ligne seule. La contrainte n'existe pas.
+- `IF NEW.status = OLD.status THEN RETURN NEW; END IF;` en tête d'un trigger — la garde ne s'atteint que sur une transition de statut. Un `UPDATE` qui écrit une autre colonne passe **au travers**. La porte est écrite, commentée, et inerte.
+- Un `published_at` que le trigger exige mais que rien ne produit.
+
+Lance, avant le gate :
+
+```bash
+node "$FORGE/scripts/ddl-exec.js" all <anchor>
+```
+
+Trois verdicts, de trois natures :
+
+| Commande | Ce qu'elle vérifie | Moteur |
+|---|---|---|
+| `completeness` | Chaque table que le DDL modifie est créée, ou décrite en tableau de colonnes. Aucune n'est utilisée dans le vide. | aucun |
+| `execute` | PostgreSQL **accepte** chaque instruction. Une contrainte qu'il refuse n'existe pas. | `pglite` |
+| `guards` | Chaque garde que le document **déclare** refuse bien l'opération interdite. | `pglite` |
+
+**Déclare tes gardes.** Un bloc `sql` dont la première ligne est `-- forge:ddl-refuse` contient une instruction qui **doit être rejetée**. Si elle passe, le contrôle le dit — et ce qu'il dit est vrai, parce que c'est PostgreSQL qui l'a exécutée, pas une lecture :
+
+```sql
+-- forge:ddl-refuse
+-- Publier sans signature doit être refusé. Si cette instruction passe, la
+-- porte n'est pas une porte.
+UPDATE definition_version SET status = 'published' WHERE definition_version_id = 1;
+```
+
+Le nom de l'opération interdite n'est pas deviné par le contrôle : **le document la nomme**. C'est la différence entre un contrôle qui fonctionne et un contrôle qui devine — et tout contrôle qui doit déduire produit du bruit.
+
+**Un garde non déclaré n'est pas testé** : ni par un script, ni par un relecteur, ni par lui-même. `guards` rend `pass` avec `guards_declared: 0` sur une architecture qui n'en déclare aucune, et **le dit** — parce qu'un contrôle qui se tait sur ce qu'il n'a pas trouvé laisse passer un vide.
+
+Le moteur est optionnel. Sans `pglite`, `execute` et `guards` rendent `skipped` avec la ligne à installer ; ils ne rendent **jamais** `pass` sans avoir exécuté. `completeness` reste disponible : il ne demande rien à un moteur, seulement au document.
+
+#### 4.6 Multi-perspective review
 
 Avant le gate, applique la [rotation de perspective](#multi-perspective--rotation-de-perspective) — obligatoire pour l'architecture :
 - **Posture qualité** : les modèles de données sont-ils complets champ par champ ? Chaque endpoint liste-t-il tous ses codes d'erreur ? Les slices couvrent-elles toutes les user stories du PRD ?
@@ -530,7 +569,7 @@ Avant le gate, applique la [rotation de perspective](#multi-perspective--rotatio
 
 Ajoute la **conformité aux standards** : `plan-validator` compare l'architecture à `.forge/benchmarks.md` et à l'archétype (`references/archetypes.md`).
 
-#### 4.6 GATE
+#### 4.7 GATE
 
 Checklist de gate (`references/review-checklists.md#architecture`).
 
@@ -852,6 +891,13 @@ Fusionne les journaux de plusieurs projets, regroupe les défaillances par **sig
 Invocation : `node "$FORGE/scripts/<fichier>" [<anchor>] [args…]`. `$FORGE` est le
 dossier du skill, voir « Comment exécuter les scripts » plus haut.
 
+**Une seule exception, et elle est explicite** : `ddl-exec.js` charge un moteur
+PostgreSQL (`@electric-sql/pglite`) pour **exécuter** le DDL. Ce moteur est une
+*dépendance de développement du dépôt*, jamais du skill distribué. Sans lui, le
+script ne simule rien : il rend `skipped`, dit ce qu'il n'a pas fait, et donne la
+ligne à installer. Un contrôle qui prétend avoir exécuté sans avoir exécuté est
+le pire des contrôles, parce qu'il donne un vert.
+
 | Script | Rôle | Quand |
 |---|---|---|
 | `state.js start` | État réel : phase, gates, slices **avec nombre de cas de test**, constats non promus | **Étape 0, chaque session** |
@@ -868,6 +914,7 @@ dossier du skill, voir « Comment exécuter les scripts » plus haut.
 | `forge-exit.js` | Critère de sortie **exécuté** d'une slice | **Phase 7, par slice** |
 | `coverage-check.js` | Couverture d'un plan de slice | Phase 5 |
 | `design-check.js` | **Mesure** contrastes (WCAG 1.4.3 / 1.4.11), tokens sans valeur, et **parité de surface** entre composant et écrans | **Phase 3, au gate** |
+| `ddl-exec.js` | **Exécute** le DDL de l'architecture : PostgreSQL le refuse, ou pas. Vérifie que le DDL crée les tables qu'il modifie, et que les gardes **déclarées** tiennent | **Phase 4, au gate** |
 | `dependency-check.js` | Cycles, ordre topologique ; `--write` persiste le graphe | Phase 4 |
 | `audit-report.js` | Analyse croisée de plusieurs projets | Après plusieurs projets |
 | `selftest` | Tests du skill lui-même | Avant toute publication |
