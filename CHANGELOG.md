@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-30
+
 ### fix(design-check) — un texte français à 3,80:1 passait, parce que le contrôle ne savait pas le nommer
 
 `design-check` classait chaque couleur d'après son **nom**, et ses trois signaux
