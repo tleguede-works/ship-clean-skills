@@ -234,6 +234,33 @@ const PHASE_ARTIFACT_OWNERS = {
  * contenu de l'entrée (une slice *avec* plan appartient à la phase 5, la même
  * slice *sans* plan à la phase 4) et non de son seul nom.
  */
+/**
+ * Ce chemin est-il celui d'un **plan** d'implémentation ?
+ *
+ * Une slice appartient à la Phase 4, son plan à la Phase 5. Les deux sont donc
+ * deux fichiers différents, et la distinction ne peut pas se faire sur le
+ * **contenu** — il n'y en a pas encore — ni sur le **nom de la slice**, qui est le
+ * même dans les deux cas. Elle se fait sur le **chemin**, qui est la seule chose
+ * que l'enregistrement connaît.
+ *
+ * Sans cette fonction, deux lectures du même enregistrement étaient possibles et
+ * aucune n'était fausse :
+ *
+ * - `register` écrivait `plan_path = relPath`, donc une slice enregistrée contre
+ *   `.forge/architecture.md` se croyait avoir un plan, et `no_premature_artifacts`
+ *   la signalait « plan écrit avant la phase 5 » ;
+ * - le même enregistrement donnait à la slice le `content_hash` de
+ *   l'architecture, et `consistency-check` en déduisait qu'un plan avait été écrit
+ *   puis **disparu** — donc qu'il fallait le réécrire avant d'avancer.
+ *
+ * Un seul endroit décide, et il décide sur le chemin.
+ */
+function isPlanPath(relPath) {
+  if (!relPath) return false;
+  const p = String(relPath);
+  return /(^|\/)plans?\//.test(p) || /\.plan\.md$/i.test(p);
+}
+
 function ownerPhaseFor(state, kind, key, entry) {
   const current = parseInt(state && state.current_phase, 10);
   if (!Number.isFinite(current)) return null;
@@ -759,5 +786,6 @@ module.exports = {
   appendLog, readLog,
   looksLikeForgeDeliverable,
   PHASE_KEYS, PHASE_REQUIREMENTS, missingPhaseRequirements,
-  PHASE_ARTIFACT_OWNERS, bucketOf, resolveDerivedFrom, ownerPhaseFor, isPrematureArtifact, prematureArtifacts
+  PHASE_ARTIFACT_OWNERS, bucketOf, resolveDerivedFrom, ownerPhaseFor, isPrematureArtifact, prematureArtifacts,
+  isPlanPath
 };

@@ -27,6 +27,50 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(state) — une slice de Phase 4 se croyait avoir un plan
+
+`register` écrivait `plan_path = relPath` pour toute slice ou fondation. Les slices
+d'une architecture sont enregistrées **contre le document d'architecture** — c'est
+leur lieu de description — donc `plan_path` valait `.forge/architecture.md`, et deux
+contrôles divergeaient sur le même enregistrement, chacun avec une lecture
+défendable :
+
+- `no_premature_artifacts` lisait `entry.plan_path`, en déduisait un plan, et
+  signalait les 15 slices « plan écrit avant la phase 5 » ;
+- le même enregistrement donnait à la slice le `content_hash` de l'architecture, et
+  `slice_plan_exists` en déduisait qu'un plan avait été écrit puis **disparu** — donc
+  qu'il fallait le réécrire avant d'avancer.
+
+Le garde-fou n'était pas faux dans les deux cas. **L'entrée mentait**, et elle mentait
+de deux façons incompatibles. `plan_path` n'est donc plus écrit que si le chemin
+enregistré est un **chemin de plan** — `.forge/plans/…` ou `*.plan.md` — décision
+prise par `isPlanPath`, un seul endroit.
+
+Une slice déclarée en Phase 4 est **décrite**, pas implémentée : c'est la forme
+normale, et c'est le travail de la Phase 5 que d'écrire le plan. La distinction ne
+peut pas se faire sur le contenu — il n'y en a pas encore — ni sur le nom de la
+slice, identique dans les deux cas. Elle se fait sur le chemin, seule chose que
+l'enregistrement connaisse.
+
+### fix(consistency) — la preuve qu'un plan a été écrit est `plan_hash`, pas `content_hash`
+
+`content_hash` prouve qu'un fichier **existant** a changé hors bande. Il ne prouve
+rien sur un fichier absent — et une slice de Phase 4 en porte un, celui du document
+d'architecture. Lire ce hash comme une preuve de plan revient à dire « l'architecture
+a été écrite, donc chaque slice a un plan ».
+
+`register` écrit donc **`plan_hash`**, et uniquement quand le chemin enregistré est un
+chemin de plan. `slice_plan_exists` exige un plan si la Phase 5 est franchie **ou** si
+`plan_hash` existe — c'est-à-dire si un fichier de plan a réellement été écrit et
+puis a disparu, qui est une dérive et non un travail à faire.
+
+Un seul prédicat pour les deux contrôles : sans lui, les deux lectures divergent à
+nouveau, sur le même enregistrement, et c'est exactement ce qu'on vient de corriger.
+
+**195 tests** (+ 2), dont un négatif et son contre-témoin : une slice de Phase 4 n'a
+pas de `plan_path` et n'est pas signalée ; une slice enregistrée **avec** son fichier
+de plan le conserve.
+
 ## [1.9.2] - 2026-09-30
 
 ### fix(release) — la protection par tag interrogeait le mauvais dépôt
