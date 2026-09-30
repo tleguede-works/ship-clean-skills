@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-30
+
 ### fix(component-parity) — un contrôle qui n'a rien vérifié rendait « conforme »
 
 `component-parity` découvrait les composants par la **forme de leur nom** —
@@ -75,7 +77,6 @@ schéma en corrigeant le précédent.
 
 `skipped_headings` est désormais dans la sortie : un composant absent de la liste
 des lus est **visible**, au lieu d'être une absence.
-
 
 ### fix(design-check) — un texte français à 3,80:1 passait, parce que le contrôle ne savait pas le nommer
 
