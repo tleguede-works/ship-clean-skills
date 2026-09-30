@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-09-30
+
 ### fix(forge) — Le garde-fou hurlait sur chaque transition de phase
 
 `complete-phase` avance `current_phase` à la phase **suivante** dès qu'il
