@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-09-30
+
 ### feat(forge) — Le contrat d'amendement : étendre, jamais renuméroter
 
 Un amendement n'est plus une édition : c'est une commande, et elle **refuse** le
