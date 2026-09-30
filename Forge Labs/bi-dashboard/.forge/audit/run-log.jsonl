@@ -270,3 +270,7 @@
 {"ts":"2026-09-30T16:47:57.253Z","type":"fast_track_block","message":"architecture","finding":"one_active_signature_per_signer_interdit_la_resignature:le_chemin_ouvert_par_le_retrait_de_revoked_est_bloque","agent":"both"}
 {"ts":"2026-09-30T16:47:57.297Z","type":"fast_track_block","message":"architecture","finding":"aucun_trigger_BEFORE_INSERT:une_version_peut_naitre_published_sans_acte","agent":"quality-analyst"}
 {"ts":"2026-09-30T16:47:57.340Z","type":"fast_track_block","message":"architecture","finding":"porte_3_passe_pour_la_mauvaise_raison:la_fixture_v2_n_a_aucun_acte_revoke","agent":"both"}
+{"ts":"2026-09-30T21:48:33.900Z","type":"register","deliverable":"architecture","path":".forge/architecture.md","kind":"deliverable"}
+{"ts":"2026-09-30T21:53:18.215Z","type":"register","deliverable":"architecture","path":".forge/architecture.md","kind":"deliverable"}
+{"ts":"2026-09-30T21:56:15.689Z","type":"register","deliverable":"architecture","path":".forge/architecture.md","kind":"deliverable"}
+{"ts":"2026-09-30T22:01:38.911Z","type":"register","deliverable":"architecture","path":".forge/architecture.md","kind":"deliverable"}

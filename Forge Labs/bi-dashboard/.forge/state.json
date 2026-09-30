@@ -162,8 +162,8 @@
       "path": ".forge/architecture.md",
       "type": "architecture",
       "status": "stale",
-      "content_hash": "sha256:8822c2355b03",
-      "updated_at": "2026-09-30T16:36:26.173Z",
+      "content_hash": "sha256:38a9811060ff",
+      "updated_at": "2026-09-30T22:01:38.909Z",
       "requires": [
         "B1",
         "B2",
@@ -992,7 +992,7 @@
     "metrics": ".forge/audit/metrics.json",
     "counts": {
       "init": 1,
-      "register": 81,
+      "register": 85,
       "gate_revise": 3,
       "status_change": 43,
       "gate_approved": 7,
@@ -1019,7 +1019,10 @@
       "artifact": null,
       "raised_at": "2026-09-30T08:34:30.219Z",
       "promoted_to": null,
-      "resolved_at": null
+      "resolved_at": null,
+      "holder": "direction metier (nominatif, a nommer au gate)",
+      "needed_by": "avant la premiere signature en production",
+      "why_not_promoted": "B2 est deja tranche ; ce qui manque est un NOM, pas une regle. Promouvoir un constat dont la correction est « nommer quelqu un » ecrireait dans un fichier de regles une obligation qui n a pas de titulaire."
     },
     {
       "id": "F-002",
@@ -1032,7 +1035,10 @@
       "artifact": null,
       "raised_at": "2026-09-30T08:34:30.270Z",
       "promoted_to": null,
-      "resolved_at": null
+      "resolved_at": null,
+      "holder": "equipe data / infrastructure",
+      "needed_by": "avant la Phase 6 (validation)",
+      "why_not_promoted": "B7 exige une DEMONSTRATION sur des lignes reelles. Aucune fixture seedee n existe ; la correction depend d un accord externe, pas d une decision d architecture. La promouvoir transformerait un blocage externe en obligation documentaire."
     }
   ]
 }
