@@ -616,3 +616,172 @@ Au-delà de douze caractères, le contrôle refuse de deviner et compte.
 | 1 | nommer la cible des 276 renvois nus, en commençant par les 15 plans (les cibles d'INC-011) |
 | 2 | ne plus éditer un artefact approuvé : passer par `state.js amend --reason` |
 | 3 | reprendre les 17 renvois d'INC-011 contre l'architecture amendée, en Phase 5 |
+
+---
+
+## F-35 — Les trois décisions arbitrées appliquées, et un cinquième défaut trouvé en les appliquant
+
+**Levé par** `state.js amend` (v1.6.0) et vérifié par `ddl-exec` (v1.5.0, v1.6.1).
+
+Les trois décisions arbitrées étaient justes, et aucune n'était appliquée. Une
+quatrième est apparue **pendant** leur application — donc avant même la
+vérification.
+
+### 1. « signable » : deux fois dans le document, défini zéro fois
+
+| occurrence | sens | ce qu'il advient si on lit l'autre |
+|---|---|---|
+| § 5.5, sur le corps de `POST /versions` | « assez complète pour être signée » | le `threshold` de **tous** les contrats de lecture vaut `null` en permanence |
+| ADR-7 révisé, sur le signataire | « il existe quelqu'un pour la signer » | le `409 DEFINITION_NOT_SIGNED` de § 5.10 est **inatteignable** |
+
+Défini en **§ 4.6.0**, une fois : *une version est signable quand elle est
+`in_review` **et** que son indicateur a un signataire désigné nommé, distinct de
+l'auteur*. C'est un **prédicat dérivé**, pas un statut de plus — un statut sans
+producteur est exactement le défaut que `revoked` avait.
+
+Trois conséquences, chacune ferme un trou :
+
+1. `POST /versions` accepte **toujours** un `threshold`. Il est versionné *avec* la
+   définition (B14) et ne devient un seuil qu'à la signature (B11) ; le rejeter
+   sur une version `draft` — donc jamais signable — rendait le seuil perdu à
+   l'écriture.
+2. Le `409 DEFINITION_NOT_SIGNED` reste **atteignable** : publier exige `signed`,
+   condition plus forte que signable.
+3. Un signataire non nommé est un blocage portant sur l'**indicateur** (`F-001`),
+   pas une ambiguïté de vocabulaire.
+
+### 2. `revoked` quitte le domaine — la révocation est un acte, pas un état
+
+| | avant | après |
+|---|---|---|
+| domaine de `definition_version.status` | `draft, in_review, signed, refused, published, revoked` | `draft, in_review, signed, refused, published` |
+| `signed` → ? | `revoked` (terminal) | **`draft`** (re-soumissible) |
+| terminalité | `refused` **et** `revoked` | `refused` seul, et c'est une conséquence du gel |
+
+**Pourquoi.** B26, qui est la règle **approuvée**, dit : *« La signature est
+révocable par l'auteur de la version jusqu'à sa première publication. »* Elle
+parle d'un **droit de retrait**, pas d'un état du cycle de vie. L'architecture
+avait ajouté une terminalité que le PRD n'avait jamais demandée.
+
+Et le prix annoncé — *« l'historique porterait deux signatures contradictoires »* —
+était **imaginaire** : B22 porte sur les **valeurs** (*« une nouvelle version ne
+réécrit pas l'historique des valeurs »*), pas sur les signatures. Le journal est
+**append-only** : il conserve `sign`, puis `revoke`, puis `sign`. Rien n'est
+réécrit, donc rien n'est contradictoire — la trace montre une **séquence**, ce
+qu'un journal doit montrer. Une version non re-signable perdait la seule chose
+qu'un audit d'une décision de gestion demande : **la suite**.
+
+Touché aussi : le diagramme de § 5.0, la table des transitions, les quatre
+messages `409`, les deux exemples de réponse, et le champ
+`versions[].status` de l'historique (où `revoked` devient un **acte** du journal,
+pas un statut). `session.revoked_at` est **conservé** : c'est une autre entité.
+
+### 3. La garde de `published_at` passe en première du trigger
+
+```sql
+-- avant : inatteignable
+IF NEW.status = OLD.status THEN RETURN NEW; END IF;   -- la garde ci-dessous est morte
+… IF NEW.status = 'published' THEN … published_at …
+
+-- après : première, et ne dépend que de `published_at`
+IF NEW.published_at IS DISTINCT FROM OLD.published_at THEN
+  IF OLD.published_at IS NOT NULL THEN RAISE EXCEPTION '… B26 verrouille …'; END IF;
+  …
+END IF;
+```
+
+Le trigger est `BEFORE UPDATE OF status, published_at` : il se déclenchait, puis ne
+faisait rien pour une requête qui ne touche que `published_at`.
+`UPDATE definition_version SET published_at = NULL` sur une version `published`
+déliait **silencieusement** le verrou B26 — et le document affirmait à deux
+endroits que ce refus a lieu « en base ».
+
+**Une garde qui en protège une autre n'est pas une garde** : c'est une instruction
+placée au mauvais endroit.
+
+### 4. ADR-1 : le `CHECK` que PostgreSQL refusait à la création
+
+`ADD CONSTRAINT signer_is_not_author CHECK (… actor_id <> (SELECT author_actor_id
+FROM definition_version WHERE …))` — **un `CHECK` doit être évaluable sur la ligne
+seule**. La migration échouait, donc la porte d'ADR-1 n'existait pas.
+
+Remplacé par un `CREATE CONSTRAINT TRIGGER … DEFERRABLE INITIALLY DEFERRED`, qui
+est la forme que PostgreSQL accepte et qui va avec l'ordre d'écriture réel.
+
+### 5. Le défaut trouvé **pendant** l'application — le plus grave des cinq
+
+`revoke_target_is_legal` était déclaré :
+
+```sql
+CREATE CONSTRAINT TRIGGER revoke_target_is_legal
+  AFTER INSERT ON signature_event DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION revoke_targets_a_legal_act();
+```
+
+**sans clause `WHEN`**, alors que la fonction exige que `revokes_event_id` pointe
+un acte `sign` ou `submit`. Or cette colonne est `NULL` pour tout acte qui n'est
+pas un `revoke` — c'est la règle de la colonne elle-même. Le trigger
+s'exécutait donc sur les **cinq** actes et rejetait les quatre autres :
+
+| acte | `revokes_event_id` | résultat |
+|---|---|---|
+| `submit` | `NULL` | **rejeté** |
+| `sign` | `NULL` | **rejeté** |
+| `refuse` | `NULL` | **rejeté** |
+| `publish` | `NULL` | **rejeté** |
+| `revoke` | un `sign` ou `submit` | accepté |
+
+Donc `in_review` n'avait pas de producteur, la signature ne pouvait pas exister,
+`published_at` ne pouvait pas être posé : **tout le cycle de vie était
+inatteignable**. Le commentaire juste au-dessus annonçait pourtant la règle (*« la
+cible est `sign` ou `submit`, jamais `refuse`, jamais `publish` »*) : l'intention
+était écrite, juste pas appliquée au bon ensemble.
+
+**Trouvé en déclarant les gardes de § 4.21, pas en relisant.** Il a fallu que le
+contrôle exécute une tentative pour qu'il sorte.
+
+### 6. § 4.21 — quatre portes, déclarées et essayées
+
+```sql
+-- forge:ddl-refuse
+```
+
+| porte | ce qu'elle interdit | refusée par |
+|---|---|---|
+| 1 | l'auteur atteste sa propre version | `signer_is_not_author` |
+| 2 | réécrire `published_at` | `definition_version_lifecycle_needs_an_act` |
+| 3 | rouvrir une version `published` | idem, garde de transition |
+| 4 | publier sans acte `publish` | idem |
+
+`ddl-exec guards` : **4 déclarées, 4 actives, 0 inertes.**
+
+### Ce que ça a coûté au skill
+
+Quatre bugs de `ddl-exec` trouvés en corrigeant ce document — dont un qui rendait le
+contrôle **incapable de conclure** : `guards` exécutait un bloc entier et s'arrêtait
+à la première faute, donc les `CREATE TRIGGER` **suivants** un `GRANT` cassé
+n'étaient jamais créés, et les quatre portes étaient annoncées « inertes » sur un
+schéma inexistant. Corrigé en v1.6.1.
+
+Et un cinquième, dans `state.js amend` : il écrivait l'autorité sans le miroir
+(v1.6.2).
+
+### État du gate
+
+| contrôle | avant | après |
+|---|---|---|
+| `ddl-exec execute` | **1 erreur** (`cannot use subquery in check constraint`) | **0** |
+| `ddl-exec guards` | 0 déclaré | **4 déclarés, 4 actifs** |
+| `ddl-exec completeness` | 0 orpheline, 2 en prose seule | **inchangé** — voir ci-dessous |
+| `forge-guard all` | 2 échecs | **1 échec** : `no_premature_artifacts` |
+| `consistency all` | PASS | PASS |
+| `dependency-check` | PASS | PASS |
+
+`no_premature_artifacts` est **le résultat attendu** : les 15 plans de la Phase 5
+existent alors que la phase courante est 4. Ce n'est pas un défaut.
+
+`completeness` reste à **2 tables en prose seulement** (`signature_event`,
+`definition_version`) : l'architecture décrit son schéma en tableaux de colonnes et
+n'écrit aucun `CREATE TABLE`. Le contrôle a raison — ce DDL ne peut pas être
+exécuté seul. C'est F-33, action n° 2, et c'est un choix de forme à trancher, pas
+un défaut à corriger en douce.

@@ -1,6 +1,6 @@
 ---
 type: architecture
-status: draft
+status: stale
 generated_at: 2026-09-30
 derived_from: .forge/prd.md
 ---
@@ -948,7 +948,7 @@ sont accordés au rôle applicatif sur les colonnes de définition.
 | `definition_version_id` | `uuid` (PK) | non | `gen_random_uuid()` | — | Identifiant de version | `9b2e…` |
 | `indicator_id` | `uuid` (FK) | non | — | → `indicator.indicator_id`, `ON DELETE RESTRICT` | Indicateur concerné | `3f1c…` |
 | `version_no` | `integer` | non | — | ≥ 1 ; unique `(indicator_id, version_no)` | Rang de la version, croissant, jamais réattribué | `3` |
-| `status` | `text` | non | `'draft'` | `draft` \| `in_review` \| `signed` \| `refused` \| `published` \| `revoked` — **dérivé**, jamais écrit sans acte (§ 4.20) | Cycle de vie de la version ; **projection** de `signature_event` | `signed` |
+| `status` | `text` | non | `'draft'` | `draft` \| `in_review` \| `signed` \| `refused` \| `published` — **dérivé**, jamais écrit sans acte (§ 4.20) | Cycle de vie de la version ; **projection** de `signature_event` | `signed` |
 | `author_actor_id` | `text` (FK) | non | — | → `actor.actor_id` | Auteur de **cette** version | `00u91ab77c` |
 | `label` | `text` | non | — | 1..120 car. | Intitulé porté par la version | `CA par client` |
 | `formula` | `text` | non | — | 1..2000 car., SQL vérifié par `query-planner` | Formule, figée pour toujours | `sum(sales.net_amount)` |
@@ -971,6 +971,47 @@ sont accordés au rôle applicatif sur les colonnes de définition.
 > **bornée, nommée et adossée à un acte** (§ 4.20). Le journal reste la source de
 > vérité : une ligne ne peut pas dire `signed` sans qu'un acte `sign` existe.
 
+#### 4.6.0 « Signable », défini une fois
+
+Le mot **apparaissait deux fois dans ce document et n'y était défini nulle part**,
+dont sur le **seul** chemin d'écriture du seuil. Les deux occurrences ne voulaient
+pas dire la même chose :
+
+- § 5.5, sur le corps de `POST /versions` : *« Rejeté si la version n'est pas
+  signable »* — donc « assez complète pour être signée » ;
+- ADR-7 révisé, sur le signataire : *« un indicateur sans signataire désigné n'est
+  pas signable »* — donc « il existe quelqu'un pour la signer ».
+
+Les deux lectures ont des conséquences **opposées**. Si « signable » veut dire
+« signée », alors `definition_threshold` n'est **jamais** remplie — car § 5.4 et
+§ 5.5 créent toujours une version `draft` — et le `threshold` que tous les contrats
+de lecture rendent vaut `null` en permanence. Si « signable » veut dire « assez
+complète pour être signée », alors le `409 DEFINITION_NOT_SIGNED` de § 5.10 est
+**inatteignable** : la version est par définition prête à être signée.
+
+**Définition, et elle est dérivée, pas un statut de plus :**
+
+> Une version est **signable** quand elle est `in_review` **et** que son
+> indicateur a un `designated_signer_actor_id` nommé dans l'annuaire, distinct de
+> l'auteur de la version.
+
+Trois conséquences, et chacune ferme un trou au lieu d'en ouvrir un :
+
+1. **`POST /versions` accepte toujours un `threshold`.** La version qu'il crée est
+   `draft`, donc jamais signable — et si le champ était rejeté sur ce critère, le
+   seuil serait **perdu à l'écriture** alors qu'il est versionné *avec* la
+   définition (B14) et ne devient un seuil qu'à la signature (B11). Rejeter ici
+   rendait le `threshold` de tous les contrats de lecture `null` en permanence.
+2. **Le `409 DEFINITION_NOT_SIGNED` de § 5.10 reste atteignable** : publier exige
+   `signed`, ce qui est une condition **plus forte** que signable. Signable n'est
+   pas signé, et l'inverse non plus.
+3. **Un signataire non nommé est un blocage, pas une rejection de champ.** Il
+   porte sur l'indicateur, pas sur la version : `F-001`, un défaut connu et non
+   promu, pas une ambiguïté de vocabulaire.
+
+« Signable » ne s'applique **qu'ici**. Ailleurs, le document dit `in_review`,
+`signé` ou `publié` — des états, donc vérifiables.
+
 #### 4.6.1 Le cycle de vie d'une version, et qui l'écrit
 
 Chaque flèche a **un acte nommé** dans `signature_event` et **un endpoint** dans § 5.
@@ -983,7 +1024,7 @@ Il n'existe aucun chemin qui change `status` autrement.
 | 3 | `in_review` → `signed` | `sign` | le **signataire désigné**, `≠` l'auteur (ADR-1) | — | § 5.8 |
 | 4 | `in_review` → `refused` | `refuse` | le signataire désigné, motif obligatoire | — | § 5.8 |
 | 5 | `signed` → `published` | `publish` | le **propriétaire** de l'indicateur | **oui** — `= occurred_at` de l'acte | § 5.10 |
-| 6 | `signed` → `revoked` | `revoke` référençant l'acte `sign` | l'auteur de la version ou le propriétaire | **non** — conservée telle quelle | § 5.11 |
+| 6 | `signed` → `draft` (retrait de la signature) | `revoke` référençant l'acte `sign` | l'auteur de la version ou le propriétaire | **non** — conservée telle quelle | § 5.11 |
 
 Trois règles, et elles sont toutes des conséquences, pas des choix :
 
@@ -991,14 +1032,33 @@ Trois règles, et elles sont toutes des conséquences, pas des choix :
   passe par une nouvelle version (B1, ADR-8). Le retour de `in_review` à `draft` ne
   rend donc **pas** la version éditable : il la rend re-soumissible, ce qui est tout
   autre chose.
-- **`refused` et `revoked` sont terminaux** pour cette version. On ne resigne pas une
-  version révoquée : on en crée une autre, sinon l'historique porterait deux signatures
-  contradictoires sur la même formule (B22).
+- **`refused` est terminal** pour cette version, et c'est une conséquence du gel :
+  le signataire a refusé cette formule, or le contenu ne peut plus changer (B1,
+  ci-dessus). Il n'y a donc rien à corriger sur place — il faut une nouvelle version.
+  En revanche **une signature révoquée ne rend pas la version terminale** : elle la
+  rend `draft`, donc re-soumissible puis re-signable.
 - **`published` est terminal et verrouille.** C'est là que B26 mord : tant que
   `published_at IS NULL`, la signature reste révocable (§ 5.11) ; dès qu'il est écrit,
   elle ne l'est plus et l'API le dit. La publication écrit aussi
   `indicator.current_signed_version_id` (§ 4.5) — **dans la même transaction**, sinon
   il existerait un instant où une version est publiée et ne porte pas la valeur (B4).
+
+> **Pourquoi la révocation ramène à `draft` et non à un état `revoked`.** B26, qui
+> est la règle approuvée, dit *« La signature est révocable par l'auteur de la
+> version jusqu'à sa première publication »*. Elle parle d'un **droit de
+> retrait**, pas d'un état du cycle de vie. Une version qui se nomme d'état
+> `revoked` ajoute une terminalité que le PRD n'a jamais demandée, et cette
+> terminalité a un prix concret : l'historique d'une formule porte deux signatures
+> — la révoquée puis la nouvelle — et la règle « un état terminal ne se rejoue
+> pas » les rend contradictoires.
+>
+> Ce prix est **imaginaire**, et c'est B22 qui le démonte : B22 porte sur les
+> **valeurs** (« une nouvelle version ne réécrit pas l'historique des valeurs »),
+> pas sur les signatures. Or le journal est **append-only** (§ 4.8) : il conserve
+> `sign`, puis `revoke`, puis `sign`. Rien n'est réécrit, donc rien n'est
+> contradictoire — la trace montre une **séquence**, ce qui est exactement ce
+> qu'un journal doit montrer. Une version qui ne peut pas être re-signée perd donc
+> la seule chose que l'audit d'une décision de gestion demande : **la suite**.
 
 > **Pourquoi la publication est un acte et non une dérivation.** On pourrait dériver
 > `published` de « il existe un acte `sign` et `indicator.current_signed_version_id`
@@ -1048,7 +1108,7 @@ Cinq actes, et **chacun a un producteur nommé** — c'est la table qui ferme le
 | `submit` | l'auteur de la version ou le propriétaire | sans lui, `in_review` n'a pas de producteur et § 5.8 répond `409` pour toujours | non |
 | `sign` | le signataire désigné | la signature (B2, ADR-1) | non |
 | `refuse` | le signataire désigné | le refus motivé est une trace, pas un silence | non |
-| `revoke` | l'auteur ou le propriétaire | retire **un `submit`** (retour à `draft`) ou **un `sign`** (`signed → revoked`) | non — et **jamais** réécrire un `published_at` déjà posé |
+| `revoke` | l'auteur ou le propriétaire | retire **un `submit`** (retour à `draft`) ou **un `sign`** (retour à `draft`) | non — et **jamais** réécrire un `published_at` déjà posé |
 | `publish` | le propriétaire de l'indicateur | pose `published_at`, donc **pose le verrou B26** | **oui** |
 
 > **`revoke` a deux cibles, pas deux verbes.** Retirer une soumission et révoquer
@@ -1078,11 +1138,38 @@ Cinq actes, et **chacun a un producteur nommé** — c'est la table qui ferme le
 --    l'auteur ne peut pas se mettre en face de lui-même. Elle ne porte pas sur
 --    `submit` ni sur `publish`, que l'auteur et le propriétaire font par nature
 --    (B2 : l'auteur ne signe pas, il ne soumet ni ne publie).
-ALTER TABLE signature_event ADD CONSTRAINT signer_is_not_author CHECK (
-  act NOT IN ('sign','refuse') OR actor_id <> (
-    SELECT author_actor_id FROM definition_version
-     WHERE definition_version_id = signature_event.definition_version_id)
-);
+--
+--    **Pourquoi un trigger et pas un `CHECK`.** Cette version était écrite
+--    `ADD CONSTRAINT signer_is_not_author CHECK (… actor_id <> (SELECT
+--    author_actor_id FROM definition_version WHERE …))`. **PostgreSQL refuse une
+--    sous-requête dans un `CHECK`** : la contrainte doit être évaluable sur la
+--    ligne seule, sans lire une autre table. La migration échouait donc à la
+--    création, et la porte d'ADR-1 n'existait pas.
+--
+--    Ce n'était pas visible à la relecture : la contrainte était écrite,
+--    commentée, numérotée, et justifiée par une décision d'architecture. Elle
+--    n'a été vue que le jour où `ddl-exec` l'a **exécutée**.
+--
+--    `DEFERRABLE INITIALLY DEFERRED` parce que l'acte et la ligne qu'il vise
+--    sont écrits dans la même transaction, dans un ordre que le trigger ne
+--    contrôle pas.
+CREATE OR REPLACE FUNCTION signature_is_not_the_author() RETURNS trigger AS $guard$
+DECLARE author_id text;
+BEGIN
+  IF NEW.act NOT IN ('sign','refuse') THEN RETURN NULL; END IF;
+  SELECT author_actor_id INTO author_id
+    FROM definition_version WHERE definition_version_id = NEW.definition_version_id;
+  IF author_id IS NOT NULL AND NEW.actor_id = author_id THEN
+    RAISE EXCEPTION 'auto-signature : l''auteur % ne peut pas attester sa propre version', NEW.actor_id
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NULL;
+END $guard$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER signer_is_not_author
+  AFTER INSERT OR UPDATE ON signature_event
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION signature_is_not_the_author();
 -- 2. Le motif est obligatoire pour un refus, et pour un retrait.
 ALTER TABLE signature_event ADD CONSTRAINT refusal_has_reason CHECK (
   act NOT IN ('refuse','revoke') OR (reason IS NOT NULL AND length(btrim(reason)) > 0)
@@ -1090,6 +1177,22 @@ ALTER TABLE signature_event ADD CONSTRAINT refusal_has_reason CHECK (
 -- 3. Un `revoke` référence un `sign` ou un `submit` — jamais un refus, jamais
 --    une publication, jamais un autre `revoke`. C'est ce qui rend le cycle
 --    de vie de § 4.6.1 non cyclable en base, pas seulement dans le code.
+--    **La clause `WHEN` n'est pas un détail, c'est toute la correction.** Ce trigger
+--    était déclaré `AFTER INSERT ON signature_event` **sans `WHEN`**, alors que la
+--    fonction exige que `revokes_event_id` pointe un acte `sign` ou `submit`. Or
+--    `revokes_event_id` est `NULL` pour tout acte qui n'est pas un `revoke` — c'est
+--    la règle de la colonne elle-même. Le trigger s'exécutait s'exécutait sur les
+--    **cinq** actes et rejetait les quatre autres : `submit`, `sign`, `refuse` et
+--    `publish` étaient **impossibles à écrire**.
+--
+--    Donc `in_review` n'avait pas de producteur, la signature ne pouvait pas
+--    exister, `published_at` ne pouvait pas être posé : tout le cycle de vie était
+--    inatteignable. Et le commentaire juste au-dessus annonçait la règle
+--    (*« la cible est `sign` ou `submit`, jamais `refuse`, jamais `publish` »*) —
+--    l'intention était écrite, juste pas appliquée au bon ensemble.
+--
+--    Trouvé en déclarant les quatre gardes de § 4.21, pas en relisant : le trigger
+--    était correct en apparence, commenté, numéroté, et justifié.
 CREATE FUNCTION revoke_targets_a_legal_act() RETURNS trigger AS $$
 DECLARE target text;
 BEGIN
@@ -1101,7 +1204,8 @@ BEGIN
 END $$ LANGUAGE plpgsql;
 CREATE CONSTRAINT TRIGGER revoke_target_is_legal
   AFTER INSERT ON signature_event DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW EXECUTE FUNCTION revoke_targets_a_legal_act();
+  FOR EACH ROW WHEN (NEW.act = 'revoke')
+  EXECUTE FUNCTION revoke_targets_a_legal_act();
 -- 4. Au plus une signature active par version et par signataire.
 CREATE UNIQUE INDEX one_active_signature_per_signer
   ON signature_event (definition_version_id, actor_id)
@@ -1385,32 +1489,50 @@ CREATE TRIGGER definition_version_content_frozen
 CREATE FUNCTION lifecycle_needs_an_act() RETURNS trigger AS $$
 DECLARE required_act text;
 BEGIN
-  IF NEW.status = OLD.status THEN
-    RETURN NEW;                                   -- pas de transition : rien à justifier
-  END IF;
-  required_act := CASE NEW.status
-    WHEN 'in_review' THEN 'submit'  WHEN 'signed'   THEN 'sign'
-    WHEN 'refused'    THEN 'refuse'  WHEN 'revoked'  THEN 'revoke'
-    WHEN 'published'  THEN 'publish' WHEN 'draft'    THEN 'revoke'  -- retrait de soumission
-  END;                                             -- 'draft' n'a pas d'acte : la
-                                                    -- porte 2 l'interdit de toute façon
-  IF NOT EXISTS (SELECT 1 FROM signature_event
-                  WHERE definition_version_id = NEW.definition_version_id
-                    AND act = required_act) THEN
-    RAISE EXCEPTION '% -> % sans acte % dans signature_event',
-      OLD.status, NEW.status, coalesce(required_act, '<inconnu>');
-  END IF;
-  -- `published_at` vient de l'acte, jamais d'une horloge de service : c'est lui
-  -- qui verrouille la révocation (B26), donc il ne peut pas être une valeur
-  -- libre, et il ne s'écrit qu'une fois.
-  IF NEW.status = 'published' THEN
+  -- **Les deux gardes sont independantes, et c'est le point.**
+  --
+  -- Une version precedente commencait par `IF NEW.status = OLD.status THEN
+  -- RETURN NEW` : la garde `published_at` etait ecrite plus bas, donc
+  -- **inatteignable** pour toute requete qui ne changeait pas `status`. Or le
+  -- trigger est `BEFORE UPDATE OF status, published_at` : il se declenchait, puis
+  -- ne faisait rien. `UPDATE definition_version SET published_at = NULL` sur une
+  -- version `published` -- `status` inchange -- sortait au premier `RETURN` et
+  -- **deliait silencieusement le verrou B26**. Le document affirmait a deux
+  -- endroits que ce refus a lieu « en base ».
+  --
+  -- La garde de `published_at` est donc **la premiere**, et elle ne depend que de
+  -- `published_at` -- jamais du statut. Une garde qui en protege une autre n'est
+  -- pas une garde : c'est une instruction placee au mauvais endroit.
+  IF NEW.published_at IS DISTINCT FROM OLD.published_at THEN
+    IF OLD.published_at IS NOT NULL THEN
+      RAISE EXCEPTION 'published_at ne se reecrit pas : B26 verrouille a la premiere publication';
+    END IF;
+    IF NEW.published_at IS NULL OR NEW.status <> 'published' THEN
+      RAISE EXCEPTION 'published_at ne se pose que par un acte publish, et ne se repose jamais';
+    END IF;
     IF NEW.published_at IS DISTINCT FROM (
          SELECT occurred_at FROM signature_event
           WHERE definition_version_id = NEW.definition_version_id AND act = 'publish') THEN
-      RAISE EXCEPTION 'published_at doit être l''occurred_at de l''acte publish';
+      RAISE EXCEPTION 'published_at doit etre l''occurred_at de l''acte publish';
     END IF;
-  ELSIF NEW.published_at IS DISTINCT FROM OLD.published_at THEN
-    RAISE EXCEPTION 'published_at ne se réécrit pas : B26 verrouille à la première publication';
+  END IF;
+
+  -- Ensuite, et seulement ensuite, la transition : une transition de statut doit
+  -- s'adosser a un acte nomme. `revoked` n'est pas un statut : la revocation est
+  -- un acte, et elle ramene la version en `draft` (4.6.1).
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    required_act := CASE NEW.status
+      WHEN 'in_review' THEN 'submit'  WHEN 'signed'   THEN 'sign'
+      WHEN 'refused'    THEN 'refuse'  WHEN 'published' THEN 'publish'
+      WHEN 'draft'      THEN 'revoke'  -- retrait de soumission ou de signature
+    END;                                          -- 'draft' n'a pas d'acte :
+                                                  -- porte 2 l'interdit de toute facon
+    IF NOT EXISTS (SELECT 1 FROM signature_event
+                    WHERE definition_version_id = NEW.definition_version_id
+                      AND act = required_act) THEN
+      RAISE EXCEPTION '% -> % sans acte % dans signature_event',
+        OLD.status, NEW.status, coalesce(required_act, '<inconnu>');
+    END IF;
   END IF;
   RETURN NEW;
 END $$ LANGUAGE plpgsql;
@@ -1419,9 +1541,120 @@ CREATE TRIGGER definition_version_lifecycle_needs_an_act
   FOR EACH ROW EXECUTE FUNCTION lifecycle_needs_an_act();
 
 ALTER TABLE definition_version ADD CONSTRAINT definition_status_domain CHECK (
-  status IN ('draft','in_review','signed','refused','published','revoked')
+  status IN ('draft','in_review','signed','refused','published')
 );
 ```
+
+
+### 4.21 Preuves que les portes tiennent
+
+**Une porte ne se relit pas, elle s'essaie.** Les quatre déclencheurs de ce document
+sont des portes, et aucune n'était essayée : `ddl-exec guards` rendait `pass` avec
+`guards_declared: 0` et le disait dans la même phrase. Une porte non écrite n'est
+pas testée — ni par un script, ni par un relecteur, ni par elle-même.
+
+Chacune des quatre tentatives ci-dessous **doit être refusée**. Si l'une passe, la
+porte n'est pas une porte. Le contrôle les exécute :
+
+```bash
+node "$FORGE/scripts/ddl-exec.js" guards <anchor>
+```
+
+*(`published_at` est un `timestamptz` ; on le pose avec `occurred_at` pour que la
+garde « `published_at` = `occurred_at` de l'acte `publish` » soit satisfaite par
+elle-même, et non par une coïncidence d'horloge.)*
+
+**Données de pose** — deux versions et quatre actes, posés dans l'ordre du cycle :
+
+```sql
+INSERT INTO actor (actor_id, display_name, email, is_signer, directory_synced_at)
+VALUES ('a1', 'Auteur', 'a@example.test', false, '2026-09-01T00:00:00Z'),
+       ('a2', 'Signataire', 's@example.test', true, '2026-09-01T00:00:00Z'),
+       ('a3', 'Propriétaire', 'p@example.test', false, '2026-09-01T00:00:00Z');
+
+INSERT INTO indicator (indicator_id, slug, label, warehouse_key,
+                       owner_actor_id, designated_signer_actor_id)
+VALUES ('11111111-1111-1111-1111-111111111111', 'taux-service',
+        'Taux de service', 'kpi.taux', 'a3', 'a2');
+
+-- v1 : signée, non publiée
+INSERT INTO definition_version (definition_version_id, indicator_id, version_no,
+       status, author_actor_id, label, formula, scope_expr, grain, unit, change_note)
+VALUES ('20000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 1,
+        'signed', 'a1', 'v1', 'sum(x)', 'teams = ALL', 'month', 'EUR', 'premiere version');
+
+INSERT INTO signature_event (signature_event_id, definition_version_id, actor_id, act, occurred_at)
+VALUES ('30000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'a1', 'submit', '2026-09-20T09:00:00Z'),
+       ('30000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', 'a2', 'sign',   '2026-09-21T09:00:00Z');
+
+-- v2 : publiée, donc verrouillée (B26)
+INSERT INTO definition_version (definition_version_id, indicator_id, version_no,
+       status, author_actor_id, label, formula, scope_expr, grain, unit, change_note, published_at)
+VALUES ('20000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 2,
+        'published', 'a1', 'v2', 'sum(y)', 'teams = ALL', 'month', 'EUR', 'seuil ajoute', '2026-09-22T09:00:00Z');
+
+INSERT INTO signature_event (signature_event_id, definition_version_id, actor_id, act, occurred_at)
+VALUES ('30000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000002', 'a1', 'submit', '2026-09-21T10:00:00Z'),
+       ('30000000-0000-0000-0000-000000000004', '20000000-0000-0000-0000-000000000002', 'a2', 'sign',   '2026-09-21T11:00:00Z'),
+       ('30000000-0000-0000-0000-000000000005', '20000000-0000-0000-0000-000000000002', 'a3', 'publish','2026-09-22T09:00:00Z');
+```
+
+**Porte 1 — l'auto-signature est impossible, y compris par un script** (ADR-1) :
+
+```sql
+-- forge:ddl-refuse
+-- L'auteur de la version ne peut pas l'attester lui-même. Le porte tournait au
+-- début sur un `CHECK` à sous-requête, que PostgreSQL refuse **à la création** :
+-- la contrainte n'existait pas. Elle est désormais un `CONSTRAINT TRIGGER`
+-- différable, et cette tentative doit être refusée.
+INSERT INTO signature_event (definition_version_id, actor_id, act)
+VALUES ('20000000-0000-0000-0000-000000000001', 'a1', 'sign');
+```
+
+**Porte 2 — `published_at` ne se réécrit pas** (B26, le verrou) :
+
+```sql
+-- forge:ddl-refuse
+-- C'est le défaut que la boucle FastTrack n'a pas vu. Le trigger commençait par
+-- `IF NEW.status = OLD.status THEN RETURN NEW`, donc cette requête — qui ne touche
+-- QUE `published_at` — sortait au premier RETURN et **déliait le verrou**. Elle
+-- passe désormais par la garde, qui est la première et ne dépend que de
+-- `published_at`.
+UPDATE definition_version SET published_at = NULL
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000002';
+```
+
+**Porte 3 — une signature n'est révocable qu'avant la première publication** (B26) :
+
+```sql
+-- forge:ddl-refuse
+-- Rouvrir une version `published` est impossible : B26 ne permet le retrait que
+-- jusqu'à la première publication. Au-delà, seule une nouvelle version puis une
+-- nouvelle signature peut remplacer la formule.
+UPDATE definition_version SET status = 'draft'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000002';
+```
+
+**Porte 4 — `status` ne bouge pas sans acte nommé** (§ 4.6.1) :
+
+```sql
+-- forge:ddl-refuse
+-- Aucun endpoint ne change `status` implicitement : la transition doit s'adosser
+-- à un acte dans `signature_event`. v1 est `signed` et porte un acte `sign`, mais
+-- **aucun acte `publish`** : la publication ne peut donc pas se déduire du fait
+-- que la version est signée. C'est exactement le piège que le cycle de vie refuse
+-- — et il faut l'avoir essayé pour le savoir.
+UPDATE definition_version SET status = 'published'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000001';
+```
+
+> **Ce que ces quatre tentatives valent.** Elles ne prouvent pas que le modèle est
+> bon : elles prouvent que **les portes que ce document écrit refusent ce qu'il
+> dit qu'elles refusent**. C'est exactement la propriété qui manquait, et elle
+> n'est vérifiable que par exécution — les trois défauts de ce document étaient
+> invisibles à la relecture, et le quatrieme ne l'est plus.
+
+
 
 ---
 
@@ -1456,13 +1689,21 @@ sans producteur et § 5.8 ne pourrait jamais produire une première signature.
 ```
    § 5.5            § 5.9                § 5.8                 § 5.10
   draft ──────submit──────▶ in_review ───sign/refuse─────▶ signed ──publish──▶ published
-    ▲                          │                                              │
-    └────── revoke (sur submit)┘            (terminal : locked, B26)          │ B26 : verrou
-                                        revoke (sur sign)                      │ de révocation
-                                               ▼                               │
-                                            revoked                          revoked / signed
-                                          (terminal)
+    ▲                          │              │                                 │
+    ├────── revoke (submit) ───┘              │                                 │
+    └────── revoke (sign) ◀───────────────────┘                                 │
+                (re-soumissible : le gel ne dépend pas du statut)                │
+                                                                       B26 : verrou
+                                                                       de révocation
+                                                                       au-delà, une
+                                                                       nouvelle version
 ```
+
+`revoked` **n'est pas un statut** : la révocation est un **acte**, journalisé, qui
+ramène la version en `draft`. Le diagramme n'a donc pas de terme mort — il n'y a
+que `draft`, `in_review`, `signed`, `refused` et `published`, et le seul état
+irréversible est `published` (B26). Voir § 4.6.1 pour pourquoi une signature
+révoquée ne rend pas la version terminale.
 
 | Transition | Acte journalisé | Endpoint | Qui |
 |---|---|---|---|
@@ -1471,7 +1712,7 @@ sans producteur et § 5.8 ne pourrait jamais produire une première signature.
 | `in_review` → `signed` | `sign` | § 5.8 | signataire désigné, `≠` auteur (ADR-1) |
 | `in_review` → `refused` | `refuse` | § 5.8 | signataire désigné, motif obligatoire |
 | `signed` → `published` | `publish` | § 5.10 | propriétaire de l'indicateur |
-| `signed` → `revoked` | `revoke` sur le `sign` | § 5.11 | auteur **ou** propriétaire |
+| `signed` → `draft` | `revoke` sur le `sign` | § 5.11 | auteur **ou** propriétaire |
 
 > **409 est réservé à ce qui empêche réellement de répondre.** Un propriétaire inactif
 > (B17, E17) ne l'est pas : c'est un **état rendu** dans un `200`, avec
@@ -1666,7 +1907,7 @@ la source (§ 4.7), **jamais** de l'heure du poste (B5).
 | `grain` / `unit` | enum / `string` | oui | — |
 | `target_value` / `target_unit` | `number` / `string` | non | Cible versionnée avec la version (B14) |
 | `change_note` | `string` | oui | 1..500 car., en langue métier |
-| `threshold` | objet | non | Rejeté si la version n'est pas signable : le seuil se signe avec elle (B11) |
+| `threshold` | objet | non | **Toujours accepté.** Il est versionné *avec* la définition (B14) et ne devient un seuil qu'à la signature (B11) — donc il ne se rejette pas sur une version `draft`, qui n'est d'ailleurs jamais signable (§ 4.6.0). Forme : `{ comparison, threshold_value, label }` |
 
 | Code | Condition | Message |
 |---|---|---|
@@ -1745,7 +1986,7 @@ l'indicateur), plus :
                      "label": "CA par client hors cible", "defined_at": "2026-09-24T10:13:00Z" },
       "computed_at": "2026-09-29T05:00:00Z", "source_ref": "marts_sales_v42",
       "change_note": "les lignes sous-traitées ne sont plus comptées" },
-    { "version_label": "v2", "version_id": "7c11…", "status": "revoked",
+    { "version_label": "v2", "version_id": "7c11…", "status": "draft",
       "signed_at": "2026-08-14T09:02:00Z", "published_at": null,
       "signer": "Marc Delaunay", "value": 1204510.00, "unit": "EUR",
       "threshold": null,
@@ -1760,7 +2001,7 @@ l'indicateur), plus :
 | Champ | Type | Nullable | Origine | Description |
 |---|---|---|---|---|
 | `officiality` | `official` \| `provisional` \| `stale_owner` \| `target_missing` | non | **dérivé** à la lecture (§ 4.5) | `stale_owner` si le propriétaire est inactif (B17) — c'est un `200` |
-| `versions[].status` | domaine `definition_version.status` | non | § 4.6 | `published` \| `revoked` \| `signed` : ce que l'historique **montre** de la version, pas ce qu'il en pense (B22) |
+| `versions[].status` | domaine `definition_version.status` | non | § 4.6 | `published` \| `signed` \| `refused` : ce que l'historique **montre** de la version, pas ce qu'il en pense (B22). Un `revoke` est un **acte** du journal, pas un statut : il se lit dans `events[]`, pas ici |
 | `versions[].published_at` | ISO 8601 | **oui** | `definition_version.published_at` | `null` ⇒ la signature était **révocable** à l'époque ; renseigné ⇒ verrou B26. C'est la seule chose qui distingue une signature révoquée d'une signature jamais publiée |
 | `versions[].threshold` | `IndicatorThreshold` (§ 2.3) | **oui** | `definition_threshold` **de cette version** | Chaque version signée porte **son** seuil (B11) ; `null` si cette version n'en déclare pas |
 
@@ -1885,7 +2126,7 @@ de `roadmap.md` § 1.1 (les trois jalons du MVP).
 | 404 | `versionId` inconnu ou invisible | `"Version de définition introuvable."` |
 | 409 `SIGNER_IS_AUTHOR` | L'appelant est l'auteur de la version (B2) | `"Vous êtes l'auteur de cette version : l'auto-signature est interdite (règle B2). La version revient en projet."` |
 | 409 `ALREADY_SIGNED_BY_ACTOR` | La version porte déjà une signature active de cet acteur | `"Cette version est déjà signée par vous."` |
-| 409 `DEFINITION_NOT_IN_REVIEW` | La version n'est pas en `in_review` : elle est `draft` (jamais soumise, ou soumission retirée), `signed`, `refused`, `revoked` ou `published` | `"Cette version n'est pas en attente de signature."` |
+| 409 `DEFINITION_NOT_IN_REVIEW` | La version n'est pas en `in_review` : elle est `draft` (jamais soumise, ou soumission ou signature retirée), `signed`, `refused` ou `published` | `"Cette version n'est pas en attente de signature."` |
 | 409 `OWNER_INACTIVE` | Propriétaire inactif : la version ne peut plus être signée (B17). **Acte d'écriture** — ici le `409` est justifié | `"Le propriétaire est inactif : nommez un propriétaire avant toute nouvelle signature."` |
 | 422 | `act` absent ou inconnu, `reason` manquant sur un refus, ou identifiant mal formé | `"Acte invalide : `reason` est obligatoire pour un refus."` |
 | 429 | Quota dépassé | `"Trop de tentatives de signature. Réessayez dans un instant."` |
@@ -1950,7 +2191,7 @@ c'est le bon : c'est le seul état depuis lequel on peut soumettre à nouveau.
 | 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
 | 403 | Rôle `controleur` absent, **ou** l'appelant n'est ni l'auteur de la version ni le propriétaire de l'indicateur | `"Seul l'auteur de la version ou son propriétaire peut la soumettre ou retirer sa soumission."` |
 | 404 | `versionId` inconnu ou invisible | `"Version de définition introuvable."` |
-| 409 `DEFINITION_NOT_DRAFT` | `act: submit` et la version n'est pas en `draft` — déjà `in_review`, `signed`, `refused`, `published` ou `revoked` | `"Cette version n'est pas en projet : elle ne peut pas être soumise une seconde fois. Créez une nouvelle version."` |
+| 409 `DEFINITION_NOT_DRAFT` | `act: submit` et la version n'est pas en `draft` — déjà `in_review`, `signed`, `refused` ou `published` | `"Cette version n'est pas en projet : elle ne peut pas être soumise une seconde fois. Créez une nouvelle version."` |
 | 409 `DEFINITION_NOT_IN_REVIEW` | `act: withdraw` et la version n'est pas en `in_review` | `"Cette version n'est pas en attente de signature : il n'y a rien à retirer."` |
 | 409 `SIGNED_VERSION_IMMUTABLE` | Retrait demandé alors que la version est déjà `signed` — le refus de signer (§ 5.8) est un acte, pas un retrait de soumission | `"Cette version est signée : une signature se révoque (§ 5.11), elle ne se retire pas."` |
 | 409 `OWNER_INACTIVE` | Propriétaire inactif (B17). **Acte d'écriture** : soumettre reviendrait à demander un jugement sur un dossier sans propriétaire vivant | `"Le propriétaire est inactif : nommez un propriétaire avant de soumettre cette version."` |
@@ -1998,7 +2239,7 @@ porte ni motif ni périmètre : elle est un acte nu, horodaté, et rien d'autre.
 | 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
 | 403 | L'appelant n'est pas le propriétaire de l'indicateur | `"Seul le propriétaire de l'indicateur peut publier une version comme valeur officielle."` |
 | 404 | `versionId` inconnu ou invisible | `"Version de définition introuvable."` |
-| 409 `DEFINITION_NOT_SIGNED` | La version n'est pas `signed` : elle est `draft`, `in_review`, `refused`, `revoked` ou déjà `published` | `"Seule une version signée peut être publiée. Faites-la signer d'abord."` |
+| 409 `DEFINITION_NOT_SIGNED` | La version n'est pas `signed` : elle est `draft` (jamais soumise, ou signature retirée), `in_review`, `refused` ou déjà `published` | `"Seule une version signée peut être publiée. Faites-la signer d'abord."` |
 | 409 `SIGNED_VERSION_IMMUTABLE` | La version est déjà publiée : `published_at` ne se réécrit pas (B26), et `CREATE UNIQUE INDEX one_publish_per_version` (§ 4.8) refuse un second acte `publish` | `"Cette version est déjà publiée."` |
 | 409 `OWNER_INACTIVE` | Propriétaire inactif (B17) — ici, l'appelant **est** le propriétaire, donc le cas est celui d'une désactivation survenue depuis l'ouverture de la session. **Acte d'écriture** | `"Le propriétaire est inactif : nommez un propriétaire actif avant toute publication."` |
 | 422 | `versionId` mal formé | `"Identifiant de version invalide."` |
@@ -2036,7 +2277,7 @@ relève de § 5.9, pas d'ici.
 **Réponse (succès)** :
 ```json
 { "signature_event_id": "4a20…", "act": "revoke", "revokes_event_id": "4a11…",
-  "definition_version_id": "9b2e…", "status": "revoked",
+  "definition_version_id": "9b2e…", "status": "draft",
   "occurred_at": "2026-09-27T09:00:00Z", "state": "revocable" }
 ```
 
@@ -2047,7 +2288,7 @@ relève de § 5.9, pas d'ici.
 | 403 | L'appelant n'est ni l'auteur ni le propriétaire | `"Seul l'auteur de la version ou son propriétaire peut demander la révocation de sa signature."` |
 | 404 | `versionId` inconnu ou invisible | `"Version de définition introuvable."` |
 | 409 `SIGNED_VERSION_IMMUTABLE` | La version est `published` : `published_at` est écrit, donc B26 verrouille. Le message **nomme** la sortie | `"Cette version est publiée : sa signature n'est plus révocable. Créez une nouvelle version puis faites-la signer."` |
-| 409 `NO_ACTIVE_SIGNATURE` | Aucune signature active à révoquer : la version est `draft`, `in_review`, `refused`, `revoked`, ou sa signature a déjà été révoquée | `"Cette version n'a pas de signature active à révoquer."` |
+| 409 `NO_ACTIVE_SIGNATURE` | Aucune signature active à révoquer : la version est `draft`, `in_review` ou `refused`, ou sa signature a déjà été révoquée | `"Cette version n'a pas de signature active à révoquer."` |
 | 422 | `reason` absent ou trop long | `"Motif de révocation obligatoire (1 à 500 caractères)."` |
 | 429 | Quota dépassé | `"Trop de tentatives. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. La révocation n'a pas été enregistrée ; réessayez."` |
@@ -2612,7 +2853,11 @@ délégation**, et c'est délibéré.
 - Tant que le rôle n'est pas pourvu (`F-001`), la règle n'est pas un blocage technique :
   `indicator.designated_signer_actor_id` est non nul, donc aucun indicateur ne peut
   être créé. C'est le comportement voulu — un indicateur sans signataire désigné
-  n'est pas signable, donc pas officiel, donc pas publiable.
+  n'est pas signable (§ 4.6.0), donc pas officiel, donc pas publiable.
+- « Signable » est défini en § 4.6.0 et **n'est pas un statut** : c'est un prédicat
+  dérivé (`in_review` ∧ signataire nommé ∧ signataire ≠ auteur). Le créer comme
+  sixième statut aurait exactement le défaut que `revoked` avait — une valeur
+  qu'aucun endpoint n'écrit, donc un état que rien ne produit.
 
 **ADR-8 révisé — l'immuabilité est levée où elle doit l'être, et seulement là.**
 
@@ -2810,7 +3055,7 @@ pas corriger seul, mais on ne peut plus être surpris.
       endpoints, § 5.1 à § 5.21, avec la table de correspondance § 5.22.
 - [x] **Chaque état du cycle de vie d'une version a un producteur nommé** — `draft`
       (§ 5.5), `in_review` (§ 5.9, acte `submit`), `signed` / `refused` (§ 5.8),
-      `published` + `published_at` (§ 5.10, acte `publish`), `revoked` (§ 5.11). Aucun
+      `published` + `published_at` (§ 5.10, acte `publish`). Aucun
       des 21 endpoints n'écrit `status` ou `published_at` par un autre chemin (§ 4.6.1,
       § 5.0, ADR-9).
 - [x] **Chaque réponse qui rend une tuile rend son seuil** — `threshold` est présent
