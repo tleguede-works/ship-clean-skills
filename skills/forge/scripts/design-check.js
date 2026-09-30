@@ -112,7 +112,135 @@ const EXEMPT = {
  */
 const BORDER_USAGE = /\bbordure|\bfi?lets?\b|s[ée]paration|\bcontour\b/i;
 
-function classify(token, usage = '') {
+/* ------------------------------------------------------------------ *
+ * ## La déclaration du document
+ *
+ * ## Pourquoi elle existe — le septième cas de la même famille
+ *
+ * Les trois signaux ci-dessus sont des **littéraux anglais** : `--color-text-*`,
+ * `SURFACE_EXACT`, `--color-ink-50/100/200`, `*-subtle`. Ils ont été écrits contre
+ * le design system de « Amberline », dont les tokens sont nommés en anglais.
+ *
+ * Or **tout ce que le skill produit est en français** : `SKILL.md`, les gabarits,
+ * les agents, et jusqu'à l'exemple canonique de `design-quality.md`, dont l'ambiance
+ * est donnée en français. Un vocabulaire de tokens français n'est donc pas un cas
+ * limite : c'est le cas attendu.
+ *
+ * Constaté sur « Onduleur », premier design system français passé ici, en un seul
+ * appel :
+ *
+ *   - **faux positif** — `--color-texte-inverse` (du texte) classé `non_text` et
+ *     mesuré à 1,10:1 sur le fond clair, alors qu'il n'est jamais posé que sur de
+ *     l'encre et sur les quatre teintes sémantiques ;
+ *   - **faux positif** — les quatre premières teintes d'une rampe (`encre-50` à
+ *     `encre-300`), qui sont des **teintes de survol** et des trames, exigées à
+ *     3:1 contre le fond alors que la WCAG 1.4.11 ne s'applique pas à une teinte
+ *     décorative d'état ;
+ *   - **faux négatif, et c'est le grave** — `--color-texte-desactive`, **token de
+ *     texte**, mesuré à **3,80:1** sur `--color-surface-sunken`. Classé `non_text`,
+ *     il était jugé contre 3:1, donc **conforme**, et le contrôle a rendu
+ *     `measured` sans `offenders`. C'est exactement le défaut que ce script a été
+ *     écrit pour trouver — `--color-text-secondary` à 4,17:1 sur Amberline — et il
+ *     l'a reproduit **dans le document qu'il venait de mesurer**.
+ *
+ * Le classement par nom est donc un **patron plus étroit que ce que les documents
+ * écrivent**, ce qui est le sixième mécanisme déjà rencontré dans ce dossier, et le
+ * plus insidieux parce qu'il **échoue dans le sens silencieux**.
+ *
+ * ## Pourquoi une déclaration, et non des littéraux français
+ *
+ * Ajouter `--color-texte-*` à côté de `--color-text-*` ne ferait que déplacer le
+ * problème : il faudrait réécrire la liste à chaque vocabulaire, et le contrôle
+ * continuerait à **deviner**. Or le principe tenu depuis cinq échecs est inverse :
+ * un contrôle qui marche **résout un pointeur déclaré** ; une tentative
+ * d'inférence produit du bruit.
+ *
+ * Le document déclare donc ses propres classes, une fois, et le script mesure.
+ * L'ordre de résolution est : **déclaration, puis `EXEMPT`, puis les heuristiques
+ * historiques** — ce qui laisse inchangés les design systems déjà écrits, dont
+ * Amberline.
+ * ------------------------------------------------------------------ */
+
+/** `<!-- forge:token-classes … -->` — un jeton, un `=`, une liste ou une raison. */
+const DECL_OPEN = /<!--\s*forge:token-classes\s*([\s\S]*?)-->/;
+const DECL_LINE = /^(--[a-z0-9-]+)(?:\s*=\s*(.*))?$/i;
+const DECL_DIRECTIVE = /^(text|surface|nontext|on|exempt)$/i;
+
+function splitTokens(raw) {
+  return String(raw || '')
+    .split(/[\s,]+/)
+    .map(s => s.trim().replace(/^`+|`+$/g, ''))
+    .filter(s => /^--[a-z0-9-]+$/i.test(s));
+}
+
+function parseDeclaration(md) {
+  const m = DECL_OPEN.exec(md);
+  if (!m) return null;
+  const decl = { text: [], surface: [], nontext: [], on: {}, exempt: {}, seen: false };
+  let directive = null;
+  for (const raw of m[1].split('\n')) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    decl.seen = true;
+    const head = /^([a-z]+)\s*:?\s+(.*)$/i.exec(line) || /^([a-z]+)\s*:?\s*$/.exec(line);
+    if (head && DECL_DIRECTIVE.test(head[1])) {
+      directive = head[1].toLowerCase();
+      const rest = head[2] || '';
+      if (!rest) continue;
+      const kv = DECL_LINE.exec(rest.trim());
+      if (kv) applyDeclEntry(decl, directive, kv);
+      else for (const tk of splitTokens(rest)) (decl[directive] = decl[directive] || []).push(tk);
+      continue;
+    }
+    const kv = DECL_LINE.exec(line);
+    if (kv && directive) { applyDeclEntry(decl, directive, kv); continue; }
+    // Ligne de continuation d'une liste : plusieurs tokens, sans `=`. La première
+    // version de ce parseur les perdait — la directive restait active mais la ligne
+    // ne correspondait ni à une directive ni à une paire `token = valeur`. Résultat :
+    // une déclaration paraissait complète et ne l'était qu'à moitié, et les tokens
+    // manquants retombaient sur le classement par défaut.
+    if (directive && /^(text|surface|nontext)$/.test(directive)) {
+      for (const tk of splitTokens(line)) decl[directive].push(tk);
+    }
+  }
+  return decl;
+}
+
+function applyDeclEntry(decl, directive, kv) {
+  const token = kv[1];
+  const rest = (kv[2] || '').trim();
+  // `on:` IMPLIQUE `text` : « posé sur X » n'a pas de sens pour une surface ou un
+  // composant, donc la ligne dit les deux choses en une. L'exiger deux fois serait
+  // faire répéter au document ce qu'il vient déjà d'écrire.
+  if (directive === 'on') {
+    if (!decl.text.includes(token)) decl.text.push(token);
+    decl.on[token] = splitTokens(rest);
+    return;
+  }
+  if (directive === 'exempt') { decl.exempt[token] = rest || 'exempté par le document'; return; }
+  (decl[directive] = decl[directive] || []).push(token);
+}
+
+function declaredClass(decl, token, usage) {
+  if (!decl) return null;
+  if (Object.prototype.hasOwnProperty.call(decl.exempt, token)) {
+    return { kind: 'exempt', required: null, why: decl.exempt[token], by: 'déclaration' };
+  }
+  if (decl.text.includes(token)) {
+    return { kind: 'text', required: TEXT_AA, why: 'déclaration : porte du texte', by: 'déclaration' };
+  }
+  if (decl.surface.includes(token)) {
+    return { kind: 'surface', required: null, why: 'déclaration : fond sur lequel du texte est posé', by: 'déclaration' };
+  }
+  if (decl.nontext.includes(token)) {
+    return { kind: 'non_text', required: NON_TEXT_AA, why: 'déclaration : composant d\'interface', by: 'déclaration' };
+  }
+  return null;
+}
+
+function classify(token, usage = '', decl = null) {
+  const declared = declaredClass(decl, token, usage);
+  if (declared) return declared;
   if (Object.prototype.hasOwnProperty.call(EXEMPT, token)) {
     return { kind: 'exempt', required: null, why: EXEMPT[token], by: 'déclaration' };
   }
@@ -184,15 +312,40 @@ function checkContrast(root) {
     return results;
   }
 
-  const tokens = readTokens(fs.readFileSync(abs, 'utf-8'));
+  const md = fs.readFileSync(abs, 'utf-8');
+  const tokens = readTokens(md);
+  const decl = parseDeclaration(md);
 
-  for (const required of REQUIRED_TOKENS) {
-    if (!tokens.has(required)) {
+  // Les tokens exigés ne sont plus une liste de **noms anglais** quand le
+  // document déclare ses classes : exiger `--color-text-primary` d'un document
+  // français l'obligerait à déclarer un token qu'il n'a pas, ou à renommer sa
+  // palette pour satisfaire un script. L'exigence devient alors **structurelle** —
+  // « il y a au moins un texte, et un fond » — ce qui est ce que la liste en dur
+  // cherchait réellement à garantir.
+  if (decl && decl.seen) {
+    if (!decl.text.length) {
       results.offenders.push({
-        token: required, line: null, problem: 'token_absent',
-        why: 'un token porteur de sens n\'est pas déclaré : ' + required
+        token: '(déclaration)', line: null, problem: 'declaration_incomplete',
+        why: 'la déclaration des classes ne nomme aucun token de texte'
       });
       results.pass = false;
+    }
+    if (!decl.surface.includes('--color-background')) {
+      results.offenders.push({
+        token: '--color-background', line: null, problem: 'declaration_incomplete',
+        why: 'le fond n\'est pas déclaré comme surface : tout texte serait mesuré contre rien'
+      });
+      results.pass = false;
+    }
+  } else {
+    for (const required of REQUIRED_TOKENS) {
+      if (!tokens.has(required)) {
+        results.offenders.push({
+          token: required, line: null, problem: 'token_absent',
+          why: 'un token porteur de sens n\'est pas déclaré : ' + required
+        });
+        results.pass = false;
+      }
     }
   }
 
@@ -205,21 +358,58 @@ function checkContrast(root) {
   const surfaces = [];
   for (const [key, t] of tokens) {
     if (!t.hex || t.hex === 'none') continue;
-    if (classify(key, t.usage).kind === 'surface') surfaces.push({ key, hex: t.hex });
+    if (classify(key, t.usage, decl).kind === 'surface') surfaces.push({ key, hex: t.hex });
+  }
+  // Un composant déclaré n'est PAS une surface, et c'est délibéré.
+  //
+  // Première version de ce correctif : tout `nontext` entrait dans les surfaces,
+  // « parce qu'un bouton porte son libellé ». C'est exact pour le bouton et faux
+  // pour tout le reste — un texte courant n'est pas posé sur un filet, et le
+  // mesureur retient le **pire** couple. Résultat : du texte de corps était
+  // signalé à 2,16:1 sur le fond d'un bouton où il ne sera jamais écrit. Un
+  // contrôle plus strict que la réalité n'est pas plus prudent, il est faux.
+  //
+  // Le mécanisme honnête est `on:` : c'est le document qui dit sur quels fonds un
+  // texte est effectivement posé. Le libellé d'un bouton le déclare, le texte
+  // courant non.
+  if (decl && decl.seen) {
+    results.surfaces_note = 'les surfaces sont celles déclarées `surface:` ; un texte posé ' +
+      'sur un composant le déclare par `on:`';
   }
   results.surfaces = surfaces.map(x => x.key);
 
   for (const [key, t] of tokens) {
     if (!t.hex || t.hex === 'none') continue;
 
-    const cls = classify(key, t.usage);
+    const cls = classify(key, t.usage, decl);
     results.classified.push({ token: key, line: t.line, kind: cls.kind, why: cls.why, by: cls.by });
+
+    // Un token **de couleur** absent de la déclaration d'un document qui en
+    // declare une est un engagement non tenu : le document a écrit la liste, donc
+    // l'omettre est un choix, pas un oubli qu'un nom puisse rattraper.
+    if (decl && decl.seen && /^#[0-9a-f]{6}$/i.test(t.hex) && !declaredClass(decl, key, t.usage)) {
+      results.offenders.push({
+        token: key, line: t.line, hex: t.hex, kind: 'undeclared', problem: 'undeclared_class',
+        why: 'le document déclare ses classes et omet ce token de couleur : il est classé par défaut, non par engagement'
+      });
+      results.pass = false;
+    }
 
     if (cls.kind === 'exempt' || cls.kind === 'surface') continue;
 
     const bg = tokens.get('--color-background');
+    // Un texte inversé n'est jamais posé que sur des fonds sombres. Le document
+    // le déclare : sans `on:`, le mesurer contre TOUTE surface du document
+    // produirait un échec sur chaque fond clair — un faux positif à chaque
+    // palette qui a un texte inversé, c'est-à-dire presque toutes.
+    const declaredOn = decl && decl.on[key];
     const against = cls.kind === 'text'
-      ? surfaces.filter(x => x.key !== key)
+      ? (declaredOn
+        // L'étiquette doit être celle du FOND, pas celle du texte : un rapport
+        // d'échec qui nomme la mauvaise surface envoie corriger la mauvaise
+        // couleur. La mesure était juste ici ; l'attribution ne l'était pas.
+        ? declaredOn.map(k => { const ref = tokens.get(k); return ref ? { key: k, hex: ref.hex } : null; }).filter(Boolean)
+        : surfaces.filter(x => x.key !== key))
       : (bg && bg.hex !== 'none' ? [{ key: '--color-background', hex: bg.hex }] : []);
 
     let worst = null;
@@ -257,11 +447,21 @@ function checkContrast(root) {
     }
   }
 
-  results.rule = 'Texte (1.4.3) : 4,5:1 contre TOUTE surface du document. Composant non ' +
-    'textuel (1.4.11) : 3:1 contre le fond. Surfaces : aucune exigence propre, mais le texte ' +
-    'posé dessus est mesuré. Un ratio annoncé qui diffère du mesuré de plus de 0,15 échoue ' +
-    'aussi : un ratio inventé donne une assurance que rien ne soutient.';
+  results.rule = 'Texte (1.4.3) : 4,5:1 contre TOUTE surface du document, ou contre les ' +
+    'surfaces déclarées par `on:`. Composant non textuel (1.4.11) : 3:1 contre le fond. ' +
+    'Surfaces : aucune exigence propre, mais le texte posé dessus est mesuré. Un ratio ' +
+    'annoncé qui diffère du mesuré de plus de 0,15 échoue aussi : un ratio inventé donne ' +
+    'une assurance que rien ne soutient.';
   results.classification_is_visible = true;
+  results.declared_classes = decl && decl.seen ? {
+    text: decl.text, surface: decl.surface, nontext: decl.nontext,
+    on: decl.on, exempt: Object.keys(decl.exempt),
+    source: '<!-- forge:token-classes -->'
+  } : null;
+  results.classification_source = (decl && decl.seen)
+    ? 'déclaration du document'
+    : 'noms de tokens en anglais (aucune déclaration) — voir README : un design system ' +
+      'en français doit déclarer ses classes';
   return results;
 }
 
