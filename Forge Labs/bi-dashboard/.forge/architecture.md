@@ -1152,6 +1152,98 @@ Cinq actes, et **chacun a un producteur nommé** — c'est la table qui ferme le
 **Contraintes d'intégrité, en base et non en application** (ADR-1) :
 
 ```sql
+-- ## Le schéma, d'abord.
+--
+-- Les trois tables que tout le DDL suivant contraint sont declarees en **prose**
+-- aux § 4.5, § 4.6 et § 4.8, et jamais creees ici. Consequence mesuree par
+-- `ddl-exec completeness` : `tables_created_in_ddl: 0` pour `tables_declared_in_prose:
+-- 17`. Les contraintes, les declencheurs et les portes qui suivent portaient donc
+-- sur des tables **qui n'existaient pas** dans ce document — et le seul endroit
+-- ou elles existaient etait le zip de reference.
+--
+-- C'est le meme defaut que les portes de § 4.21 : une porte qui ne s'exerce sur
+-- rien ne prouve rien. Les declarations ci-dessous sont **le minimum** que les
+-- portes referencent, pas une reproduction complete du schema de reference ; mais
+-- sans elles, aucune porte ne peut etre executee, et donc aucun des sept refus de
+-- § 4.21 ne serait demontre.
+--
+-- `signature_event` porte `revoked_at` des sa creation : c'est une colonne de la
+-- **projection** de l'acte de revocation (§ 4.8, point 4), donc elle fait partie
+-- du schema, pas d'un ajout ulterieur.
+CREATE TABLE actor (
+  actor_id           text PRIMARY KEY,
+  display_name       text NOT NULL,
+  email              text NOT NULL,
+  is_signer          boolean NOT NULL DEFAULT false,
+  is_directory_entry boolean NOT NULL DEFAULT false,
+  directory_synced_at timestamptz
+);
+
+CREATE TABLE indicator (
+  indicator_id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug                     text NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9][a-z0-9-]{2,63}$'),
+  label                    text NOT NULL CHECK (length(label) BETWEEN 1 AND 120),
+  warehouse_key            text NOT NULL UNIQUE CHECK (warehouse_key ~ '^[a-z0-9_.]{2,64}$'),
+  owner_actor_id           text NOT NULL REFERENCES actor(actor_id),
+  designated_signer_actor_id text REFERENCES actor(actor_id),
+  current_signed_version_id uuid,
+  officiality              text NOT NULL DEFAULT 'provisional'
+                             CHECK (officiality IN ('official','provisional','stale_owner')),
+  created_at               timestamptz NOT NULL DEFAULT now(),
+  updated_at               timestamptz NOT NULL DEFAULT now(),
+  -- B2 : l'auteur ne peut pas se designer lui-meme. Ce CHECK porte sur deux
+  -- colonnes **de la meme ligne**, donc il n'a pas le defaut des sous-requetes.
+  CONSTRAINT indicator_signer_is_not_owner
+    CHECK (designated_signer_actor_id IS NULL
+           OR designated_signer_actor_id <> owner_actor_id)
+);
+
+CREATE TABLE definition_version (
+  definition_version_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  indicator_id         uuid NOT NULL REFERENCES indicator(indicator_id) ON DELETE RESTRICT,
+  version_no           integer NOT NULL CHECK (version_no > 0),
+  status               text NOT NULL DEFAULT 'draft'
+                         CHECK (status IN ('draft','in_review','signed','refused','published')),
+  author_actor_id      text NOT NULL REFERENCES actor(actor_id),
+  label                text NOT NULL,
+  formula              text NOT NULL,
+  scope_expr           text NOT NULL,
+  grain                text NOT NULL,
+  unit                 text NOT NULL,
+  change_note          text,
+  target_value         numeric,
+  target_unit          text,
+  target_confirmed_at  timestamptz,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  published_at         timestamptz,
+  CONSTRAINT definition_version_indicator_version_no_unique UNIQUE (indicator_id, version_no),
+  -- `published_at` n'a de sens qu'avec le statut qui la justifie, et cet invariant
+  -- ne depend pas du moment de l'ecriture : c'est le rare cas ou un CHECK convient.
+  CONSTRAINT definition_version_published_at_impose_published
+    CHECK (published_at IS NULL OR status = 'published')
+);
+-- `current_signed_version_id` est une cle etrangere **circulaire** : la version
+-- reference l'indicateur, et l'indicateur la version. Elle est ajoutee apres
+-- creation des deux tables, donc c'est bien la seule qui ne peut pas l'etre avant.
+ALTER TABLE indicator
+  ADD CONSTRAINT indicator_current_version_fkey
+  FOREIGN KEY (current_signed_version_id) REFERENCES definition_version(definition_version_id);
+
+CREATE TABLE signature_event (
+  signature_event_id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  definition_version_id uuid NOT NULL REFERENCES definition_version(definition_version_id) ON DELETE RESTRICT,
+  actor_id             text NOT NULL REFERENCES actor(actor_id),
+  act                  text NOT NULL
+                         CHECK (act IN ('submit','sign','refuse','revoke','publish')),
+  reason               text,
+  occurred_at          timestamptz NOT NULL DEFAULT now(),
+  revokes_event_id     uuid,
+  -- § 4.8 point 4 : la projection de la revocation, denormalisee pour que l'index
+  -- puisse poser une question sur **une seule ligne**.
+  revoked_at           timestamptz,
+  -- Un acte ne se revoque pas lui-meme : le cycle doit etre terminable en base.
+  CONSTRAINT un_revoke_nest_pas_revocable CHECK (act <> 'revoke' OR revoked_at IS NULL)
+);
 -- 1. L'auto-signature est impossible, y compris en cas de bug d'interface.
 --    La règle porte sur les actes d'ATTESTATION (sign, refuse) : c'est là que
 --    l'auteur ne peut pas se mettre en face de lui-même. Elle ne porte pas sur
@@ -1225,13 +1317,115 @@ CREATE CONSTRAINT TRIGGER revoke_target_is_legal
   AFTER INSERT ON signature_event DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW WHEN (NEW.act = 'revoke')
   EXECUTE FUNCTION revoke_targets_a_legal_act();
--- 4. Au plus une signature active par version et par signataire.
+-- 4. Au plus une signature **active** par version et par signataire.
+--
+-- ## Pourquoi un predicat d'index ne peut pas dire « active »
+--
+-- La premiere version ecrit `WHERE act = 'sign'`, ce qui dit « au plus un acte de
+-- signature par version et par signataire » — donc **une signature pour toute la
+-- vie de l'indicateur**. Or le correctif approuve par le commanditaire (voir § 4.6.0)
+-- ouvre explicitement la **re-signature** : une signature revoquee puis re-signee par
+-- le meme signataire est le chemin normal apres un changement de designated signer.
+--
+-- Et l'index ne peut pas le dire, parce qu'un predicat d'index ne peut pas executer
+-- une jointure : « ce `sign` n'est-il pas cible par un `revoke` ? » est une question
+-- qui porte sur **une autre ligne**. C'est une limite du SQL, pas une faute de
+-- redaction — et c'est exactement la limite que l'ADR avait rencontree sans la nommer.
+--
+-- Donc l'index porte sur une **colonne denormalisee** : `revoked_at`, posee par le
+-- trigger de revocation, et jamais par l'appel. Un `sign` porte `revoked_at IS NULL`
+-- tant qu'il est actif ; le predicat devient alors une question sur **la meme ligne**,
+-- et l'index peut repondre.
+--
+-- `revoked_at` n'est donc pas une donnee : c'est la **projection** de l'acte de
+-- revocation, au meme titre que `status` est la projection du cycle de vie. Elle se
+-- tient par la contrainte croisee du point 7 : un `revoked_at` pose doit correspondre
+-- a un `revoke` cible, et reciproquement.
+-- L'acte `revoke` pose `revoked_at` sur sa cible, et **seulement** sur celle-la.
+CREATE FUNCTION revoke_stamps_its_target() RETURNS trigger AS $$
+BEGIN
+  IF NEW.act <> 'revoke' THEN RETURN NEW; END IF;
+  IF NEW.revokes_event_id IS NULL THEN
+    RAISE EXCEPTION 'un acte revoke doit nommer sa cible';
+  END IF;
+  UPDATE signature_event
+     SET revoked_at = NEW.occurred_at
+   WHERE signature_event_id = NEW.revokes_event_id
+     AND act IN ('sign', 'submit');
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'la cible du revoke n''est pas un sign ou un submit';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER revoke_stamps_target
+  AFTER INSERT ON signature_event
+  FOR EACH ROW EXECUTE FUNCTION revoke_stamps_its_target();
+
 CREATE UNIQUE INDEX one_active_signature_per_signer
   ON signature_event (definition_version_id, actor_id)
-  WHERE act = 'sign';
+  WHERE act = 'sign' AND revoked_at IS NULL;
+-- 4bis. Au plus un `revoke` par acte cible : un acte ne se revoque pas deux fois.
+CREATE UNIQUE INDEX one_revoke_per_target
+  ON signature_event (revokes_event_id) WHERE act = 'revoke';
 -- 5. Une version ne peut être publiée qu'une fois : c'est B26 sous forme de contrainte.
 CREATE UNIQUE INDEX one_publish_per_version
   ON signature_event (definition_version_id) WHERE act = 'publish';
+
+-- 6. La colonne denormalisee ne peut pas diverger de l'acte qui la pose. Sans cette
+--    contrainte, un `UPDATE signature_event SET revoked_at = now()` suffirait a
+--    liberer la signature et a allowir une re-signature sans acte de revocation : la
+--    porte serait entree par la fenetre qu'elle vient de fermer.
+CREATE FUNCTION revoked_at_suit_un_acte() RETURNS trigger AS $$
+BEGIN
+  IF NEW.revoked_at IS NOT NULL AND NEW.revoked_at IS DISTINCT FROM OLD.revoked_at THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM signature_event r
+       WHERE r.act = 'revoke'
+         AND r.revokes_event_id = NEW.signature_event_id
+         AND r.occurred_at IS NOT DISTINCT FROM NEW.revoked_at) THEN
+      RAISE EXCEPTION 'revoked_at ne peut etre pose que par un acte revoke, a son occurred_at';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE CONSTRAINT TRIGGER revoked_at_follows_a_revoke
+  AFTER INSERT OR UPDATE ON signature_event DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION revoked_at_suit_un_acte();
+
+-- 8. `designated_signer_actor_id` est **mis a jour** quand le signataire change.
+--    Il ne l'etait pas : l'indicateur portait une valeur figee pour toute sa vie, donc
+--    meme apres la correction #2 de § 4.6.0 — un chemin de re-signature que rien
+--    n'atteignait. La cle etrangere ne verrait que la premiere valeur.
+--
+--    Et la mise a jour a une **consequence de cycle de vie** : changer de signataire
+--    designe sans revoquer la signature en cours laisserait un indicateur designe
+--    vers quelqu'un qui n'a pas signe. Donc changer de signataire designe est un
+--    acte : il refuse tant qu'une signature active existe sur la version courante.
+CREATE FUNCTION changing_signer_requires_no_active_signature() RETURNS trigger AS $$
+DECLARE v_id uuid; v_status text;
+BEGIN
+  IF NEW.designated_signer_actor_id IS NOT DISTINCT FROM OLD.designated_signer_actor_id THEN
+    RETURN NEW;
+  END IF;
+  IF NEW.designated_signer_actor_id IS NOT NULL
+     AND NEW.designated_signer_actor_id = NEW.owner_actor_id THEN
+    RAISE EXCEPTION 'le signataire designe ne peut pas etre le proprietaire (B2)';
+  END IF;
+  v_id := NEW.current_signed_version_id;
+  IF v_id IS NOT NULL THEN
+    SELECT status INTO v_status FROM definition_version WHERE definition_version_id = v_id;
+    IF v_status IN ('in_review', 'signed') AND EXISTS (
+      SELECT 1 FROM signature_event
+       WHERE definition_version_id = v_id AND act = 'sign' AND revoked_at IS NULL) THEN
+      RAISE EXCEPTION 'changement de signataire designe refuse : la version courante porte une signature active ; la revoquer d''abord';
+    END IF;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER indicator_signer_change_needs_no_active_signature
+  BEFORE UPDATE OF designated_signer_actor_id ON indicator
+  FOR EACH ROW EXECUTE FUNCTION changing_signer_requires_no_active_signature();
+
 ```
 
 ### 4.9 `dashboard` — tableau de bord *(PostgreSQL)*
@@ -1536,10 +1730,48 @@ BEGIN
     END IF;
   END IF;
 
-  -- Ensuite, et seulement ensuite, la transition : une transition de statut doit
+  -- Ensuite, et seulement ensuite, la transition. Une transition de statut doit
   -- s'adosser a un acte nomme. `revoked` n'est pas un statut : la revocation est
   -- un acte, et elle ramene la version en `draft` (4.6.1).
+  --
+  -- ## La table de transitions, et pourquoi elle est explicite
+  --
+  -- La premiere version listait les transitions par un `CASE NEW.status` : elle
+  -- demandait « quel acte justifie cet etat », sans jamais demander « cet etat
+  -- avait-il le droit d'exister ». Un `published` n'avait donc pas de terme : on
+  -- pouvait le repasser en `draft` en executant un `revoke` qui n'existait pas
+  -- encore dans la table de pose, et **la porte 3 passait pour la mauvaise
+  -- raison** — pas parce que la porte jugeait juste, mais parce qu'aucun acte ne
+  -- pouvait etre produit.
+  --
+  -- Une table explicite `(OLD.status, NEW.status) -> acte` dit les deux choses a la
+  -- fois : la transition autorisee, et l'acte qui la justifie. Un couple absent est
+  -- refuse **sans qu'on ait a consulter la table des actes**. C'est le seul moyen
+  -- que `published` et `refused` soient terminaux : leur couple n'est pas dans la
+  -- table, donc ils ne peuvent en sortir que par le mecanisme prevu par B26 — une
+  -- nouvelle version.
   IF NEW.status IS DISTINCT FROM OLD.status THEN
+    -- La table des transitions **allant de l'avant**. Elle dit en une fois ce qui
+    -- est possible et ce qui est terminal, donc un couple absent est refuse sans
+    -- qu'on ait a consulter `signature_event`.
+    IF (OLD.status, NEW.status) IN (
+         ('draft', 'in_review'), ('in_review', 'signed'), ('in_review', 'refused'),
+         ('signed', 'published')
+       ) THEN
+      -- passage autorise : on tombe plus bas, vers l'acte qui le justifie
+    ELSIF OLD.status IN ('signed', 'in_review') AND NEW.status = 'draft' THEN
+      -- `revoke` est le seul retour arriere, et il ne part que d'ici.
+      NULL;
+    ELSIF OLD.status IN ('published', 'refused') THEN
+      -- **Terminaux.** B26 : au-dela de la premiere publication, seule une nouvelle
+      -- version puis une nouvelle signature peut remplacer la formule. C'est la
+      -- phrase qui manquait, et son absence rendait `published` et `refused`
+      -- pareillement **non terminaux** : ils pouvaient en sortir par `revoke`.
+      RAISE EXCEPTION '% est terminal (B26) : seule une nouvelle version peut remplacer la formule', OLD.status;
+    ELSE
+      RAISE EXCEPTION 'transition % -> % interdite : elle ne figure pas dans le tableau de transitions de 4.6.1',
+        OLD.status, NEW.status;
+    END IF;
     required_act := CASE NEW.status
       WHEN 'in_review' THEN 'submit'  WHEN 'signed'   THEN 'sign'
       WHEN 'refused'    THEN 'refuse'  WHEN 'published' THEN 'publish'
@@ -1558,6 +1790,46 @@ END $$ LANGUAGE plpgsql;
 CREATE TRIGGER definition_version_lifecycle_needs_an_act
   BEFORE UPDATE OF status, published_at ON definition_version
   FOR EACH ROW EXECUTE FUNCTION lifecycle_needs_an_act();
+
+-- PORTE 3bis — la porte d'ENTREE. Une version nait `draft`, jamais ailleurs.
+--
+-- Les quatre portes de § 4.21 sont toutes des `UPDATE`. Aucune n'essayait
+-- l'`INSERT`, donc rien n'empechait de poser directement une version `published`,
+-- avec un `published_at` — c'est-a-dire de **publier sans passer par un acte**.
+--
+-- Consequence mesuree : le cycle de vie etait entierement.evitable par le bas. Une
+-- porte qui ne couvre qu'un cote d'une operation n'est pas une porte, c'est une
+-- moitie de porte ; et cette moitie-la etait la plus facile a contourner, parce
+-- qu'elle demande moins de travail.
+--
+-- ## Un `CHECK` ne convient pas, et c'est le second defaut de cette porte
+--
+-- La premiere version ecrivait `CHECK (status = 'draft')`. Il **n'empeche pas
+-- l'insertion** : il empeche toute **mise a jour** qui change `status` — donc il
+-- rendait le cycle de vie entierement inatteignable, en fixant la version dans
+-- `draft` pour toujours. C'est un mur, pas une porte.
+--
+-- Un `CHECK` ne peut pas dire « a l'insertion seulement » : c'est une propriete du
+-- moment, et une contrainte de colonne n'a pas de moment. Il faut un **declencheur
+-- `BEFORE INSERT`**, dont la portee est exactement celle qu'on veut fermer.
+CREATE FUNCTION version_nait_en_draft() RETURNS trigger AS $$
+BEGIN
+  IF NEW.status IS DISTINCT FROM 'draft' THEN
+    RAISE EXCEPTION 'une version nait draft : le statut % ne peut pas etre pose a l''insertion', NEW.status;
+  END IF;
+  IF NEW.published_at IS NOT NULL THEN
+    RAISE EXCEPTION 'published_at ne peut pas etre pose a l''insertion : seule la garde de cycle de vie, qui verifie l''acte publish, le pose';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER definition_version_nait_en_draft
+  BEFORE INSERT ON definition_version
+  FOR EACH ROW EXECUTE FUNCTION version_nait_en_draft();
+
+-- En revanche, **une contrainte de colonne convient** a l'invariant qui doit tenir
+-- dans le temps : `published_at` n'a de sens qu'avec le statut qui la justifie, et
+-- cet invariant ne depend pas du moment de l'ecriture.
+
 
 ALTER TABLE definition_version ADD CONSTRAINT definition_status_domain CHECK (
   status IN ('draft','in_review','signed','refused','published')
@@ -1596,26 +1868,99 @@ INSERT INTO indicator (indicator_id, slug, label, warehouse_key,
 VALUES ('11111111-1111-1111-1111-111111111111', 'taux-service',
         'Taux de service', 'kpi.taux', 'a3', 'a2');
 
--- v1 : signée, non publiée
+-- v1 : signée, non publiée.
+--
+-- **Les trois versions naissent toutes en `draft`**, et les états sont atteints par
+-- des `UPDATE` adossés à un acte. Les poser directement à l'insertion — `signed`,
+-- `published` — est **exactement** ce que la porte 3bis interdit, et c'est ce que
+-- faisait la premiere version de ce bloc de pose : elle contournait par le bas le
+-- cycle de vie que le document passent six portes a prouver. La contrainte
+-- `definition_version_nait_en_draft` l'a refuse, et elle avait raison.
 INSERT INTO definition_version (definition_version_id, indicator_id, version_no,
        status, author_actor_id, label, formula, scope_expr, grain, unit, change_note)
 VALUES ('20000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 1,
-        'signed', 'a1', 'v1', 'sum(x)', 'teams = ALL', 'month', 'EUR', 'premiere version');
+        'draft', 'a1', 'v1', 'sum(x)', 'teams = ALL', 'month', 'EUR', 'premiere version');
 
 INSERT INTO signature_event (signature_event_id, definition_version_id, actor_id, act, occurred_at)
 VALUES ('30000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'a1', 'submit', '2026-09-20T09:00:00Z'),
        ('30000000-0000-0000-0000-000000000002', '20000000-0000-0000-0000-000000000001', 'a2', 'sign',   '2026-09-21T09:00:00Z');
 
--- v2 : publiée, donc verrouillée (B26)
+UPDATE definition_version SET status = 'in_review'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000001';
+UPDATE definition_version SET status = 'signed'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000001';
+-- Le parcours est `draft -> in_review -> signed -> published`. Sauter une etape est
+-- refuse par le tableau de transitions : une version ne peut pas etre signee sans
+-- avoir ete soumise, et c'est le `submit` qui rend la signature possible.
+
+-- v2 : publiée, donc verrouillée (B26). Le cycle est joue, pas pose.
 INSERT INTO definition_version (definition_version_id, indicator_id, version_no,
-       status, author_actor_id, label, formula, scope_expr, grain, unit, change_note, published_at)
+       status, author_actor_id, label, formula, scope_expr, grain, unit, change_note)
 VALUES ('20000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 2,
-        'published', 'a1', 'v2', 'sum(y)', 'teams = ALL', 'month', 'EUR', 'seuil ajoute', '2026-09-22T09:00:00Z');
+        'draft', 'a1', 'v2', 'sum(y)', 'teams = ALL', 'month', 'EUR', 'seuil ajoute');
 
 INSERT INTO signature_event (signature_event_id, definition_version_id, actor_id, act, occurred_at)
 VALUES ('30000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000002', 'a1', 'submit', '2026-09-21T10:00:00Z'),
        ('30000000-0000-0000-0000-000000000004', '20000000-0000-0000-0000-000000000002', 'a2', 'sign',   '2026-09-21T11:00:00Z'),
        ('30000000-0000-0000-0000-000000000005', '20000000-0000-0000-0000-000000000002', 'a3', 'publish','2026-09-22T09:00:00Z');
+
+UPDATE definition_version SET status = 'in_review'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000002';
+UPDATE definition_version SET status = 'signed'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000002';
+-- `published_at` n'est pose que par la garde, avec l'`occurred_at` de l'acte publish.
+UPDATE definition_version
+   SET status = 'published', published_at = '2026-09-22T09:00:00Z'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000002';
+
+-- v3 : soumise, signee, puis **revoquee**. Elle est ce qui rend la porte 3
+-- honnete : sans elle, la porte essayait un `published -> draft` qu'aucun acte ne
+-- pouvait meme produire, donc elle passait **pour la mauvaise raison**.
+INSERT INTO definition_version (definition_version_id, indicator_id, version_no,
+       status, author_actor_id, label, formula, scope_expr, grain, unit, change_note)
+VALUES ('20000000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 3,
+        'draft', 'a1', 'v3', 'sum(z)', 'teams = ALL', 'month', 'EUR', 'revocsee avant publication');
+
+-- La signature est posee, puis revoquee. Les deux poses sont dans le meme bloc :
+-- le trigger `revoked_at_follows_a_revoke` est DEFERRABLE, donc l'ordre de lecture
+-- ne compte pas — c'est ce qui permet d'ecrire l'histoire dans l'ordre du cycle.
+INSERT INTO signature_event (signature_event_id, definition_version_id, actor_id, act,
+                             occurred_at, revokes_event_id)
+VALUES ('30000000-0000-0000-0000-000000000006', '20000000-0000-0000-0000-000000000003', 'a1', 'submit', '2026-09-23T09:00:00Z', NULL),
+       ('30000000-0000-0000-0000-000000000007', '20000000-0000-0000-0000-000000000003', 'a2', 'sign',   '2026-09-23T10:00:00Z', NULL);
+
+-- Le `reason` est **obligatoire** pour un `revoke` (`refusal_has_reason`). Il ne
+-- servait a rien avant, parce qu'aucun `revoke` n'etait posable — le cycle etait
+-- entierement inatteignable, et cette contrainte ne fut jamais exercee.
+INSERT INTO signature_event (signature_event_id, definition_version_id, actor_id, act,
+                             occurred_at, revokes_event_id, reason)
+VALUES ('30000000-0000-0000-0000-000000000008', '20000000-0000-0000-0000-000000000003', 'a2', 'revoke', '2026-09-24T08:00:00Z',
+                                               '30000000-0000-0000-0000-000000000007',
+                                               'formule remplacee avant publication, signalement de coherence');
+
+-- v3 est passee de `draft` a `in_review` puis `signed` **puis** `draft` par l'acte de
+-- revocation. C'est le seul couple retour que la table de transitions autorise.
+UPDATE definition_version SET status = 'in_review'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000003';
+UPDATE definition_version SET status = 'signed'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000003';
+UPDATE definition_version SET status = 'draft'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000003';
+
+-- **Le temoin positif de la porte 5.** Meme signataire, meme version, meme acte
+-- qu'une insertion que la porte 5 refuse sur v1 — mais ici la premiere signature
+-- porte un `revoked_at`, donc l'index `WHERE act = 'sign' AND revoked_at IS NULL`
+-- la laisse passer.
+--
+-- **Cette insertion doit reussir.** C'est la seule preuve executable que la
+-- correction de l'index a ete une **correction** et non un durcissement : avec
+-- l'ancien predicat, elle echouait, et le chemin ouvert par § 4.6.0 restait
+-- inatteignable. Elle est donc dans les donnees de pose, pas dans une porte.
+INSERT INTO signature_event (signature_event_id, definition_version_id, actor_id, act, occurred_at)
+VALUES ('30000000-0000-0000-0000-000000000009', '20000000-0000-0000-0000-000000000003', 'a2', 'sign', '2026-09-25T09:00:00Z');
+UPDATE definition_version SET status = 'in_review'
+ WHERE definition_version_id = '20000000-0000-0000-0000-000000000003';
+
 ```
 
 **Porte 1 — l'auto-signature est impossible, y compris par un script** (ADR-1) :
@@ -1647,11 +1992,44 @@ UPDATE definition_version SET published_at = NULL
 
 ```sql
 -- forge:ddl-refuse
--- Rouvrir une version `published` est impossible : B26 ne permet le retrait que
--- jusqu'à la première publication. Au-delà, seule une nouvelle version puis une
--- nouvelle signature peut remplacer la formule.
+-- v2 est `published`, donc verrouillée : B26 ne permet le retrait qu'`avant` la
+-- première publication. Au-delà, seule une nouvelle version puis une nouvelle
+-- signature peut remplacer la formule.
+--
+-- **Cette tentative ne vaut que parce que v3 existe.** v3 est `draft` apres une
+-- signature revoquee, et c'est elle qui rend la porte 3 reellement exercee : sans
+-- elle, cette requete sortait du premier RETURN non parce que la porte jugeait
+-- juste, mais parce qu'**aucun acte `revoke` n'existait** dans la table de pose.
+-- La porte passait pour la mauvaise raison — et une porte qui passe pour la
+-- mauvaise raison ne prouve rien.
 UPDATE definition_version SET status = 'draft'
  WHERE definition_version_id = '20000000-0000-0000-0000-000000000002';
+```
+
+**Porte 3bis — la revocation, elle, reste possible avant publication** (le témoin
+négatif de la porte 3) :
+
+> Une porte qui refuse tout n'a pas de direction. La preuve que la porte 3 est
+> *juste* — et non *aveugle* — est que la même transition **passe** sur v3, dont la
+> signature a été révoquée par un acte nommé. Le contrôle n'a pas de commande pour
+> « cette requête doit réussir » ; cette affirmation est donc **écrite dans le
+> document** et vérifiée par la présence de v3 en `draft` dans les données de pose
+> ci-dessus. Si la révocation cessait de fonctionner, les trois `UPDATE` de v3
+> ci-dessus échoueraient, et `ddl-exec completeness` ne le verrait pas — **seul un
+> `execute` le verrait**, ce qui est la raison pour laquelle il existe.
+
+**Porte 3ter — l'entrée, elle, est fermée** (le défaut que les quatre portes
+ci-dessus ne pouvaient pas voir) :
+
+```sql
+-- forge:ddl-refuse
+-- Les quatre portes sont des `UPDATE`. Aucune n'essayait l'`INSERT`, donc rien
+-- n'empechait de **publier sans passer par un acte** : le cycle etait evitable par
+-- le bas, et cette porte demande moins de travail que les quatre autres.
+INSERT INTO definition_version (definition_version_id, indicator_id, version_no,
+       status, author_actor_id, label, formula, scope_expr, grain, unit, change_note, published_at)
+VALUES ('20000000-0000-0000-0000-000000000009', '11111111-1111-1111-1111-111111111111', 9,
+        'published', 'a1', 'v9', 'sum(w)', 'teams = ALL', 'month', 'EUR', 'publiee sans acte', now());
 ```
 
 **Porte 4 — `status` ne bouge pas sans acte nommé** (§ 4.6.1) :
@@ -1666,6 +2044,64 @@ UPDATE definition_version SET status = 'draft'
 UPDATE definition_version SET status = 'published'
  WHERE definition_version_id = '20000000-0000-0000-0000-000000000001';
 ```
+
+**Porte 5 — une seconde signature sur une version qui en porte deja une active**
+(le défaut du prédicat d'index) :
+
+```sql
+-- forge:ddl-refuse
+-- **Cette tentative doit echouer parce que v1 porte une signature ACTIVE de a2.**
+-- Ce n'est pas le cas de v3, dont la signature a ete revoquee — et pour v3, une
+-- seconde signature est *legitimement* possible : c'est le chemin que la correction
+-- de § 4.6.0 ouvre, et que l'ancien index `WHERE act = 'sign'` rendait
+-- impossible pour toute la vie de l'indicateur.
+--
+-- Les deux se lisent **comme un couple** : la meme insertion, sur une version
+-- signee et sur une version revoquee. Si les deux echouent, l'index ne distingue
+-- plus rien, et la correction de l'index a ete un simple durcissement.
+INSERT INTO signature_event (definition_version_id, actor_id, act)
+VALUES ('20000000-0000-0000-0000-000000000001', 'a2', 'sign');
+```
+
+**Porte 5 bis — le meme acte, sur la version revoquee, doit reussir** :
+
+> C'est le **temoin positif** de la porte 5, et il est indispensable : une porte qui
+> refuse les deux ne distingue pas « j'ai corrige le predicat » de « j'ai tout
+> interdit ». Le controle n'a pas de commande pour « cette requete doit reussir » ;
+> l'affirmation est donc portee par la **troisieme insertion des donnees de pose**,
+> qui pose une seconde signature de a2 sur v3 **apres** la revocation — et qui doit
+> passer, sinon la re-signature est de nouveau inatteignable et la correction de
+> § 4.6.0 n'a rien ouvert.
+>
+> C'est le meme besoin que la porte 3 bis, et pour la meme raison : **un controle
+> qui ne peut affirmer qu'un refus ne peut pas prouver qu'une porte est juste.**
+
+**Porte 6 — `revoked_at` ne peut pas etre pose a la main** (la fenetre que la
+denormalisation ouvre) :
+
+```sql
+-- forge:ddl-refuse
+-- `revoked_at` est une **denormalisation** : elle existe pour que l'index puisse
+-- poser une question sur une seule ligne. Une denormalisation sans contrainte
+-- croisee est une seconde verite, et cette porte est le moment ou elle diverge :
+-- un `UPDATE` suffirait a liberer la signature sans acte de revocation, donc a
+-- rouvrir la re-signature par la fenetre que la porte 5 vient de fermer.
+UPDATE signature_event SET revoked_at = now()
+ WHERE signature_event_id = '30000000-0000-0000-0000-000000000007';
+```
+
+> **Ce que ces six tentatives valent.** Elles ne prouvent pas que le modèle est
+> bon : elles prouvent que **les portes que ce document écrit refusent ce qu'il
+> dit qu'elles refusent**. C'est exactement la propriété qui manquait, et elle
+> n'est vérifiable que par exécution — les défauts de ce document étaient invisibles
+> à la relecture, et les derniers ne l'ont plus été.
+>
+> **Et ce qu'elles ne prouvent pas**, qui est aussi important : la porte 3bis dit
+> qu'une transition doit rester **possible**, et aucune tentative `forge:ddl-refuse`
+> ne peut l'affirmer. Un contrôle qui refuse tout ne distingue pas une porte d'un
+> mur. C'est la raison pour laquelle v3 existe dans les données de pose : sa
+> présence et son `UPDATE` réussi sont la seule preuve exécutable que la révocation
+> fonctionne encore.
 
 > **Ce que ces quatre tentatives valent.** Elles ne prouvent pas que le modèle est
 > bon : elles prouvent que **les portes que ce document écrit refusent ce qu'il

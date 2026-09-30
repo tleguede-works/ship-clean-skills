@@ -2004,3 +2004,178 @@ Et le corollaire, qui vaut pour toutes les corrections de ce dossier :
 > qu'on ait sur la santé d'une suite.
 
 **v1.9.4** : PR #49, 197 tests.
+
+## F-46 — Amberline Phase 4 : les quatre signalements bloquants, en un lot
+
+Quatre défauts accumulation depuis des semaines, traités comme **un seul lot** parce
+qu'ils se tiennent : deux portes qui ne tenaient pas, un index qui interdisait ce que
+la correction approuvée venait d'ouvrir, et une porte qui passait **pour la mauvaise
+raison**. Résultat : **7 portes déclarées, 7 actives, 0 morte.**
+
+### Défaut 1 — la garde de cycle de vie n'avait pas d'états terminaux
+
+La garde demandait « quel acte justifie cet état » (un `CASE NEW.status`), sans
+jamais demander « cet état avait-il le droit d'exister ». Donc `published` et
+`refused` **n'étaient pas terminaux** : on pouvait en sortir.
+
+Le tableau de transitions est maintenant explicite, et il dit les deux choses à la
+fois — la transition autorisée **et** l'acte qui la justifie. Un couple absent est
+refusé sans qu'on ait à consulter `signature_event`, et `published` / `refused`
+n'ont plus de couple sortant : **B26 est enfin dans la base**, et non dans une
+phrase.
+
+**Et j'ai maladroitement reproduit le défaut en corrigeant** : ma première table
+contenait `('draft', 'in_review')` deux fois et **oubliait `signed -> published`**.
+Le moteur l'a refusée, et il avait raison — sans `publish` dans la table, aucun
+document ne pouvait jamais publier.
+
+### Défaut 2 — aucune porte d'entrée, donc le cycle était contournable par le bas
+
+Les quatre portes étaient **toutes** des `UPDATE`. Aucune n'essayait l'`INSERT` :
+rien n'empêchait d'écrire directement une version `published` avec son
+`published_at`, c'est-à-dire de **publier sans passer par un acte**.
+
+Une porte qui ne couvre qu'un côté d'une opération n'est pas une porte, c'est une
+moitié — et cette moitié-là est la plus facile à contourner, parce qu'elle demande
+moins de travail. **Porte 3 ter** l'essaie, et elle est refusée.
+
+**Et le premier correctif était un mur, pas une porte.** J'ai écrit
+`CHECK (status = 'draft')` en pensant fermer l'entrée. Or un `CHECK` ne dit pas
+« à l'insertion seulement » : il empêche **toute mise à jour** qui change le
+statut. La version devenait donc figée en `draft` pour toujours, et **le cycle de
+vie entier était inatteignable**. C'est un défaut que j'ai introduit en corrigeant le
+défaut, et que seul le `execute` du projet a vu.
+
+La correction est un **`BEFORE INSERT`**, dont la portée est exactement celle qu'on
+veut fermer. Et un `CHECK` reste justifié pour l'invariant qui, lui, ne dépend pas du
+moment : `published_at` n'a de sens qu'avec le statut qui la justifie.
+
+### Défaut 3 — l'index interdisait ce que la correction approuvée venait d'ouvrir
+
+`one_active_signature_per_signer` portait `WHERE act = 'sign'` — donc « au plus une
+signature **pour toute la vie de l'indicateur** ». Or la correction #2 de § 4.6.0
+ouvre explicitement la **re-signature**.
+
+**Et l'index ne pouvait pas le dire** : un prédicat d'index n'exécute pas de
+jointure, et « ce `sign` est-il ciblé par un `revoke` ? » porte sur **une autre
+ligne**. C'est une limite du SQL, pas une faute de rédaction — et c'est exactement
+la limite que l'ADR avait rencontrée sans la nommer.
+
+L'index porte donc sur une **colonne dénormalisée**, `revoked_at`, posée par le
+trigger de révocation. Le prédicat redevient une question sur **la même ligne**.
+
+Et une dénormalisation sans contrainte croisée est une **seconde vérité** : un
+`UPDATE signature_event SET revoked_at = now()` suffisait à libérer la signature et
+à rouvrir la re-signature par la fenêtre que la porte venait de fermer. **Porte 6**
+l'essaie, et elle est refusée. `revoked_at` n'est donc pas une donnée : c'est la
+**projection** de l'acte, au même titre que `status` est la projection du cycle.
+
+**Et `designated_signer_actor_id` n'était jamais mis à jour** — une valeur figée pour
+toute la vie de l'indicateur, donc un chemin de re-signature que rien n'atteignait.
+Il est mis à jour maintenant, **et le changement exige qu'aucune signature active ne
+porte sur la version courante** : désigner quelqu'un d'autre pendant qu'une
+signature est en cours laisserait un indicateur désigné vers un tiers.
+
+### Défaut 4 — la porte 3 passait pour la mauvaise raison
+
+C'est le pire des quatre, et c'est celui qui a demandé le plus de travail.
+
+La porte 3 essayait `published -> draft`. Elle était refusée — donc « verte ». Mais
+**aucun acte `revoke` n'existait dans les données de pose** : la version v2 n'avait
+jamais été révoquée. La porte passait donc non parce qu'elle jugeait juste, mais
+parce que **l'opération interdite n'était pas produitible**.
+
+Une porte qui passe pour la mauvaise raison ne prouve rien.
+
+Le correctif est **v3** : soumise, signée, puis révoquée par un acte nommé, qui
+reste en `draft`. Porte 3 est maintenant essayée sur une version où le `revoke`
+**existe**, donc elle est réellement exercée.
+
+**Et cette fois j'ai fait l'erreur inverse.** Ma porte 5 devait, selon mon
+commentaire, « échouer parce que v3 porte une signature active » — mais la
+signature de v3 **avait été révoquée**, donc la ré-signation y est *légitimement*
+possible. La la garde a reporté `refused: false` et **m'a signalé que mon intention
+était fausse**. Une garde morte est un contrôle qui fonctionne.
+
+La porte a été réécrite sur v1 (signature **active**), et le **témoin positif** — la
+même insertion sur v3, qui **doit réussir** — est dans les données de pose. Parce
+qu'une porte qui refuse les deux ne distingue pas « j'ai corrigé le prédicat » de
+« j'ai tout interdit ».
+
+### Le cinquième défaut, trouvé en route : deux commandes, deux schémas
+
+`execute` PASS pendant que `guards` annonçait « 2 gardes inertes ». Les deux
+commandes synthétisaient le schéma **différemment** : `execute` ignorait les
+`CREATE TABLE` du document, `guards` les ignorait aussi — donc `revoked_at`
+n'existait pas et la garde échouait sur une **colonne fantôme**.
+
+Un contrôle qui n'a pas exécuté ce qu'il croit avoir exécuté ne peut rien conclure —
+ni « inerte », ni « active ». Les deux commandes construisent maintenant le schéma de
+la **même** façon, et l'ordre est celui du document.
+
+Et un sixième, plus petit : **`DECLARE v_id uuid; v_status text;` — le séparateur
+PL/pgSQL est le point-virgule, pas la virgule.** Le parseur découpait sur `,`, donc
+`v_status` n'était pas « déclaré », et `SELECT status INTO v_status FROM
+definition_version` était lu comme une lecture de la **table** `v_status`.
+`dangling_references: ['v_status']` sur une fonction parfaitement valide — un
+contrôle qui accuse une table inexistante apprend à être ignoré.
+
+### Ce que l'exécution a réellement trouvé
+
+Aucune de ces corrections n'a été validée à la relecture. Le moteur a trouvé, dans
+l'ordre : le nom de fonction incohérent entre `CREATE FUNCTION` et le trigger ; la
+contrainte `nait_en_draft` qui interdisait tout `UPDATE` de statut ; les `UPDATE`
+qui sautaient `draft -> signed` ; la table de transitions qui oubliait
+`signed -> published` ; `target_unit` et `target_value` absents du `CREATE TABLE`
+alors que § 4.6 les déclare ; et trois objets que j'avais posés **deux fois** — en
+`CREATE TABLE` **et** en `ALTER TABLE`.
+
+**Sept erreurs, six écrites par moi.** Le « le DDL s'exécute, ou n'est pas écrit »
+n'est pas une métaphore : c'est la seule chose qui les a trouvées.
+
+### Amberline : la base applicative n'existait pas dans le document
+
+`ddl-exec completeness` disait `tables_created_in_ddl: 0` pour
+`tables_declared_in_prose: 17`. Les trois tables que tout le DDL contraint —
+`indicator`, `definition_version`, `signature_event` — étaient **déclarées en
+tableau de colonnes et jamais créées**.
+
+Et `execute` les **synthétisait** avant de jouer le DDL, ce qui cachait le problème :
+une porte ne s'exerçait sur un schéma que le script venait d'inventer.
+
+Les `CREATE TABLE` sont maintenant dans le document, alignés **champ par champ** sur
+les tableaux de § 4.5 à § 4.8 — et `execute` ne fabrique plus rien derrière le dos
+du document. C'est l'action #2 de F-33, ouverte depuis le début du dossier.
+
+### Les deux constats restent non promus, et c'est la bonne décision
+
+`findings_promoted` est en **`warn`**, jamais en `pass`, tant que F-001 et F-002 ne
+sont pas promus. C'est le comportement voulu : un constat non promu qui rend le gate
+vert serait pire que rouge.
+
+Leur **porteur** et leur **échéance** sont maintenant écrits dans l'état :
+
+| constat | pourquoi il ne se promeut pas |
+|---|---|
+| **F-001** — aucun titulaire du rôle signataire nommé | B2 est **déjà tranché**. Ce qui manque est un **nom**, pas une règle. Promouvoir un constat dont la correction est « nommer quelqu'un » inscrirait dans un fichier de règles une obligation **sans titulaire**. |
+| **F-002** — B7 exige une démonstration sur des lignes réelles | La correction dépend d'un **accord externe** (équipe data, fixture seedée), pas d'une décision d'architecture. La promouvoir transformerait un blocage externe en obligation documentaire. |
+
+Un `warn` qui **nomme** les deux constats, leur porteur et leur échéance est
+infiniment plus utile qu'un `pass` silencieux.
+
+### Le dernier échec, classé « correct, pas un défaut »
+
+`no_premature_artifacts` signale les **15 plans de la Phase 5** écrits à la Phase 4.
+C'est le résultat attendu, classé tel depuis le début du dossier, et le commanditaire
+a **refusé leur suppression** parce que l'approbation des plans les légitime. Il n'est
+ni contourné ni « corrigé » : il reste, et il est dit.
+
+### Résultat
+
+| gate | |
+|---|---|
+| `ddl-exec completeness` | **PASS** — 4 tables créées, 0 prose-only, 0 dangling |
+| `ddl-exec execute` | **PASS** — 47 instructions, 0 erreur |
+| `ddl-exec guards` | **PASS** — 7 déclarées, 7 actives, **0 morte** |
+| `consistency all` | **PASS** — 9 contrôles, 1 skip attendu |
+| `forge-guard all` | 1 échec, `no_premature_artifacts`, **classé correct** |
