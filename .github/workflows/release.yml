@@ -168,6 +168,8 @@ jobs:
       # ---------------------------------------------------------------
       - name: Reprise — tag existant sans release
         id: resume
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "${{ needs.verify.outputs.should_release }}" ]; then :; fi
@@ -246,6 +248,7 @@ jobs:
           if [ "${{ steps.resume.outputs.reprise }}" = "true" ]; then
             git checkout -q "${{ steps.resume.outputs.tag }}"
           fi
+
 
           node scripts/snapshot.js build --version "$version" --out dist --json | tee /tmp/snapshot.json
           archive=$(node -p "require('/tmp/snapshot.json').archive")
@@ -333,10 +336,19 @@ jobs:
           } > /tmp/notes.md
 
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "le tag $TAG existe déjà — on ne le recrée pas"
+            echo "le tag $TAG existe deja — on ne le recree pas"
           else
             git tag -a "$TAG" -m "release $VERSION"
             git push origin "$TAG"
+          fi
+
+          # Si la release existe deja, il n'y a rien a recreer. Sortir en 0
+          # ici est correct : l'etat demande EST atteint. C'est different du cas
+          # « tag sans release », ou sortir en 0 transformait une panne en etat
+          # permanent.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "la release $TAG existe deja — rien a publier"
+            exit 0
           fi
 
           # Les assets sont des CHEMINS, jamais une liste reconstruite par
