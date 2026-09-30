@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.9.5] - 2026-09-30
+
 ### fix(ddl-exec) — deux commandes, deux schémas, et un verdict faux
 
 `execute` et `guards` construisaient le schéma **différemment**. `execute` ignorait
