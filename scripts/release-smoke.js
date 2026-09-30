@@ -79,14 +79,29 @@ function gitSandbox(tags = []) {
   return dir;
 }
 
+/**
+ * Lance `release.js` du bac à sable **depuis un autre répertoire**.
+ *
+ * Le CWD est délibérément **ailleurs** que le bac. C'est ainsi qu'est né le
+ * défaut que ce fichier teste : `release.js` résolvait ses chemins depuis
+ * `__dirname` mais interrogeait `git` depuis le CWD. Dans le dépôt, les deux
+ * désignaient le même dépôt et le test passait ; dans l'archive extraite, le CWD
+ * n'était pas le dépôt du bac et la protection ne s'exerçait pas.
+ *
+ * Un test qui lance le script depuis le bac **peut** passer alors que le script est
+ * faux. Il faut donc que la suite lance depuis ailleurs, comme le fait le bot.
+ */
 function runIn(dir, ...args) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-cwd-'));
   try {
     const stdout = execFileSync('node', [path.join(dir, 'scripts', 'release.js'), ...args], {
-      encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe']
+      encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], cwd
     });
     return { code: 0, stdout };
   } catch (e) {
     return { code: e.status === undefined ? 1 : e.status, stdout: e.stdout || '', stderr: e.stderr || '' };
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
   }
 }
 

@@ -27,6 +27,44 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(release) — la protection par tag interrogeait le mauvais dépôt
+
+`release.js` résout `VERSION` et `CHANGELOG.md` depuis `__dirname`, mais
+interrogeait `git tag --list` **depuis le répertoire courant**. Le bac à sable est
+un dépôt à part ; la commande partait donc d'un **autre dépôt** que celui que la
+promotion allait modifier.
+
+Constat : le test du refus passait **dans le dépôt** et échouait **dans l'archive
+extraite**. Dans le dépôt, le CWD et le dépôt protégé désignaient la même chose, et
+la protection s'exerçait **par accident**. Dans l'archive, le CWD n'était pas le
+dépôt du bac, la liste de tags était vide, et le refus n'existait pas.
+
+`git` est donc appelé dans `ROOT`, comme tout le reste. Les tests lancent
+désormais `release.js` **depuis un répertoire qui n'est pas le bac** : un test qui
+lance le script depuis le bac *peut* passer alors que le script est faux, donc la
+suite lance comme le bot.
+
+Vérifié en réintroduisant le défaut à la main : le test échoue, et il repasse avec
+le correctif. C'est la seule preuve qu'un test négatif sur un contrôle de release
+vaut quelque chose — et c'est la **quatrième fois** que l'archive publiée trouve ce
+que la suite locale laisse passer.
+
+### test(release) — un test qui passait au vert sans avoir exercé le contrôle
+
+Le test du refus par tag ne testait rien. `gitSandbox` faisait `git init` puis
+`git tag v1.8.0`, **en avalant les erreurs** — or `git tag` sur un dépôt sans HEAD
+échoue en `Failed to resolve 'HEAD' as a valid ref`, il faut un commit avant de
+taguer. Le bac ressortait **sans tag**, la protection ne s'exerçait jamais, et
+`bump` promuait 1.8.0 **comme si de rien n'était** : exactement le défaut que le
+test prétendait interdire.
+
+`gitSandbox` lève désormais si le tag demandé n'est pas celui qu'on liste ensuite,
+et un témoin vérifie le bac **avant** le test qui s'y fie.
+
+Même famille que `component-parity` : un contrôle — ici, un test — qui s'exerce sur
+un périmètre qui ne contient pas ce qu'il croit contenir, et déclare donc sa
+réussite. Un témoin sur l'instrument précède tout test qui s'y fie.
+
 ## [1.9.1] - 2026-09-30
 
 ### test(release) — un test qui passait au vert sans avoir exercé le contrôle
