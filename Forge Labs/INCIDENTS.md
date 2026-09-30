@@ -1639,3 +1639,120 @@ de la forme.
 
 **v1.9.0** : PR #41, `snapshot verify` sur l'archive publiée, suite rejouée dans
 l'archive extraite.
+
+## F-43 — La chaîne de publication : deux échappatoires dans le harnais de test
+
+Le défaut le plus important du dossier n'est pas dans un contrôle de contenu. Il
+est dans **la chaîne qui publie**, et il a été trouvé par la méthode de bout en
+bout : `snapshot verify` puis exécution de la suite **dans l'archive extraite**.
+
+### 1. Le test du refus par tag ne testait rien
+
+`release.js bump` refuse désormais de promouvoir une version dont le tag existe
+(la section publiée serait écrasée). Le test de ce refus :
+
+```js
+git('init', '-q');
+git('config', 'user.email', 'test@example.invalid');
+git('config', 'user.name', 'test');
+git('tag', t);            // ← erreurs avalées
+```
+
+`git tag` sur un dépôt **sans HEAD** échoue en `Failed to resolve 'HEAD' as a valid
+ref` : il faut un commit avant de taguer. Les erreurs étant avalées, le bac
+ressortait **sans tag**, la protection ne s'exerçait jamais, et `bump` promuait
+1.8.0 **comme si de rien n'était** — exactement le défaut que le test prétendait
+interdire.
+
+C'est la **quatrième fois** que l'archive publiée trouve ce que la suite locale
+laisse passer, et la première fois que la cause est le **test** et non le script.
+
+### 2. `git tag --list` partait du mauvais dépôt
+
+`release.js` résout `VERSION` et `CHANGELOG.md` depuis `__dirname`, mais
+interrogeait `git` **depuis le répertoire courant**. Le bac à sable est un dépôt à
+part : la commande partait d'un **autre dépôt** que celui que la promotion allait
+modifier.
+
+| | dépôt local | archive extraite |
+|---|---|---|
+| CWD | le dépôt lui-même | le répertoire d'extraction |
+| dépôt interrogé | **le bon, par accident** | un dépôt sans tags |
+| `publishedTags()` | `['1.6.0' … '1.8.0']` | `[]` |
+| refus par tag | exercé | **inexistant** |
+
+Dans le dépôt, la protection fonctionnait **par coïncidence**. Dans l'archive —
+le seul endroit où la suite doit tourner en conditions réelles — elle n'existait
+pas.
+
+**Le harnais est corrigé dans l'autre sens** : les tests lancent `release.js`
+**depuis un répertoire qui n'est pas le bac**. Un test qui lance le script depuis le
+bac *peut* passer alors que le script est faux. Un test doit se placer dans les
+conditions d'échec qu'il prétend couvrir.
+
+### 3. La vérification qui manquait
+
+J'ai **réintroduit le défaut à la main** — supprimé le `cwd: ROOT` — et vérifié que
+le test **échoue**, puis qu'il repasse avec le correctif.
+
+C'est la seule preuve qu'un test négatif sur un contrôle de release vaut
+quelque chose, et elle manquait.
+
+> **Un test vert sur un script faux est la forme exacte du défaut qu'on cherche à
+> attraper.** Donc : faire échouer le test en réintroduisant le défaut, avant de
+> croire le test.
+
+### Le bump local : trois fois, et la protection Finally tient
+
+| | ce que le bump local a cassé |
+|---|---|
+| 1re fois | un `## [Unreleased]` **vide** devant la section promue |
+| 2e fois | la section `1.7.0` **supprimée** — le CHANGELOG ne connaissait plus qu'une version |
+| 3e fois | la section `1.8.0` **supprimée**, en promuant sur une branche antérieure au `chore(release)` |
+
+Les trois sont le même geste au mauvais endroit. `bump` **refuse maintenant** si la
+version à écrire correspond à un tag existant, ou si elle est antérieure à la
+dernière section datée — et il nomme la version en cause.
+
+Il reste une règle que le script ne peut pas appliquer : **rejouer `git pull` avant
+de bumper**. Le geste est au bot, et les changements aussi.
+
+### Le compte, et ce qu'il dit
+
+Quatre échappatoires, dont deux dans le harnais :
+
+1. `component-parity` lisait **un composant sur sept** et rendait `pass: true` ;
+2. `tokens-used` lisait **une forme de citation sur trois** et laissait passer un
+   défaut injecté ;
+3. le bac à sable **n'avait pas ses tags** — `git tag` échoue sans commit ;
+4. `git tag --list` partait du **mauvais dépôt**.
+
+Les quatre ont la même cause : **un contrôle ou un test qui s'exerce sur un
+périmètre qui ne contient pas ce qu'il croit contenir, et déclare donc sa
+réussite.** Les deux premiers sont des contrôles de contenu ; les deux derniers
+sont **la chaîne qui publie**.
+
+D'où la règle générale, qui vaut pour les dix contrôles et pour les tests :
+
+> Un contrôle qui **déduit d'une forme** lit une langue. Un contrôle qui
+> **interroge un périmètre différent** du sien lit un autre dépôt. Et un test qui
+> s'exerce ailleurs que là où le défaut apparaît ne couvre rien. Dans les trois cas,
+> il rend `pass: true` — et c'est la seule chose qu'il rend.
+
+### La règle, et sa preuve
+
+Les tests d'archives sont restés verts pendant que l'archive échouait, **quatre
+fois**. La règle qui en sort :
+
+> **La publication n'est pas vérifiée quand la suite est verte. Elle est vérifiée
+> quand l'archive est extraite, non modifiée, et rejouée.** Le seul environnement qui
+> diffère du dépôt est le seul qui ment.
+
+Et pour les tests eux-mêmes :
+
+> **Faire échouer le test** en réintroduisant le défaut, avant de croire le test.
+> Un test qu'on n'a jamais vu échouer n'est pas un test : c'est un commentaire.
+
+**v1.9.1 et v1.9.2** : PR #44 et #45, `snapshot verify` → `pass: true`, 96 fichiers,
+0 différence, et la suite rejouée dans l'archive extraite — **14 tests de fumée
+verts**, contre 1 échec en v1.9.1.
