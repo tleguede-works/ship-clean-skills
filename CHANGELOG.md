@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-09-30
+
 ### fix(forge) — Les citations : une file d'examen honnête, et l'échec documenté
 
 `consistency-check citations` ne demande plus « l'ID existe-t-il ? » mais
