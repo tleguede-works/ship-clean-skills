@@ -27,6 +27,49 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — `premises` ne lisait que `[BCE]` : six exigences non fonctionnelles déclarées « mortes »
+
+`N` est une catégorie d'exigence à part entière — un PRD qui refuse de porter
+« targetes tactiles ≥ 44 pt » parmi ses règles métier la range à part, et c'est bien
+ce qu'il fait. Le motif ne portait que `[BCE]`, **à deux endroits de la même
+fonction** : la définition d'un identifiant, et la lecture des identifiants déclarés.
+
+Conséquence : un livrable ne pouvait **pas** déclarer sa dépendance à une exigence non
+fonctionnelle sans être accusé d'une **référence morte**, et l'accusation citait `N3`
+à côté d'un délai d'échéance — un rapport entre deux choses sans rapport. Les deux
+motifs dupliqués sont désormais une **constante unique** : un prédicat dupliqué
+diverge, c'est tout ce qu'il fait.
+
+Constaté sur Bailly au gate de la Phase 4. Même famille que l'élargissement de
+`declaredTables` quelques commits plus tôt : **un motif plus étroit que ce que le
+document écrit est faux.** Ici, sur les **identifiants eux-mêmes**.
+
+### fix(forge-guard) — « à décider » en prose comptait comme une case non tranchée
+
+Le marqueur est un marqueur d'**emplacement** : *rien n'a été écrit ici, et quelque
+chose devait l'être*. La même suite de caractères, dans une **phrase**, décrit
+souvent le contraire — elle **raconte** une décision. Onze faux positifs sur un seul
+document, dont trois purs accents : `Aucune échéance bloquante à décider`,
+`1 à décider` dans un libellé d'écran, `Ce qui a servi à décider`.
+
+Et le cas instructif est dans le produit lui-même : le projet s'appelle « les trois
+états de traitement », l'un de ses champs s'appelle `decidee_le`, et son bandeau
+affiche « 1 à décider ». **Interdire le mot dans ce projet, c'est interdire de le
+nommer.** Un contrôle de complétude qui interdit de nommer un champ n'est pas un
+contrôle de complétude.
+
+Un marqueur n'est une case que s'il occupe **la place d'une valeur** : dans une
+cellule de tableau, **seul dans sa cellule**, ou en tête d'une section. La
+distinction se fait par la **forme de la ligne**, jamais par le sens du mot — c'est la
+seule chose qu'un contrôle peut décider sans lire le document.
+
+Trois contre-témoins, dont un qui prouvait le correctif qu'il vérifiait : il asserait
+`status === 'pass'`, un statut **vrai avant la Phase 4 quels que soient les
+résultats**, donc il passait avec le correctif neutralisé. Un test qui passe avec le
+correctif annulé ne prouve pas le correctif — il prouve qu'il tourne.
+
+199 → 202 tests.
+
 ## [1.9.6] - 2026-09-30
 
 ### fix(forge-guard) — le premier artefact cessait d'être le premier dès que le projet avançait
