@@ -27,6 +27,45 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### feat(forge) — Un composant ne peut plus avoir deux rendus
+
+`design-check tokens-used` vérifie qu'un écran ne cite que des tokens qui
+existent. Il ne vérifie pas l'autre moitié du contrat : qu'un écran qui rend un
+composant connaisse la **surface** de ce composant. Un composant peut donc
+gagner un slot ou un état, et les écrans qui le rendent continuent d'en produire
+une version sans lui — sans qu'aucun contrôle bronche.
+
+Constaté sur le projet de test, au gate de la Phase 3 : `IndicatorTile` passe
+de 6 à 7 slots et gagne cinq états pour la machine de franchissement. **Deux
+écrans propagent, trois ne propagent pas** — dont un dont le § 4 s'intitule
+« États — tous, sans exception ». Le « 6 slots » y est écrit deux fois, et
+`tokens-used` est au vert : il a raison de l'être, il ne demande pas cette
+question.
+
+`design-check component-parity` vérifie qu'un écran **n'affirme pas une surface
+périmée**. Le contrôle ne demande pas à chaque écran d'énumérer tous les états
+d'un composant : beaucoup ne s'appliquent nulle part, et une telle exigence
+produirait des dizaines d'exemptions, donc un contrôle qu'on contourne. Il vise
+la forme que prend vraiment l'ignorance — une affirmation fausse — et laisse
+écrire l'omission quand elle est un choix : `` `Tile` — exempt: `offline` (…) ``.
+
+Trois pièges rencontrés en l'écrivant, tous deux couverts par un test :
+
+- le contrat d'un composant s'écrit de **deux** façons dans ce design system
+  (tableau markdown pour `IndicatorTile`, prose `·` pour `DataTable`,
+  `SignatureBar`, `ProvenanceStrip`, `ExportPanel`). Ne lire que le tableau
+  déclarait la moitié des composants sans état — donc sans aucune exigence ;
+- `String.search` rend l'index du premier `#`, donc `slice(start + 1)` laissait
+  `## Tile` en tête de section, qui ressortait comme « titre suivant » à
+  l'offset 0. Le composant était déclaré sans état, sans aucune erreur ;
+- rattacher une énumération au dernier composant nommé avant elle accuse le
+  mauvais composant : une ligne de tableau cite `ExportPanel` puis dit « chaque
+  tuile porte ses 6 slots », ce qui parle de la tuile. L'attribution se fait
+  donc par **preuve** — le composant dont la surface contient tous les noms cités.
+
++5 tests (135 → 140).
+
+
 ## [1.3.1] - 2026-09-30
 
 ### fix(forge) — L'ordre des phases est appliqué, il n'est plus seulement énoncé

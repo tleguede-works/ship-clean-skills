@@ -372,6 +372,222 @@ function checkTokensUsed(root) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Parité composant / écran
+ * ------------------------------------------------------------------ */
+
+/**
+ * Les slots et les états nommés qu'un composant déclare.
+ *
+ * Deux écritures coexistent dans les design systems réels, et il faut lire les
+ * deux : `**États** :` suivi d'un tableau markdown (`IndicatorTile`), et
+ * `**États** : \`a\` · \`b\`` sur une seule ligne (`DataTable`, `SignatureBar`…).
+ * Ne lire que le tableau revient à déclarer que quatre composants sur six
+ * n'ont aucun état — donc à ne rien leur exiger.
+ *
+ * En prose, on ne retient que le **premier** nom de chaque segment séparé par
+ * `·` : les parenthèses explicatives contiennent des backticks qui ne sont pas
+ * des états (`error` (message + `Réessayer`)).
+ */
+function readComponentContract(md, component) {
+  // § 2. Composants primitifs → ### IndicatorTile
+  const start = md.search(new RegExp(`^#{2,4}\\s+${component}\\s*$`, 'm'));
+  if (start < 0) return null;
+
+  // `search` rend l'index du PREMIER `#`. `slice(start + 1)` laisserait donc
+  // `## IndicatorTile` en tête, qui ressortirait comme « titre suivant » à
+  // l'offset 0 — et la section serait vide pour tous les composants, sans
+  // aucune erreur. On saute la ligne entière.
+  const afterHeading = md.indexOf('\n', start);
+  const rest = afterHeading < 0 ? '' : md.slice(afterHeading + 1);
+  const nextHeading = rest.search(/^#{2,4}\s+\S/m);
+  const body = nextHeading < 0 ? rest : rest.slice(0, nextHeading);
+
+  const collect = (label) => {
+    const m = body.match(new RegExp(`^\\*\\*${label}\\*\\*\\s*:(.*)$`, 'm'));
+    if (!m) return [];
+
+    const inline = m[1].trim();
+    if (inline) {
+      // Forme prose : le premier nom de chaque segment.
+      return inline.split('·')
+        .map(seg => seg.match(/`([a-z][a-z0-9_-]*)`/i))
+        .filter(Boolean)
+        .map(hit => ({ name: hit[1] }));
+    }
+
+    // Forme tableau. Le reste de la ligne du libellé est vide : le parcourir
+    // casserait la boucle de lignes sur la toute première itération, et le
+    // composant serait déclaré sans état — donc sans aucune exigence.
+    const rows = [];
+    const after = body.slice(m.index + m[0].length).replace(/^[^\n]*\n/, '');
+    for (const line of after.split('\n')) {
+      if (/^\|\s*-{2,}/.test(line)) continue;
+      if (!line.trim()) continue;
+      if (!line.trim().startsWith('|')) break; // le tableau est fini
+      const cell = line.trim().match(/^\|\s*`([a-z][a-z0-9_-]*)`\s*\|/i);
+      if (cell) rows.push({ name: cell[1] });
+    }
+    return rows;
+  };
+
+  return {
+    slots: collect('Slots'),
+    states: collect('États')
+  };
+}
+
+/** Les exemptions écrites par un écran : `` `IndicatorTile` — exempt: `x`, `y` `` */
+function readExemptions(md, component) {
+  const re = new RegExp(
+    '`' + component + '`[^\\n]*?exempt\\s*:\\s*([^\\n]+)', 'gi');
+  const out = new Set();
+  let m;
+  while ((m = re.exec(md)) !== null) {
+    for (const hit of m[1].matchAll(/`([a-z0-9_]+)`/gi)) out.add(hit[1]);
+  }
+  return out;
+}
+
+/**
+ * Deux affirmations qu'un écran fait sur la surface d'un composant.
+ *
+ * `tokens-used` vérifie que les tokens cités existent. Rien ne vérifiait
+ * l'autre moitié du contrat : qu'un écran qui rend un composant.connaisse la
+ * **surface** de ce composant.
+ *
+ * Ce contrôle ne demande donc pas à chaque écran d'énumérer tous les états
+ * d'un composant — beaucoup ne s'appliquent nulle part, et une telle exigence
+ * produirait des dizaines d'exemptions, donc un contrôle qu'on contourne.
+ * Il vérifie deux **affirmations**, qui sont les seules formes que prennent
+ * vraiment l'ignorance :
+ *
+ * 1. **Contradiction** — l'écran énumère la surface du composant (`ses 6 slots :
+ *    a, b, c`) et cette énumération ne correspond plus au design system.
+ * 2. **Exhaustivité déclarée** — l'écran prétend lister *tous* les états
+ *    (« sans exception », « tous ») et n'en cite pas la totalité.
+ *
+ * Constaté sur un test grandeur nature : `IndicatorTile` passe de 6 à 7 slots
+ * et gagne cinq états pour la machine de franchissement. Deux écrans
+ * propagent, **trois ne propagent pas** — dont un dont le § 4 s'intitule
+ * « États — tous, sans exception ». Le « 6 slots » y est écrit deux fois, et
+ * `tokens-used` est au vert : il a raison de l'être, il ne demande pas cette
+ * question.
+ *
+ * Une exemption reste possible, écrite (`exempt:` + raison) : choisir de ne
+ * pas rendre un état est une décision, et elle doit s'écrire.
+ */
+function checkComponentParity(root) {
+  const designAbs = L.toAbs(root, DESIGN);
+  const results = {
+    command: 'component-parity', anchor: root, pass: true,
+    components: [], offenders: [], exemptions: []
+  };
+
+  if (!fs.existsSync(designAbs)) {
+    results.error = 'design_system_absent';
+    results.pass = false;
+    return results;
+  }
+
+  const dsMd = fs.readFileSync(designAbs, 'utf-8');
+
+  // Les composants du § 2, dans l'ordre où le design system les déclare.
+  const components = [...dsMd.matchAll(/^###\s+([A-Z][A-Za-z0-9]*)\s*$/gm)]
+    .map(m => m[1])
+    .filter(name => ['Slots', 'États', 'Tailles', 'Variantes'].indexOf(name) < 0);
+
+  // La surface déclarée de chaque composant, par nature.
+  const surfaces = new Map();
+  for (const component of components) {
+    const contract = readComponentContract(dsMd, component);
+    if (!contract) continue;
+    const declared = [...contract.slots.map(x => ({ ...x, kind: 'slot' })),
+                      ...contract.states.map(x => ({ ...x, kind: 'state' }))];
+    if (!declared.length) continue;
+    surfaces.set(component, {
+      slots: contract.slots.map(x => x.name),
+      states: contract.states.map(x => x.name)
+    });
+    results.components.push({ component, slots: contract.slots.length, states: contract.states.length });
+  }
+
+  const state = L.readState(root) || {};
+  const screens = Object.entries(state.screens || {}).map(([k, s]) => ({ key: k, path: s.path }));
+  const lineOf = (md, index) => md.slice(0, index).split('\n').length;
+
+  for (const s of screens) {
+    if (!s.path) continue;
+    const abs = L.toAbs(root, s.path);
+    if (!fs.existsSync(abs)) continue;
+    const md = fs.readFileSync(abs, 'utf-8');
+
+    for (const item of readExemptions(md, 'IndicatorTile')) void item;
+
+    // Une **énumération** de surface : « ses 6 slots : `a`, `b`, `c` ».
+    //
+    // On n'attribue pas l'énumération au dernier composant nommé avant elle :
+    // une même ligne de tableau cite trois composants, et « Chaque tuile porte
+    // ses 6 slots » est preceded de `ExportPanel` alors qu'elle parle de
+    // `IndicatorTile`. On attribue donc par **preuve** : le composant dont la
+    // surface contient tous les noms cités. C'est robuste, et cela évite
+    // d'accuser le mauvais composant.
+    const ENUM = /\b(\d+)\s+(slots|états|states)\b[^\n]{0,20}:[^\n]*/gi;
+    let em;
+    ENUM.lastIndex = 0;
+    while ((em = ENUM.exec(md)) !== null) {
+      const kind = /^slots$/i.test(em[2]) ? 'slot' : 'state';
+      const claimed = [...em[0].matchAll(/`([a-z][a-z0-9_-]*)`/gi)].map(h => h[1]);
+      if (claimed.length < 2) continue; // « 6 slots » seul n'est pas une énumération
+
+      const owners = [...surfaces.entries()].filter(([, v]) => {
+        const actual = kind === 'slot' ? v.slots : v.states;
+        return actual.length && claimed.every(n => actual.includes(n));
+      });
+
+      // Attribué à un seul composant : on peut comparer.
+      if (owners.length === 1) {
+        const [component, v] = owners[0];
+        const actual = kind === 'slot' ? v.slots : v.states;
+        const said = parseInt(em[1], 10);
+        if (said !== actual.length || claimed.length !== actual.length) {
+          results.offenders.push({
+            screen: s.key, component, kind, problem: 'enumeration_perimee',
+            said_count: said, cited_count: claimed.length, actual_count: actual.length,
+            actual_surface: actual, cited: claimed, line: lineOf(md, em.index),
+            hint: `Le design system déclare ${actual.length} ${kind === 'slot' ? 'slots' : 'états'} ` +
+                  `(${actual.join(', ')}). L'écran en cite ${claimed.length} : ` +
+                  `manque ${actual.filter(n => !claimed.includes(n)).join(', ') || 'rien'}.`
+          });
+          results.pass = false;
+        }
+        continue;
+      }
+
+      // Attribué à plusieurs composants : la comparaison n'a pas de sens,
+      // on ne signale rien. Attribué à aucun : les noms cités n'appartiennent
+      // à aucune surface — mais cela peut être une liste de tokens, pas de
+      // surface, alors on exige que le libellé soit vraiment « slots/états ».
+      if (owners.length === 0 && claimed.length >= 3) {
+        const anySlot = [...surfaces.values()].some(v => claimed.some(n => v.slots.includes(n)));
+        const anyState = [...surfaces.values()].some(v => claimed.some(n => v.states.includes(n)));
+        if ((kind === 'slot' && !anySlot) || (kind === 'state' && !anyState)) continue;
+        results.offenders.push({
+          screen: s.key, component: null, kind, problem: 'surface_inconnue_du_design_system',
+          cited: claimed, line: lineOf(md, em.index),
+          hint: 'Ces noms ne correspondent à la surface d\'aucun composant déclaré.'
+        });
+        results.pass = false;
+      }
+    }
+  }
+
+  results.rule = 'Un écran qui rend un composant ne doit pas affirmer une surface périmée. ' +
+    'Un composant qui gagne un état doit être propagé à tous les écrans qui le rendent — ' +
+    'sinon le même composant a deux rendus, et `tokens-used` reste vert parce qu\'il ne demande pas cette question.';
+  return results;
+}
+
+/* ------------------------------------------------------------------ *
  * CLI
  * ------------------------------------------------------------------ */
 
@@ -385,13 +601,15 @@ function main() {
     case 'contrast': result = checkContrast(root); break;
     case 'tokens': result = checkTokens(root); break;
     case 'tokens-used': result = checkTokensUsed(root); break;
+    case 'component-parity': result = checkComponentParity(root); break;
     default:
       L.fail({
         error: 'unknown_command', command,
         usage: {
           'design-check.js contrast <anchor>': 'mesure WCAG 1.4.3 et 1.4.11 sur chaque token',
           'design-check.js tokens <anchor>': 'signale les tokens sans valeur concrète',
-          'design-check.js tokens-used <anchor>': 'vérifie que chaque écran cite des tokens qui EXISTENT'
+          'design-check.js tokens-used <anchor>': 'vérifie que chaque écran cite des tokens qui EXISTENT',
+          'design-check.js component-parity <anchor>': 'vérifie que chaque écran qui rend un composant énumère ses slots et ses états'
         }
       });
       return;
