@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-09-30
+
 ### fix(forge) — `state.js amend` : le miroir part avec l'autorité
 
 `state.json` est l'autorité, le front matter est le miroir. `amend` écrivait
