@@ -48,18 +48,34 @@ function sandbox() {
   return dir;
 }
 
-/** Un bac à sable qui est aussi un dépôt git, avec les tags demandés. */
+/**
+ * Un bac à sable qui est aussi un dépôt git, avec les tags demandés.
+ *
+ * Il faut **un commit** avant de pouvoir tagger : `git tag v1.0` sur un dépôt
+ * sans HEAD échoue en `Failed to resolve 'HEAD' as a valid ref`, et l'échec est
+ * silencieux si on avale l'erreur. Le dépôt ressortait donc sans le tag, le
+ * contrôle paraissait inopérant, et le test **passait au vert en n'ayant rien
+ * vérifié** — dans le dépôt réel, alors qu'il échouait dans l'archive extraite.
+ * Le même motif une fois de plus : un bac à sable qui n'a pas ce qu'il croit avoir.
+ *
+ * `gitSandbox` **lève** si le tag demandé n'est pas celui qui est listé ensuite.
+ */
 function gitSandbox(tags = []) {
   const dir = sandbox();
   const git = (...args) => {
-    try {
-      execFileSync('git', args, { cwd: dir, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
-    } catch { /* un tag déjà absent n'est pas une erreur ici */ }
+    execFileSync('git', args, { cwd: dir, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
   };
   git('init', '-q');
   git('config', 'user.email', 'test@example.invalid');
   git('config', 'user.name', 'test');
+  git('commit', '-q', '--allow-empty', '-m', 'racine');
   for (const t of tags) git('tag', t);
+  const listed = execFileSync('git', ['tag', '--list'], { cwd: dir, encoding: 'utf-8' })
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  const missing = tags.filter(t => !listed.includes(t));
+  if (missing.length) {
+    throw new Error(`le bac à sable n'a pas les tags demandés : ${missing.join(', ')} (obtenus : ${listed.join(', ') || 'aucun'})`);
+  }
   return dir;
 }
 
@@ -75,6 +91,20 @@ function runIn(dir, ...args) {
 }
 
 process.stdout.write('\nrelease.js — test de fumée\n\n');
+
+test('le bac à sable git porte RÉELLEMENT ses tags', () => {
+  // Le test ci-dessous ne prouve rien si le bac à sable n'a pas les tags qu'il
+  // croit avoir. Cette fois le défaut est venu du **bac**, pas du script : sans
+  // commit initial, `git tag` échoue et l'échec était avalé. Le test passait donc
+  // au vert en n'ayant jamais exercé le contrôle — et il échouait dans l'archive
+  // extraite, où le dépôt parent diffère. Un témoin avant le test.
+  const dir = gitSandbox(['v1.6.0', 'v1.8.0']);
+  try {
+    const listed = execFileSync('git', ['tag', '--list'], { cwd: dir, encoding: 'utf-8' })
+      .split('\n').map(s => s.trim()).filter(Boolean);
+    assert(listed.indexOf('v1.8.0') !== -1, `le tag doit exister : ${listed.join(', ')}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('bump REFUSE d\'écraser une version dont le tag existe déjà', () => {
   // Le défaut qu'aucun test ne voyait. Une branche coupée **avant** le
