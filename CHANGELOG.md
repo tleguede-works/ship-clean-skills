@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-09-30
+
 ### fix(forge) — Un acquittement de retrait se lisait sur un extrait tronqué
 
 `retired_cited_in_body`, ajouté dans la série précédente, lisait la mention de
