@@ -27,6 +27,27 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### test(release) — un test qui passait au vert sans avoir exercé le contrôle
+
+Le test du refus par tag ne testait rien. `gitSandbox` faisait `git init` puis
+`git tag v1.8.0`, **en avalant les erreurs** — or `git tag` sur un dépôt sans HEAD
+échoue en `Failed to resolve 'HEAD' as a valid ref`, il faut un commit avant de
+taguer. Le bac à sable ressortait donc **sans tag**, la protection ne s'exerçait
+jamais, et `bump` promuait 1.8.0 **comme si de rien n'était** — exactement le
+défaut que le test prétendait interdire.
+
+Il passait dans le dépôt et **échouait dans l'archive extraite** : deux
+environnements, deux résultats, un seul test. C'est la quatrième fois que l'archive
+publiée trouve ce que la suite locale laisse passer, et la **première fois que la
+cause est le test et non le script**.
+
+`gitSandbox` lève désormais si le tag demandé n'est pas celui qu'on liste ensuite,
+et un témoin vérifie le bac **avant** le test qui s'y fie.
+
+C'est la même famille que `component-parity` : un contrôle — ici, un test — qui
+s'exerce sur un périmètre qui ne contient pas ce qu'il croit contenir, et déclare
+donc sa réussite. Un témoin sur l'instrument précède tout test qui s'y fie.
+
 ## [1.9.0] - 2026-09-30
 
 ### fix(tokens-used) — une citation en prose passait, et rien ne vérifiait l'absence
