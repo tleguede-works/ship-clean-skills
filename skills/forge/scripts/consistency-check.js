@@ -143,7 +143,33 @@ function checkSliceReality(root, state) {
     // prouve par le `content_hash` enregistré au moment du `register`. Un plan
     // enregistré sans hash n'a jamais été écrit : ce n'est pas une dérive, c'est
     // le travail de la Phase 5 qui n'a pas commencé.
-    if (!planExists && (plansExpected || s.content_hash)) missingPlan.push({ slice: name, expected: rel });
+    //
+    // ## Pourquoi le `content_hash` n'a pas cours ici
+    //
+    // Le `content_hash` prouve qu'un fichier **existant** a changé hors bande. Il
+    // ne prouve **rien** sur un fichier absent. Et une slice de Phase 4 est
+    // enregistrée **avec** un hash — celui du document d'architecture, qui est
+    // son lieu de description. La slice n'a donc aucun hash propre, et lire son
+    // `content_hash` comme une preuve de plan revient à dire « l'architecture a
+    // été écrite, donc chaque slice a un plan ».
+    //
+    // Conséquence mesurée sur Onduleur, au gate de la Phase 4 : les 15 slices ont
+    // été enregistrées contre `.forge/architecture.md`, donc toutes portaient un
+    // `content_hash`, donc toutes étaient exigées d'avoir déjà un plan dans
+    // `.forge/plans/` — **et aucune n'en a**. L'échec est légitime dans son
+    // principe (un plan annoncé doit exister) mais il portait sur 15 fichiers dont
+    // personne n'avait écrit le nom, sur une phase où les écrire est le travail
+    // de la phase **suivante**.
+    //
+    // La preuve est donc **`plan_hash`**, écrit par `register` uniquement quand le
+    // chemin enregistré est un chemin de plan. Un seul endroit décide, sinon les
+    // deux lectures divergent à nouveau sur le même enregistrement.
+    //
+    // `plan_hash` est la preuve qu'un **fichier de plan** a été écrit : `register`
+    // ne l'écrit que si le chemin enregistré est un chemin de plan. Son absence ne
+    // prouve donc rien du plan — ni qu'il a été écrit, ni qu'il a disparu.
+    const planWasWritten = Boolean(s.plan_hash);
+    if (!planExists && (plansExpected || planWasWritten)) missingPlan.push({ slice: name, expected: rel });
     if (DONE.test(s.status || '') && count === 0) {
       // Le défaut le plus coûteux : rend le fichier de suivi FAUX, sans signal.
       falseDone.push({

@@ -430,7 +430,48 @@ function cmdRegister(root, kind, key, relPath, type, opts) {
   // yeux. Le statut vivait dans l'état et le `.md` disait `draft` : un écart
   // silencieux, et le contrôle de synchronisation ne le voyait pas parce qu'il
   // regardait le même champ vide.
-  if (kind === 'slice' || kind === 'foundation') entry.plan_path = relPath;
+  // Pour une slice et une fondation, le chemin du PLAN est `plan_path`. Tout le
+  // reste l'attend : `set-status` (le miroir), `collectStatusFiles`, `start`,
+  // `consistency`, `forge-guard paths`.
+  //
+  // `register` n'écrivait que `path`. Conséquence mesurée : `set-status` sur une
+  // slice ne trouvait pas de chemin, n'écrivait donc aucun front matter — et
+  // n'enregistrait pas de divergence non plus, puisque rien ne manquait à ses
+  // yeux. Le statut vivait dans l'état et le `.md` disait `draft` : un écart
+  // silencieux, et le contrôle de synchronisation ne le voyait pas parce qu'il
+  // regardait le même champ vide.
+  //
+  // ## Pourquoi le chemin du plan n'est PAS le chemin du document d'architecture
+  //
+  // Écrire `plan_path = relPath` quand `relPath` est `.forge/architecture.md`
+  // produisait deux dérives, mesurées sur Onduleur, à l'enregistrement des 15
+  // slices de la Phase 4 :
+  //
+  // 1. `no_premature_artifacts` les signalait toutes « plan écrit avant la phase 5 »,
+  //    parce que la règle de propriété lit `entry.plan_path` — donc **l'architecture
+  //    était prise pour le plan de chaque slice**. Le garde-fou n'était pas faux :
+  //    l'entrée mentait.
+  // 2. `set-status` sur une slice écrivait le statut d'un plan dans le front matter
+  //    de l'**architecture**, dont le statut appartient à un autre artefact.
+  //
+  // Le plan d'une slice est un fichier de la **Phase 5**. Une slice déclarée en
+  // Phase 4 est déclarée **sans** plan, et c'est la forme normale : elle est
+  // décrite dans le document d'architecture, pas implémentée. Donc `plan_path`
+  // n'est écrit que si le fichier enregistré est un fichier de plan — et il est
+  // alors écrit tel qu'il a été donné, sans devinette.
+  // Le hash du plan est **distinct** du `content_hash` de l'entrée, et c'est la
+  // seule chose qui distingue « un plan a été écrit » de « une slice a été
+  // décrite ». Les deux s'enregistrent au même endroit, donc le même hash ; et un
+  // hash de plan ne prouve rien du plan, il prouve que le **fichier de plan** a
+  // changé.
+  if (kind === 'slice' || kind === 'foundation') {
+    if (L.isPlanPath(relPath)) {
+      entry.plan_path = relPath;
+      entry.plan_hash = L.contentHash(abs);
+    } else if (existing && existing.plan_path) {
+      entry.plan_path = existing.plan_path;
+    }
+  }
   entry.type = type || (fm && fm.data.type) || key;
   entry.status = entry.status || fileStatus;
   entry.content_hash = L.contentHash(abs);

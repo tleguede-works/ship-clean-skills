@@ -2910,6 +2910,57 @@ test('un arrondi ne doit jamais créer un VERT', () => {
     `4,4958:1 est sous 4,5 et doit échouer, même arrondi à 4,50 : ${res.stdout.slice(0, 400)}`);
 });
 
+/* --- une slice de Phase 4 n'a pas de plan, et ne doit pas se croire-plan --- */
+
+test('NEGATIF — une slice déclarée en Phase 4 n\'est PAS un plan écrit en avance', () => {
+  // Constaté sur Onduleur, à l'enregistrement des 15 slices de la Phase 4.
+  // `register` écrivait `plan_path = relPath`, donc l'**architecture** devenait
+  // le plan de chaque slice — et `no_premature_artifacts` les signalait toutes
+  // « plan écrit avant la phase 5 ». Le garde-fou n'était pas faux : l'entrée
+  // mentait. Une slice de Phase 4 est décrite par l'architecture, pas implémentée.
+  const project = freshProject('slice-sans-plan');
+  run('state.js', ['set-phase', project, '4_architecture', 'in_progress']);
+  writeDeliverable(project, '.forge/architecture.md', {
+    type: 'architecture',
+    body: '# Architecture\n\n## 3. Slices\n\n#### Slice : S1 — `ma-slice`\n\nPhrase.\n'
+  });
+  assert(run('state.js', ['register', project, 'deliverable', 'architecture', '.forge/architecture.md']).code === 0,
+    'register architecture');
+  assert(run('state.js', ['register', project, 'slice', 'ma-slice', '.forge/architecture.md']).code === 0,
+    'register slice');
+
+  const state = JSON.parse(fs.readFileSync(path.join(project, '.forge/state.json'), 'utf8'));
+  const entry = state.slices['ma-slice'];
+  assert(entry.plan_path === undefined,
+    `une slice sans fichier de plan ne doit pas avoir de plan_path : ${JSON.stringify(entry.plan_path)}`);
+
+  // `no_premature_artifacts` n'a pas de sous-commande : il est dans `all`. On lit
+  // son enregistrement dans la sortie plutôt que de chercher un rapport à part —
+  // et on **échoue si le contrôle est absent**, parce qu'un contrôle qui a disparu
+  // de la sortie ne se distingue pas d'un contrôle qui passe.
+  const guard = run('forge-guard.js', ['all', project]);
+  const check = (guard.json.checks || []).find(c => c.check === 'no_premature_artifacts');
+  assert(check, `le contrôle doit figurer dans la sortie : ${JSON.stringify(guard.json.checks)}`);
+  assert(check.status === 'pass',
+    `une slice de Phase 4 n'est pas un plan en avance : ${JSON.stringify(check)}`);
+});
+
+test('une slice enregistrée AVEC son fichier de plan conserve plan_path', () => {
+  // Le contre-témoin : la correction ne doit pas casser la Phase 5, où le plan
+  // existe bel et bien. Un plan se reconnaît à son chemin, et rien d'autre.
+  const project = freshProject('slice-avec-plan');
+  run('state.js', ['set-phase', project, '5_implementation_plan', 'in_progress']);
+  writeDeliverable(project, '.forge/plans/ma-slice.md', {
+    type: 'slice-plan',
+    body: '# Plan — ma-slice\n\n## Étapes\n\nUne étape.\n'
+  });
+  assert(run('state.js', ['register', project, 'slice', 'ma-slice', '.forge/plans/ma-slice.md']).code === 0,
+    'register slice avec plan');
+  const state = JSON.parse(fs.readFileSync(path.join(project, '.forge/state.json'), 'utf8'));
+  assert(state.slices['ma-slice'].plan_path === '.forge/plans/ma-slice.md',
+    `le plan doit rester écrit : ${JSON.stringify(state.slices['ma-slice'].plan_path)}`);
+});
+
 /* --- tokens-used : les trois écritures d'une citation, et la non-vacuité --- */
 
 /** Un design system + un écran citant `TOKEN` avec `hex` dans la forme donnée. */
