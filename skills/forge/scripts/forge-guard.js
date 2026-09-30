@@ -636,6 +636,59 @@ function checkProvenance(root) {
 
 const UNDECIDED_RE = /À\s*DÉCIDER|TODO\s*:\s*décider/i;
 
+/**
+ * Une **case** non tranchée, et non la phrase « à décider » employée en prose.
+ *
+ * ## Pourquoi la distinction est nécessaire, et comment elle se fait
+ *
+ * `no_undecided_slots` cherchait `À DÉCIDER` **n'importe où dans une ligne**. Le motif
+ * est un marqueur d'**emplacement** : il dit « rien n'a été écrit ici, et quelque chose
+ * devait l'être ». Mais la même suite de caractères, dans une **phrase**, décrit
+ * souvent le contraire — elle **raconte** une décision.
+ *
+ * Constaté sur Bailly, 11 faux positifs en un document : tous la même ligne de code.
+ *
+ *   - `Aucune échéance bloquante à décider` — la description d'un état `absent` ;
+ *   - `La décision du propriétaire` — la description d'une colonne ;
+ *   - `1 à décider` dans un libellé d'écran — **le mot que le produit affiche** ;
+ *   - `Ce qui a servi à décider` — la définition même de l'anonymisation.
+ *
+ * Le dernier cas est le plus instructif : **le produit** s'appelle « les trois états de
+ * traitement » et l'une de ses colonnes s'appelle `decidee_le`. Interdire le mot
+ * « décider » dans ce projet interdirait de le nommer.
+ *
+ * ## La règle
+ *
+ * Un marqueur n'est une case que s'il occupe la **place** d'une valeur — c'est-à-dire
+ * dans une cellule de tableau dont la colonne est un nom de champ, ou en tête d'une
+ * section. Ailleurs c'est de la prose.
+ *
+ * On distingue par la **forme de la ligne**, jamais par le sens du mot : c'est la seule
+ * chose qu'un contrôle peut décider sans lire le document, et c'est la seule qui ne
+ * dépende pas d'une intention.
+ */
+function isUndecidedSlotLine(line) {
+  if (!UNDECIDED_RE.test(stripCodeSpans(line))) return false;
+
+  const cells = line.split('|').map(c => c.trim()).filter(c => c !== '');
+  if (cells.length < 2) {
+    // Pas de tableau : un titre de section, ou une ligne de liste. « ## 2. À
+    // DÉCIDER » est une case ; une phrase qui commence par « À décider » ne l'est
+    // pas. La distinction tient à ce que le marqueur est **seul dans sa cellule**.
+    const head = /^(#{2,4}\s*|[-*]\s*|\d+\.\s*)?(.*)$/.exec(line);
+    const body = (head && head[2] || line).trim();
+    return /^(#{2,4}\s*)?À\s*DÉCIDER\b/i.test(body) || /^TODO\s*:\s*décider\b/i.test(body);
+  }
+
+  // Tableau : une seule cellule porte le marqueur, et elle est **courte**. Une
+  // cellule de prose qui contient le mot est une description ; un champ vide est
+  // « À DÉCIDER EN PHASE 4 », et rien d'autre.
+  const marked = cells.filter(c => UNDECIDED_RE.test(stripCodeSpans(c)));
+  if (marked.length !== 1) return false;
+  const cell = stripCodeSpans(marked[0]).trim();
+  return /^(?:[-*]\s*)?À\s*DÉCIDER\b/i.test(cell) || /^TODO\s*:\s*décider\b/i.test(cell);
+}
+
 /** Un marqueur cité enters guillemets documente la convention ; il n'est pas une case. */
 function stripCodeSpans(line) {
   return line.replace(/`[^`]*`/g, ' `` ');
@@ -672,7 +725,7 @@ function checkUndecidedSlots(root) {
     if (!fs.existsSync(abs)) continue;
     const raw = fs.readFileSync(abs, 'utf-8');
     raw.split('\n').forEach((line, idx) => {
-      if (!UNDECIDED_RE.test(stripCodeSpans(line))) return;
+      if (!isUndecidedSlotLine(line)) return;
       found.push({ key: t.key, path: t.path, line: idx + 1, excerpt: line.trim().slice(0, 120) });
     });
   }

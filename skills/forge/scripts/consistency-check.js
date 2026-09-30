@@ -420,6 +420,10 @@ function checkFindings(root, state) {
  * section « Hors scope » du gabarit est la seule structure lue, parce que c'est
  * celle que le skill contrôle lui-même.
  */
+/** La catégorie des identifiants d'exigence : règles métier, contraintes, cas, non-fonctionnelles. */
+const ID_EXIGENCE_G = /\b([BCEN]\d+)\b/g;
+const ID_EXIGENCE_LIGNE = /^\|\s*\*{0,2}([BCEN]\d+)\*{0,2}\s*\|\s*([^|]*)/;
+
 function checkPremises(root, state) {
   const prd = (state.deliverables || {}).prd;
   if (!prd || !prd.path) {
@@ -459,8 +463,23 @@ function checkPremises(root, state) {
     const h = line.match(/^##\s+(.*)$/);
     if (h) { section = h[1].trim(); hors = /hors[ -]?scope/i.test(section); }
 
-    // Ligne de tableau : | B1 | texte |, ou | C1 | texte |
-    const row = line.match(/^\|\s*\*{0,2}([BCE]\d+)\*{0,2}\s*\|\s*([^|]*)/);
+    // Ligne de tableau : | B1 | texte |, ou | C1 | texte |, ou | N3 | exigence |
+    //
+    // **`N` est une catégorie d'exigence à part entière**, portée par la section
+    // « Exigences non-fonctionnelles » du PRD. Le motif ne portait que `[BCE]`, donc
+    // une roadmap qui déclarait `--requires=N6` se faisait accuser d'une **référence
+    // morte** sur une exigence qui existe, et un livrable ne pouvait pas déclarer sa
+    // dépendance à une exigence non fonctionnelle sans mentir.
+    //
+    // Constaté sur Bailly : `N3`, `N4`, `N5`, `N6`, `N7`, `N8` — six exigences
+    // définies dans le PRD et signalées comme n'existant pas. Même famille que les
+    // huitièmes et neuvièmes Mechanismes : **un motif de lecture plus étroit que ce
+    // que le document écrit**, et cette fois sur les **identifiants** eux-mêmes.
+    //
+    // L'ensemble est une **liste fermée** et non `[A-Z]`, parce qu'un motif ouvert
+    // Acceptrait `§ 1` ou `R1` dans une colonne d'index, et qu'une collision
+    // d'identifiant est précisément ce que `definitions` existe pour détecter.
+    const row = line.match(ID_EXIGENCE_LIGNE);
     if (row) {
       noteDefinition(row[1], row[2], section);
       if (hors) inHorsScope.add(row[1]);
@@ -504,8 +523,14 @@ function checkPremises(root, state) {
   }
 
   // Les IDs déclarés, et leur état.
+  //
+  // **Même catégorie que `definitions` ci-dessus, même constante.** Les deux lisaisons
+  // avaient `[BCE]` en dur, à deux endroits : corriger l'un et pas l'autre donnait un
+  // contrôle qui voyait les `N` dans une passe et les perdait dans l'autre — donc un
+  // livrable pouvait déclarer une exigence non fonctionnelle et être accusé de
+  // référence morte. Un prédicat dupliqué diverge, c'est tout ce qu'il fait.
   const declared = new Set();
-  for (const m of text.matchAll(/\b([BCE]\d+)\b/g)) declared.add(m[1]);
+  for (const m of text.matchAll(ID_EXIGENCE_G)) declared.add(m[1]);
 
   const retired = [];
   const unknown = [];

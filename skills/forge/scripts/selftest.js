@@ -1676,6 +1676,128 @@ test('forge-guard signale un derived_from vide', () => {
 
 section('Cases à décider — bloquantes et différables');
 
+test('NEGATIF — « à décider » en PROSE n\'est pas une case non tranchée', () => {
+  // Constaté sur Bailly : 11 faux positifs en un document, tous de la même ligne de
+  // code. `no_undecided_slots` cherchait `À DÉCIDER` **n'importe où dans une ligne**,
+  // alors que le motif est un marqueur d'**emplacement** : il dit « rien n'a été écrit
+  // ici ». La même suite de caractères, dans une phrase, décrit souvent le contraire —
+  // elle **raconte** une décision.
+  //
+  // Le cas le plus instructif : le produit s'appelle « les trois états de traitement »
+  // et l'une de ses colonnes s'appelle `decidee_le`. Interdire le mot « décider »
+  // dans ce projet interdirait de le nommer.
+  const project = freshProject('undecided-en-prose');
+  const body = [
+    '| Etat | Description |',
+    '|---|---|',
+    '| `absent` | Aucune échéance bloquante à décider. Le panneau ne laisse pas de place vide |',
+    '| `marge_a_voir` | ≥ 1 échéance de marge visible |',
+    '| `decidee_le` | `timestamptz` | La décision du propriétaire |',
+    '',
+    'Écran : contexte « 14 baux · 1 à décider · 1 en retard ».',
+    '',
+    '| **Anonymiser** | ce qui a servi à décider mais n\'identifie plus personne |',
+    ''
+  ].join('\n');
+  fs.writeFileSync(path.join(project, '.forge/design/design-system.md'),
+    `---\ntype: design-system\nstatus: approved\n---\n\n# Design\n\n${body}`);
+  run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']);
+
+  // **Avant** la Phase 4, une case **différable** n'est pas un échec : c'est
+  // l'usage normal du gabarit. Le contrôle les range donc dans `expected`, pas
+  // dans `offenders`. C'est là qu'il faut regarder : asserter `status === 'pass'`
+  // ne prouverait **rien**, ce statut-là est vrai quoi qu'il arrive. Un test qui
+  // passe avec le correctif neutralisé ne prouve pas le correctif.
+  const avant = run('forge-guard.js', ['all', project]);
+  const checkAvant = (avant.json.checks || []).find(c => c.check === 'no_undecided_slots');
+  assert(checkAvant, 'le contrôle doit exister');
+  assert((checkAvant.expected || []).length === 0,
+    `aucune des lignes de prose n'est une case : ${JSON.stringify(checkAvant.expected)}`);
+  assert((checkAvant.blocking || []).length === 0,
+    `aucune des lignes de prose n'est bloquante : ${JSON.stringify(checkAvant.blocking)}`);
+
+  // **Après** la Phase 4, le statut devient un échec dur — c'est là que la
+  // confusion se paie, parce qu'un document_locked n'a plus le droit d'en
+  // contenir aucune.
+  const state = readState(project);
+  state.phases['4_architecture'].status = 'approved';
+  writeState(project, state);
+  const res = run('forge-guard.js', ['all', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'no_undecided_slots');
+  assert(check && check.status === 'pass',
+    `la prose qui raconte une décision n'est pas une case : ${JSON.stringify(check)}`);
+  assert((check.offenders || []).length === 0,
+    `aucune des lignes de prose n'est nommée après la Phase 4 : ${JSON.stringify(check.offenders)}`);
+});
+
+test('une case VIDE reste un défaut, dans un tableau comme en section', () => {
+  // Le contre-témoin : assouplir le motif ne doit pas le rendre aveugle.
+  const project = freshProject('undecided-case-vide');
+  fs.writeFileSync(path.join(project, '.forge/conventions.md'),
+    '---\ntype: conventions\nstatus: approved\nderived_from: []\n---\n\n' +
+    '# Conventions\n\n## 9. Points ouverts\n\n' +
+    '| Domaine | Choix | Raison |\n|---|---|---|\n' +
+    '| Base de données | À DÉCIDER EN PHASE 4 | — |\n' +
+    '| Authentification | À DÉCIDER EN PHASE 4 | Un secret doit exister |\n' +
+    '\n## 10. Suite\n\n| Autre | Choix | Raison |\n|---|---|---|\n' +
+    '| Validation | Zod | Un schema par entite |\n');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+  const res = run('forge-guard.js', ['all', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'no_undecided_slots');
+  assert(check, 'le controle doit exister');
+
+  // Avant la Phase 4, une case **différable** n'est pas un échec : c'est l'usage
+  // normal du gabarit. Elle doit toutefois être **retrouvée et nommée**, sinon
+  // l'assouplissement du motif l'aurait fait disparaître en silence — c'est le
+  // vrai risque d'un correctif de faux positif.
+  assert(check.status === 'pass',
+    `une case differee n'est pas un echec avant la Phase 4 : ${JSON.stringify(check)}`);
+  assert((check.expected || []).length === 2,
+    `les deux cases doivent etre retrouvees et nommees : ${JSON.stringify(check.expected)}`);
+
+  // Et une fois la Phase 4 franchie, la meme cellule est un echec dur.
+  const state = readState(project);
+  state.phases['4_architecture'].status = 'approved';
+  writeState(project, state);
+  const after = run('forge-guard.js', ['state', project]);
+  const checkAfter = (after.json.checks || []).find(c => c.check === 'no_undecided_slots');
+  assert(checkAfter && checkAfter.status === 'fail',
+    `apres la Phase 4, une cellule vide redevient un echec : ${JSON.stringify(checkAfter && checkAfter.status)}`);
+  assert((checkAfter.offenders || []).length === 2,
+    `les deux cases doivent etre nommees apres la Phase 4 : ${JSON.stringify(checkAfter.offenders)}`);
+});
+
+test('PROSE et CASE ne se confondent pas dans le meme document', () => {
+  // Le motif assimile les deux, donc la seule preuve qui vaille est la separation sur
+  // **le meme fichier** : un document qui contient les deux formes doit produire
+  // exactement les lignes qui sont des cases. Un correctif qui filtre par fichier
+  // entier — ou qui ignore les screens — passerait l'un des deux tests precedents.
+  const project = freshProject('undecided-prose-et-case');
+  fs.writeFileSync(path.join(project, '.forge/conventions.md'),
+    '---\ntype: conventions\nstatus: approved\nderived_from: []\n---\n\n' +
+    '# Conventions\n\n## 9. Choix\n\n' +
+    '| Domaine | Choix | Raison |\n|---|---|---|\n' +
+    '| Base de donnees | À DÉCIDER EN PHASE 4 | — |\n' +
+    '| Horloge | Horloge injectee | Le 6 du mois doit etre demontrable |\n' +
+    '| Signature | Pas de X12 | Une signature d etat des lieux |\n' +
+    '| Anonymisation | ce qui a servi a decider mais n identifie plus personne | conserve le fait |\n');
+
+  const state = readState(project);
+  state.phases['4_architecture'].status = 'approved';
+  writeState(project, state);
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+
+  const res = run('forge-guard.js', ['all', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'no_undecided_slots');
+  assert(check && check.status === 'fail', 'la case du tableau doit rester un echec');
+  const lines = (check.offenders || []).map(o => o.line);
+  assert(lines.length === 1,
+    `une seule ligne est une case ; la prose qui cite « decider » ne l'est pas : ${JSON.stringify(check.offenders)}`);
+  assert(/Base de donnees/.test(check.offenders[0].excerpt),
+    `la ligne accusee est bien la case vide : ${JSON.stringify(check.offenders[0])}`);
+});
+
 test('forge-guard échoue sur une case AVANT LA PHASE 1 encore ouverte', () => {
   const project = freshProject('a-decider-bloquante');
   const rel = '.forge/conventions.md';
