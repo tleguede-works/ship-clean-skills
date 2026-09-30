@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-30
+
 ### feat(repo) — Chaque release porte le snapshot complet du skill
 
 Une release ne contenait que `notes.md` — le fichier de notes lui-même. Vérifié
