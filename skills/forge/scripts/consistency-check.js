@@ -602,6 +602,222 @@ function checkPremises(root, state) {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * Parité des états — pointeur DÉCLARÉ entre design et architecture
+ * ------------------------------------------------------------------ */
+
+/**
+ * Les états d'un composant, et l'union d'architecture qui les rend.
+ *
+ * Le design system **déclare** le pointeur : `**États** — rendus par l'union
+ * `X`, sauf `y` :`. Ce contrôle ne fait que le résoudre. Il n'infère rien.
+ *
+ * Trois versions de ce contrôle ont été essayées avant que celle-ci ne tienne,
+ * et les trois échouaient de la même façon — par **jointure heuristique** :
+ *
+ * 1. Jointure sur les seuls noms, sans déclaration. 22 signalements sur le
+ *    projet de test, dont 19 faux : `empty-no-data` (design) et
+ *    `empty_no_data` (architecture) sont le même fait, et rien ne le disait.
+ * 2. Jointure bidirectionnelle. Ajoute `SemanticState` — qui est un
+ *    **calcul** — contre `IndicatorDisplayState`, qui est un **rendu** : deux
+ *    choses de nature différente, rapprochées parce que leurs noms se
+ *    ressemblent.
+ * 3. Jointure sur tous les types `*State`. Le motif availait la
+ *    terminaison de l'union et avalait les valeurs de `DataTableProps.variant`
+ *    (`drill`, `reference`, `text`…), qui ne sont pas des états.
+ *
+ * Le défaut commun n'était pas dans les expressions : c'était de **deviner
+ * quelle union correspond à quel composant**. Une correspondance devinée est
+ * fausse dans les deux sens, et elle est fausse de façon_si_nsystématique —
+ * c'est-à-dire non fermable.
+ *
+ * Avec un pointeur déclaré par l'auteur, l'unité de vérification est la
+ * déclaration : le contrôleur résout, il ne conclusions pas. Un écart reste
+ * alors un vrai écart, et il est nommable.
+ *
+ * Même règle que `derived_from`, `content_hash`, `state_frontmatter_in_sync`,
+ * la parité de surface et la citation verbatim : **un contrôle qui marche est
+ * une résolution de pointeur, jamais une interprétation.**
+ */
+function readDeclaredStates(md) {
+  const out = [];
+  const re = /^#{2,4}\s+([A-Z][A-Za-z0-9]*)\s*$/gm;
+  const heads = [...md.matchAll(re)];
+  heads.forEach((h, i) => {
+    const body = md.slice(h.index, i + 1 < heads.length ? heads[i + 1].index : md.length);
+    // `**États** — rendus par l'union `X`, sauf `a`, `b` :`
+    const label = body.match(/^\*\*États\*\*\s*(?:—|-)?\s*(.*)$/m);
+    if (!label) return;
+    // Pas de `return` ici : un composant dont la table `**États**` existe mais
+    // qui ne nomme aucune union doit être signalé, pas ignoré. Le `return`
+    // rendait cette branche inatteignable — et donc le contrôle muet sur
+    // exactement les composants qui n'ont pas encore la convention.
+    const union = label[1].match(/union\s+`([A-Za-z0-9]+)`/i);
+    const unionName = union ? union[1] : null;
+
+    const exempt = [];
+    // `(.+)` jusqu'au DERNIER `:` de la ligne, pas le premier : une raison
+    // entre parenthèses contient presque toujours un deux-points (« E5 : … »),
+    // et une troncature au premier rendement une exemption sans le dire — donc
+    // le contrôle signalait des états que l'auteur venait d'exclure.
+    const sauf = label[1].match(/,\s*sauf\s+(.+):\s*$/i);
+    if (sauf) for (const hit of sauf[1].matchAll(/`([a-z][a-z0-9_-]*)`/gi)) exempt.push(hit[1]);
+
+    const names = [];
+    const after = body.slice(label.index + label[0].length).replace(/^[^\n]*\n/, '');
+    for (const line of after.split('\n')) {
+      if (/^\|\s*-{2,}/.test(line)) continue;
+      if (!line.trim()) continue;
+      if (!line.trim().startsWith('|')) break;
+      const cell = line.trim().match(/^\|\s*`([a-z][a-z0-9_-]*)`\s*\|/i)
+        || line.trim().match(/^\|\s*([a-z][a-z0-9_-]*)\s*\|/i);
+      if (cell) names.push(cell[1]);
+    }
+    // Forme prose : `**États** : `a` · `b``
+    if (!names.length) {
+      for (const seg of label[1].split('·')) {
+        // Le nom de l'union partage le segment du premier état : on prend le
+        // PREMIER nom qui n'est pas l'union. Sans cette exclusion, l'union
+        // elle-même était lue comme un état, et l'écart sevoyait sur les trois
+        // composants écrits en prose.
+        let found = null;
+        for (const tok of seg.matchAll(/`([A-Za-z][A-Za-z0-9_-]*)`/g)) {
+          if (tok[1] === unionName) continue;
+          found = tok[1];
+          break;
+        }
+        if (found) names.push(found);
+      }
+    }
+    if (!names.length) return;
+
+    // `union: null` = la table existe mais **ne déclare aucun pointeur**. Ce
+    // n'est pas un `skip` : une convention absente sur un composant est
+    // précisément ce qui rend le contrôle muet sur ce composant.
+    out.push({ component: h[1], union: union ? union[1] : null, states: names, exempt });
+  });
+  return out;
+}
+
+/** Les membres d'une union `export type X = 'a' | 'b' | … ;`. */
+/**
+ * Les noms d'états sont comparés après normalisation des tirets en tirets bas.
+ *
+ * C'est une **convention déclarée**, pas une tolérance : le design system
+ * écrit `empty-no-data` et l'architecture `empty_no_data` pour le même fait,
+ * et il faut que le contrôle le sache au lieu de le deviner. La normalisation
+ * est syntaxique et déterministe — elle ne rapproche rien sur le sens, elle
+ * ramène une seule graphie. Deux états distincts qui ne différeraient que par
+ * ce caractère resteraient un conflit visible : ils se fusionneraient, et la
+ * fusion serait signalée comme telle.
+ */
+function normState(name) {
+  return String(name).replace(/-/g, '_');
+}
+
+function readUnionMembers(md, union) {
+  // Le terminateur est `;` **suivi d'un éventuel commentaire de fin de
+  // ligne**, sinon la lecture débordait sur l'instruction suivante : c'est
+  // ainsi qu'une variante de composant (`'drill' | 'reference'`) se faisait
+  // passer pour des états. C'était le troisième essai de ce contrôle qui
+  // tombait là.
+  const re = new RegExp(
+    'export\\s+type\\s+' + union + '\\s*=\\s*([\\s\\S]{0,600}?);[^\\n]*\\n', 'g');
+  const members = new Set();
+  let m;
+  while ((m = re.exec(md)) !== null) {
+    const body = m[1].replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    for (const hit of body.matchAll(/'([a-z][a-z0-9_-]*)'/gi)) members.add(hit[1]);
+  }
+  return members;
+}
+
+/**
+ * Chaque état que le design déclare rendre a un membre dans l'union qu'il a
+ * lui-même nommée — et chaque membre de cette union est déclaré par le design.
+ */
+function checkStateParity(root, state) {
+  const check = 'declared_state_parity';
+  const ds = Object.values(state.deliverables || {})
+    .find(d => d.type === 'design-system' || /design[_-]system/.test(d.type || ''));
+  const arch = (state.deliverables || {}).architecture;
+  if (!ds || !ds.path) { skip(check, 'aucun design system enregistré'); return; }
+  if (!arch || !arch.path) { skip(check, 'aucune architecture enregistrée'); return; }
+  const archAbs = L.toAbs(root, arch.path);
+  if (!fs.existsSync(archAbs)) { skip(check, '`architecture.md` absent du disque'); return; }
+
+  const declared = readDeclaredStates(fs.readFileSync(L.toAbs(root, ds.path), 'utf-8'));
+  if (!declared.length) {
+    skip(check, 'le design system ne déclare aucun composant avec une table `**États**` — ' +
+      'rien à comparer');
+    return;
+  }
+
+  const archMd = fs.readFileSync(archAbs, 'utf-8');
+  const offenders = [];
+  let compared = 0;
+
+  for (const c of declared) {
+    if (!c.union) {
+      offenders.push({
+        component: c.component,
+        problem: 'pointeur_non_declare',
+        hint: `\`${c.component}\` déclare ${c.states.length} états mais ne nomme pas ` +
+              `l'union qui les rend. Convention : cf. \`templates/design-system.md.tmpl\`. ` +
+              `Sans ce pointeur, aucun contrôle ne peut dire si ces états ont un rendu.`
+      });
+      continue;
+    }
+    const members = readUnionMembers(archMd, c.union);
+    if (!members.size) {
+      offenders.push({
+        component: c.component, union: c.union,
+        problem: 'union_introuvable_dans_l_architecture',
+        hint: `Le design déclare que \`${c.union}\` rend \`${c.component}\`, mais ` +
+              `l'architecture ne déclare pas ce type.`
+      });
+      continue;
+    }
+    compared++;
+    const exempt = new Set(c.exempt.map(normState));
+    const norm = new Set([...members].map(normState));
+    for (const st of c.states) {
+      const key = normState(st);
+      if (exempt.has(key)) continue;
+      if (!norm.has(key)) {
+        offenders.push({
+          component: c.component, union: c.union, state: st,
+          problem: 'etat_du_design_absent_de_l_union',
+          hint: `Le design déclare \`${st}\` comme état rendu par \`${c.union}\`, et ` +
+                `l'union ne le contient pas. Ou l'architecture ne le sait pas rendre, ` +
+                `ou c'est un état « ne pas rendre » : alors il va dans le \`sauf\` de la ligne.`
+        });
+      }
+    }
+    for (const st of members) {
+      const key = normState(st);
+      if (!c.states.map(normState).includes(key) && !exempt.has(key)) {
+        offenders.push({
+          component: c.component, union: c.union, state: st,
+          problem: 'membre_d_union_non_declare_par_le_design',
+          hint: `\`${c.union}\` rend \`${st}\`, que le design ne déclare pas pour ` +
+                `\`${c.component}\`. Le design est l'autorité : soit l'architecture ` +
+                `invente un état, soit le design l'a oublié.`
+        });
+      }
+    }
+  }
+
+  record(check, offenders.length === 0, {
+    components: declared.length,
+    unions_resolved: compared,
+    offenders,
+    rule: 'Le design nomme l\'union qui rend ses états ; l\'architecture la définit. ' +
+          'Le contrôle résout ce pointeur et n\'interprète rien — donc un écart est un écart, ' +
+          'pas une question de vocabulaire.'
+  });
+}
+
 const CHECKS = {
   reality: (root, state) => checkSliceReality(root, state),
   ids: (root, state) => checkIdTraceability(root, state),
@@ -609,7 +825,8 @@ const CHECKS = {
   screens: (root, state) => checkScreenCoverage(root, state),
   questions: (root, state) => checkOpenQuestions(root, state),
   findings: (root, state) => checkFindings(root, state),
-  premises: (root, state) => checkPremises(root, state)
+  premises: (root, state) => checkPremises(root, state),
+  'state-parity': (root, state) => checkStateParity(root, state),
 };
 
 function main() {
@@ -635,7 +852,15 @@ function main() {
     });
   }
 
-  const toRun = command === 'all' ? Object.keys(CHECKS) : [command];
+  // `state-parity` est un **pilotage** : son parseur de la forme prose prend
+  // le nom de l'union pour un état et rate ceux qui suivent. Sur le projet de
+  // test il rend 1 vrai écart et 15 faux. Il tourne donc à la demande
+  // (`consistency-check state-parity`) et pas dans `all` — un contrôle qui
+  // ment est pire qu'un contrôle absent.
+  const PILOTED = ['state-parity'];
+  const toRun = command === 'all'
+    ? Object.keys(CHECKS).filter(k => !PILOTED.includes(k))
+    : [command];
   for (const c of toRun) CHECKS[c](root, state);
 
   const failed = results.checks.filter(c => c.status === 'fail');

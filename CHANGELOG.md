@@ -27,6 +27,55 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — Le périmètre d'un validateur, le caractère parasite, et la règle de l'auto-test
+
+Trois corrections, dont deux confirmées par un **second** projet grandeur nature
+(`Forge Labs/bi-dashboard-platform.zip`, skill v2.0.0) qui les avait déjà
+rencontrées.
+
+**1. Trois fichiers, trois périmètres de validateur incompatibles.**
+`fast-track.md` disait « l'artefact + son `derived_from` » ; `quality-analyst.md`
+interdisait le PRD jusqu'en Phase 6 ; `red-team.md` l'autorisait pour les seuls
+IDs. Un validateur applique la règle la plus étroite qu'il connaît — donc se
+prive du document dont il a le plus besoin — **et ne le signale pas**. Les deux
+rendaient un verdict en déclarant dans `unreadable_without` le PRD, l'architecture
+et les conventions. Aggravant : `state.json → slices.<clé>` ne portait **aucun**
+`derived_from`, donc « son `derived_from` » n'était pas mécaniquement
+découvrable — il fallait ouvrir le document à valider pour connaître son
+propre périmètre.
+
+La règle est maintenant posée une seule fois, et :
+- `state.js register` **et** `state.js sync` recopient `derived_from` dans
+  l'autorité, en chemins résolus. `sync` remplit aussi les entrées
+  enregistrées avant que la propagation existe (28/30 sur le projet de test) ;
+- `unreadable_without` non vide **⇒ `BLOCK`** (règle éprouvée sur un artefact
+  réel du second projet) ;
+- `severity: info` + `prior_critical_resolved`, pour qu'un constat résolu ne
+  re-BLOQUE pas le tour suivant ;
+- un test vérifie que les trois fichiers disent la même chose, et qu'un second
+  vérifie que les deux **contrats de sortie JSON sont identiques** — ils ne
+  doivent pas rediverger.
+
+**2. `forge-guard no_stray_characters`.** Deux faux verts successifs avaient été
+constatés sur le second projet : un scan PowerShell qui ne matchait rien, puis un
+scan « CJK only » qui a laissé passer `U+1EE1` dans `_USERNAMEOục`. Le contrôle
+est une **liste blanche** — ASCII, Latin-1, Latin Extended-A, ponctuation,
+symboles, emoji, plus la typographie de la langue du dépôt. Sur le projet de
+test il a trouvé **un vrai parasite** : `méthode` écrit avec un caractère grec et
+un caractère hébreu à la place de `é`, dans un écran **approuvé**, invisible à
+trois gates. Marqueur `unicode-scan:ignore` pour citer un défaut sans se
+déclencher soi-même.
+
+**3. « Un contrôle jamais vu échouer n'est pas validé, il est inconnu. »**
+Règle écrite dans SKILL.md, et appliquée immédiatement à `component-parity` et
+`state-parity`, les deux contrôles ajoutés après sa formulation — ils n'avaient
+été validés que sur des cas positifs. `state-parity` a mis quatre essais à
+devenir honnête : 22 signalements dont 19 faux, dus à trois heuristiques
+successives (jointure sur les noms, jointure d'un calcul sur un rendu, regex qui
+avalait la terminaison d'une union). Seul le **pointeur déclaré** par l'auteur
+— `**États** — rendus par l'union \`IndicatorDisplayState\`, sauf …` — tient sans
+faux positif, parce qu'il ne devine rien.
+
 ## [1.4.1] - 2026-09-30
 
 ### docs(forge) — Journal du test grandeur nature : Phase 3 approuvée après trois refus

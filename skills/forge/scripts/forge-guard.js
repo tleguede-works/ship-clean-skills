@@ -394,6 +394,103 @@ function checkPrematureArtifacts(root) {
   });
 }
 
+/**
+ * Caractères parasites dans les livrables.
+ *
+ * Deux faux verts successifs, sur un test grandeur nature : un scan
+ * `Get-Content -Raw` + regex `\u` en PowerShell qui ne matchait rien, puis un
+ * scan « CJK only » en Node qui a déclaré propre un fichier contenant
+ * `U+1EE1` dans `_USERNAMEOục` — Latin Extended Additional, hors des plages
+ * testées. Le troisième parasite (`diverge阈ront`) n'a été trouvé qu'en
+ * passant par une **liste blanche**.
+ *
+ * L'erreur de conception était de corréler le contrôle au seul mode d'échec
+ * observé (« la corruption est CJK ») au lieu de couvrir l'espace. Ici :
+ * autorisé = ASCII + Latin-1 + Latin Extended-A + ponctuation générale +
+ * symboles +emoji ; **tout le reste est signalé**, y compris les systèmes
+ * d'écriture qu'on ne cite jamais.
+ *
+ * Une ligne portant `unicode-scan:ignore` est ignorée : c'est ce qui permet de
+ * **citer un défaut dans le journal d'incidents** sans que la citation
+ * elle-même déclenche le contrôle. Sans cela, le rapport qui prouve le défaut
+ * ne peut pas être commité — et un rapport de test qui ne s'applique pas son
+ * propre contrôle n'est pas un rapport de test.
+ */
+const SCAN_ALLOWED = [
+  [0x0009, 0x000a], [0x000d, 0x000d], [0x0020, 0x007e], [0x00a0, 0x00ff],
+  [0x0100, 0x017f], [0x2000, 0x206f], [0x20a0, 0x20bf], [0x2100, 0x214f],
+  [0x2190, 0x21ff], [0x2200, 0x22ff], [0x2500, 0x27bf], [0x2e00, 0x2e7f],
+  [0xfe00, 0xfe0f], [0x1f000, 0x1faff],
+  // Typographie française : ordinaux (« 1er » → `1ᵉʳ`, `ᵉ` en U+1D49 Phonetic
+  // Extensions, `ʳ` en U+02B3 lettres de modificateur) et indices
+  // (« CO2 » → `CO₂`). Sans ces trois plages, le contrôle signalait **28 fois**
+  // des ordinaux français parfaitement corrects : au premier essai, 28 des 37
+  // signalements étaient de la typographie, pas de la corruption. Une liste
+  // blanche qui ne couvre pas la langue du dépôt devient un contrôle que l'on
+  // éteint — et le premier essai essai avait pris `ʳ` pour `ᵉ` : les
+  // deux sont des exposants, dans deux blocs différents.
+  [0x02b0, 0x02ff], [0x2070, 0x209f], [0x1d00, 0x1d7f]
+];
+const SCAN_NAMED = new Map([
+  [0x0000, 'Control'], [0x000b, 'Control'], [0x000c, 'Control'],
+  [0x007f, 'Control'], [0xfeff, 'BOM'], [0xfffd, 'Replacement'],
+  [0x4e00, 'CJK'], [0x3040, 'CJK'], [0xac00, 'CJK']
+]);
+
+function scanVerdict(cp) {
+  if (SCAN_NAMED.has(cp)) return SCAN_NAMED.get(cp);
+  for (const [a, b] of SCAN_ALLOWED) if (cp >= a && cp <= b) return null;
+  if (cp >= 0x0590 && cp <= 0x05ff) return 'Hebrew';
+  if (cp >= 0x0400 && cp <= 0x04ff) return 'Cyrillic';
+  if (cp >= 0x0100 && cp <= 0x024f) return 'LatinExtendedAdditional';
+  return 'OutOfContext';
+}
+
+/** Les livrables scannés : ce que le projet a produit, rien de tiers. */
+function scanTargets(root, state) {
+  const out = [];
+  for (const [key, d] of Object.entries(state.deliverables || {})) if (d.path) out.push({ kind: 'deliverable', key, path: d.path });
+  for (const [key, d] of Object.entries(state.screens || {})) if (d.path) out.push({ kind: 'screen', key, path: d.path });
+  for (const [key, d] of Object.entries(state.slices || {})) if (d.plan_path) out.push({ kind: 'slice', key, path: d.plan_path });
+  for (const [key, d] of Object.entries(state.foundations || {})) if (d.plan_path) out.push({ kind: 'foundation', key, path: d.plan_path });
+  return out;
+}
+
+function checkStrayCharacters(root) {
+  const state = loadStateOrFail(root);
+  const offenders = [];
+  const targets = scanTargets(root, state);
+
+  for (const t of targets) {
+    const abs = L.toAbs(root, t.path);
+    if (!fs.existsSync(abs)) continue;
+    const lines = fs.readFileSync(abs, 'utf-8').split('\n');
+    lines.forEach((line, i) => {
+      if (line.includes('unicode-scan:ignore')) return;
+      const seen = new Set();
+      for (const ch of line) {
+        const cp = ch.codePointAt(0);
+        const kind = scanVerdict(cp);
+        if (!kind) continue;
+        const tag = `${kind}:U+${cp.toString(16).toUpperCase().padStart(4, '0')}`;
+        if (seen.has(tag)) continue;
+        seen.add(tag);
+        offenders.push({ kind: t.kind, key: t.key, path: t.path, line: i + 1, char: tag, excerpt: line.trim().slice(0, 90) });
+      }
+    });
+  }
+
+  record('no_stray_characters', offenders.length === 0, {
+    scanned_files: targets.length,
+    offenders,
+    hint: 'Un caractère hors liste blanche dans un livrable est un artefact de génération. ' +
+          'Pour citer un défaut dans un journal, marque la ligne `unicode-scan:ignore`.',
+    rule: 'La corruption générative est un mode d\'échec récurrent et silencieux : le fichier se parse, ' +
+          'les tests passent, et seul le caractère est faux. Le scan est donc une liste blanche, ' +
+          'jamais une liste de suspects.'
+  });
+}
+
 function checkHashes(root) {
   const state = loadStateOrFail(root);
   const drifted = [];
@@ -844,6 +941,7 @@ const CHECKS = {
     checkPathsExist(root);
     checkPhaseRequirements(root);
     checkPrematureArtifacts(root);
+    checkStrayCharacters(root);
     checkHashes(root);
     checkProvenance(root);
     checkUndecidedSlots(root);
@@ -862,6 +960,7 @@ const CHECKS = {
     checkPathsExist(root);
     checkPhaseRequirements(root);
     checkPrematureArtifacts(root);
+    checkStrayCharacters(root);
     checkHashes(root);
     checkProvenance(root);
     checkUndecidedSlots(root);

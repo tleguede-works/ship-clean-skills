@@ -438,6 +438,23 @@ function cmdRegister(root, kind, key, relPath, type, opts) {
   if (fm && fm.data.version) entry.version = fm.data.version;
   if (fm && fm.data.slice) entry.slice = fm.data.slice;
 
+  // `derived_from` est recopié dans l'AUTORITÉ, en chemins déjà résolus.
+  //
+  // `fast-track.md` prescrit aux validateurs de lire « l'artefact + son
+  // `derived_from` ». Or tant que la valeur ne vit que dans le front matter,
+  // cette consigne n'est pas applicable : le validateur doit ouvrir le
+  // document qu'il doit valider pour découvrir son propre périmètre. Sur le
+  // projet de test, `state.json → slices.<clé>` ne portait aucun
+  // `derived_from`, et le seul moyen de connaître son périmètre était de
+  // lire le document — c'est-à-dire d'accomplir ce qu'on demande de faire.
+  //
+  // Un contrat qui dépend d'une lecture humaine du document qu'il doit
+  // valider n'est pas un contrat outillé.
+  if (fm && Object.prototype.hasOwnProperty.call(fm.data, 'derived_from')) {
+    const resolved = L.resolveDerivedFrom(root, fm.data.derived_from);
+    if (resolved.length) entry.derived_from = resolved;
+  }
+
   // Les prémisses dont ce livrable dépend. C'est la dépendance que rien ne
   // déclarait, et qui rendait invisible le défaut le plus coûteux : un
   // livrable approuvé se justifie par une exigence qu'un artefact postérieur a
@@ -672,6 +689,21 @@ function cmdSync(root, fix) {
     const fileStatus = fm.data.status || null;
     if (fileStatus !== item.stateStatus) {
       found.push({ ...item, fileStatus, reason: 'status_mismatch' });
+    }
+
+    // `derived_from` est recopié dans l'autorité à chaque sync. C'est aussi
+    // ce qui **remplit les entrées enregistrées avant que la propagation
+    // existe** : le champ ne vivait que dans le front matter, donc invisible
+    // de `state.json`.
+    const entry = entryFor(state, item);
+    if (entry && Object.prototype.hasOwnProperty.call(fm.data, 'derived_from')) {
+      const resolved = L.resolveDerivedFrom(root, fm.data.derived_from);
+      if (resolved.length) {
+        const same = Array.isArray(entry.derived_from) &&
+          entry.derived_from.length === resolved.length &&
+          resolved.every(v => entry.derived_from.includes(v));
+        if (!same) entry.derived_from = resolved;
+      }
     }
   }
 
