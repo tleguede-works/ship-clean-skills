@@ -1,6 +1,6 @@
 ---
 type: design-system
-status: draft
+status: approved
 generated_at: 2026-09-30
 derived_from: .forge/prd.md
 ---
@@ -230,7 +230,7 @@ elles, et c'est un choix, pas une omission.**
 > coupe pas. Une hauteur de tuile qui ne permet pas de tenir la ligne est un défaut
 > de la hauteur, pas une permission de perdre la date.
 
-**États** — rendus par l'union `IndicatorDisplayState`, sauf `hover`, `active`, `focus` (états d'interaction : aucun rendu piloté par la donnée, ils ne sont pas dans l'union), `out_of_band_alerting`, `out_of_band_alerted`, `threshold_latched`, `threshold_armed` (V1 — § 2.1, hors MVP) et `permission_denied` (E5 : la tuile n'est pas rendue) :
+**États** — rendus par l'union `IndicatorDisplayState`, sauf `hover`, `active`, `focus` (états d'interaction : aucun rendu piloté par la donnée), et `permission_denied` (**tuile non rendue** : ce n'est pas un état à afficher, c'est une absence — l Shui rendu piloté par la donnée, ils ne sont pas dans l'union), `out_of_band_alerting`, `out_of_band_alerted`, `threshold_latched`, `threshold_armed` (V1 — § 2.1, hors MVP) et `permission_denied` (E5 : la tuile n'est pas rendue) :
 
 | État | Déclencheur | Apparence |
 |---|---|---|

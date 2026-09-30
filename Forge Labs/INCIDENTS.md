@@ -785,3 +785,156 @@ existent alors que la phase courante est 4. Ce n'est pas un défaut.
 n'écrit aucun `CREATE TABLE`. Le contrôle a raison — ce DDL ne peut pas être
 exécuté seul. C'est F-33, action n° 2, et c'est un choix de forme à trancher, pas
 un défaut à corriger en douce.
+
+---
+
+## F-36 — FastTrack exécuté pour la première fois. Les deux validateurs disent BLOCK, et ils ont raison.
+
+**Première exécution réelle de la boucle FastTrack** sur ce projet, après
+quatre phases. Journalisée dans `run-log.jsonl` comme l'exige
+`references/fast-track.md`.
+
+### Conditions d'entrée — satisfaites, pour la première fois
+
+| condition | avant | maintenant |
+|---|---|---|
+| `prd` `approved` | oui | oui |
+| `conventions` `approved` | oui | oui |
+| `design_system` `approved` | **non** (`draft`, F-24/F-25) | **oui** |
+| les 9 écrans `approved` | **non** (`definitions` `draft`) | **oui** |
+| `benchmarks` `approved` | oui | oui |
+
+Le déblocage a demandé la **réconciliation de l'union** `IndicatorDisplayState` :
+le design déclarait 16 états pour `IndicatorTile` et l'union n'en portait que 7.
+Cinq états rendus manquaient — dont `perimeter_empty`, le F-25 — et
+`permission_denied` (qui veut dire *tuile non rendue*) va désormais dans le
+`sauf` du design, comme le prévoit la convention.
+
+`state-parity` : **4 composants, 4 unions résolues, 0 écart.** Le contrôle
+piloté est validé sur un vrai document, sans faux positif.
+
+### Étape 2 — les scripts d'abord, toujours
+
+| script | avant | maintenant |
+|---|---|---|
+| `ddl-exec execute` | 1 erreur | **0** |
+| `ddl-exec guards` | 0 déclaré | **4 déclarés, 4 actifs** |
+| `ddl-exec completeness` | 2 en prose seulement | inchangé |
+| `dependency-check` | PASS | PASS |
+| `consistency-check all` | PASS | PASS |
+| `forge-guard all` | 3 échecs | **1** : `no_premature_artifacts` |
+
+`no_premature_artifacts` (les 15 plans de la Phase 5 écrits à la Phase 4) reste
+**le seul** échec. Il est classé « correct, pas un défaut » depuis le début, et le
+commanditaire a refusé de supprimer les artefacts. Il n'a pas été contourné.
+
+### Étape 3 — les deux validateurs : **BLOCK, tous les deux**
+
+Et surtout : **ils ont convergé**, depuis deux angles opposés, sur les mêmes
+défauts. C'est la convergence la plus forte du dossier — la deuxième fois
+seulement (la première était le défaut du cycle de vie de version, trouvé
+indépendamment par les deux).
+
+#### Défaut 1 — la garde du cycle de vie ne lit jamais `OLD.status`
+
+```sql
+required_act := CASE NEW.status … END;
+IF NOT EXISTS (SELECT 1 FROM signature_event WHERE … AND act = required_act) THEN RAISE
+```
+
+La garde prouve qu'un acte de ce nom **existe** pour la version. Elle ne prouve
+**jamais** que la transition a eu lieu — `OLD.status` n'apparaît que dans le
+texte d'erreur.
+
+Conséquence : **ni `published` ni `refused` ne sont terminaux en base.** Toute
+version publiée porte nécessairement un acte `submit`, donc
+`UPDATE … SET status='in_review'` sur une version `published` **passe**. La garde
+`published_at` ne se déclenche pas, puisque `published_at` ne bouge pas. La
+version repasse `in_review`, est re-signée, et la révocation s'ouvre — pendant que
+`published_at` reste écrit.
+
+Le document affirme pourtant le contraire à quatre endroits : « `published` est
+terminal et verrouille », « une ligne ne peut pas dire `signed` sans qu'un acte
+`sign` existe », « le verrou de révocation est en base ».
+
+#### Défaut 2 — `one_active_signature_per_signer` interdit la re-signature
+
+```sql
+CREATE UNIQUE INDEX one_active_signature_per_signer
+  ON signature_event (definition_version_id, actor_id) WHERE act = 'sign';
+```
+
+Le prédicat est `act='sign'`, pas « signature active ». Le `sign` révoqué reste
+dans l'index — le journal est append-only. Donc `sign → revoke → sign` viole
+l'unicité.
+
+Aggravant, et c'est ce que je n'avais pas vu : `designated_signer_actor_id` est une
+colonne **unique** écrite **une seule fois** à la création, et aucun endpoint ne la
+remet à jour. Le signataire d'un indicateur est donc le même pour toutes ses
+versions, pour toujours : l'index n'autorise qu'**un seul** acte `sign` par
+indicateur sur toute la vie du produit. Après une première révocation, **plus
+aucune version de cet indicateur ne peut être signée.**
+
+C'est exactement ce que le document nie : « elle la rend `draft`, donc
+re-soumissible puis **re-signable** ».
+
+**Ma correction n° 2 a ouvert un chemin que la contrainte n° 4 du § 4.8 ferme.**
+Les deux défauts se tiennent : corriger l'un sans l'autre rend l'exploit possible.
+
+#### Défaut 3 — aucun trigger `BEFORE INSERT`
+
+La garde n'est déclarée que sur `BEFORE UPDATE OF status, published_at`. Un `INSERT`
+direct avec `status='published'` et `published_at` renseigné passe — et le rôle
+applicatif a `GRANT INSERT` sur cette table.
+
+**La fixture de § 4.21 fait exactement cela** : elle insère v2 en `published` avec
+son `published_at`, et n'insère les actes qu'ensuite. La section qui prétend
+prouver les portes **contourne** la porte qu'elle teste.
+
+#### Défaut 4 — la Porte 3 passait pour la mauvaise raison
+
+La Porte 3 (`published → draft` doit être refusé) tient. Mais **par coïncidence de
+fixture** : la version v2 de la fixture ne contient aucun acte `revoke`, donc la
+garde refuse faute d'acte. Ce n'est pas la propriété « `published` est terminal » qui
+la fait tenir — c'est l'absence d'acte dans la fixture.
+
+Si la fixture avait d'abord posé un `revoke` — ce que § 5.9 produit — la Porte 3
+serait passée. **Une preuve qui ne prouve pas.**
+
+C'est le défaut le plus dangereux du lot, et il est de la même famille que les
+trois portes inertes déjà trouvées : non pas une porte absente, mais une porte
+**dont la démonstration est une coïncidence**.
+
+#### Défaut 5 — une porte écrite dans un commentaire SQL
+
+```sql
+--   Jamais DELETE, jamais UPDATE sur le contenu.GRANT INSERT  ON definition_version TO amberline_app;
+```
+
+L'instruction est **entièrement sur une ligne `--`** : ce n'est pas une
+instruction. Le résultat mesuré est « 0 erreur, 22 instructions acceptées » — et il
+serait **identique** si la ligne était exécutée ou commentée.
+
+Même famille que « la porte d'ADR-1 n'existe pas » : une porte écrite dans un
+endroit où elle n'existe pas.
+
+### Ce que cette exécution prouve sur la boucle
+
+1. **L'entrée refusait, et elle avait raison** de refuser tant que `design_system`
+   et `definitions` étaient en `draft`. La condition n'est pas décorative.
+2. **Les scripts passent avant les agents** — et ils ont suffi à trouver le
+   cinquième défaut du document (`revoke_target_is_legal` sans clause `WHEN`).
+3. **Les deux validateurs ont convergé** sur deux défauts, depuis deux angles
+   opposés, dont aucun n'avait été trouvé par un script.
+4. **Un `BLOCK` n'a pas été contourné.** La Phase 4 n'est pas approuvée.
+
+### Ce que la boucle ne peut pas faire
+
+Les deux validateurs signalent tous deux `unreadable_without` hors périmètre :
+`roadmap.md`, `conventions.md`, `design-system.md`, `benchmarks.md`. Le
+`red-team` en tire une conclusion qu'il faut écrire : `C2` et `C5` n'ont **aucune
+trace** dans l'architecture alors qu'elles sont au PRD, et le hors-MVP de
+`US-10` à `US-16` n'est affirmé que par la roadmap — donc **non certifiable**.
+
+Ce n'est pas un défaut de la boucle : c'est la mesure de sa limite. Elle rend
+visible ce qu'elle ne peut pas voir, au lieu de le supposer couvert.
