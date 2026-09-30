@@ -2910,6 +2910,95 @@ test('un arrondi ne doit jamais créer un VERT', () => {
     `4,4958:1 est sous 4,5 et doit échouer, même arrondi à 4,50 : ${res.stdout.slice(0, 400)}`);
 });
 
+/* --- tokens-used : les trois écritures d'une citation, et la non-vacuité --- */
+
+/** Un design system + un écran citant `TOKEN` avec `hex` dans la forme donnée. */
+function citeProject(label, form, { tokens = {} } = {}) {
+  // Le design system est aussi lu comme une source de citations : il contient ses
+  // propres jetons avec leur valeur, donc chaque ligne de sa table est une citation.
+  // Le compteur porte donc sur **les écrans**, sinon il mesure le design system.
+  const project = designProject(label, tokens);
+  const row = {
+    prose:      `Le fond est \`--color-background\` \`${form.hex}\`, et rien d'autre.`,
+    prose_nobt: `Le fond est --color-background ${form.hex}, et rien d'autre.`,
+    cell:       `| \`--color-background\` | \`${form.hex}\` |`,
+    inline_cell: `| \`--color-background ${form.hex}\` | usage |`
+  }[form.of];
+  writeDeliverable(project, '.forge/design/screens/accueil.md', {
+    type: 'screen',
+    body: '# Accueil\n\n' + row + '\n'
+  });
+  run('state.js', ['register', project, 'screen', 'accueil', '.forge/design/screens/accueil.md']);
+  return project;
+}
+
+test('NEGATIF — une citation en PROSE sans backticks est lue, et signalée', () => {
+  // Le défaut mesuré sur Onduleur : `tokens-used` n'acceptait que `` `--token` `#ABCDEF` ``.
+  // Neuf écrans écrivent aussi `--token #ABCDEF` en prose, et un défaut injecté
+  // dans cette forme passait au vert. Le contrôle avait raison de son périmètre,
+  // et son périmètre ne contenait pas ce que les écrans écrivent.
+  const project = citeProject('tokens-used-prose', { of: 'prose_nobt', hex: '#7A5A0C' });
+  const res = run('design-check.js', ['tokens-used', project]);
+  const o = res.json.offenders.find(x => x.problem === 'valeur_differe_de_celle_du_design_system');
+  assert(o, `une valeur fausse en prose doit être signalée : ${JSON.stringify(res.json)}`);
+  assert(o.token === '--color-background', `le token fautif doit être nommé : ${o.token}`);
+  assert(o.screen === 'accueil', `l'écran fautif doit être nommé : ${o.screen}`);
+  assert(o.design_system_value === '#f2f4f3', `la valeur du design system doit être rappelée : ${o.design_system_value}`);
+});
+
+test('NEGATIF — une citation dans une CELLULE de tableau est lue, et signalée', () => {
+  // La forme `| jeton | #ABCDEF |` est celle des tableaux de tokens. Un motif
+  // lâche covering les deux colonnes attrapait aussi une cellule à une colonne —
+  // et une substitution faite pour couvrir plus de formes en a supprimé la moitié.
+  const project = citeProject('tokens-used-cell', { of: 'cell', hex: '#7A5A0C' });
+  const res = run('design-check.js', ['tokens-used', project]);
+  assert(res.json.offenders.some(x => x.problem === 'valeur_differe_de_celle_du_design_system'),
+    `une valeur fausse en cellule doit être signalée : ${JSON.stringify(res.json)}`);
+});
+
+test('NEGATIF — une citation en prose DANS une cellule de tableau reste lue', () => {
+  // Le contre-test du précédent : la cellule contient une phrase, et la citation
+  // est à l'intérieur. C'est la forme que les écrans écrivent le plus.
+  const project = citeProject('tokens-used-inline-cell', { of: 'inline_cell', hex: '#7A5A0C' });
+  const res = run('design-check.js', ['tokens-used', project]);
+  assert(res.json.offenders.some(x => x.problem === 'valeur_differe_de_celle_du_design_system'),
+    `une citation en prose dans une cellule doit être signalée : ${JSON.stringify(res.json)}`);
+});
+
+test('une citation en tableau n\'est pas comptée deux fois', () => {
+  // Une citation en cellule est aussi une citation en adjacence. Sans exclusion
+  // des positions, chaque défaut est compté deux fois et le compteur perd sa
+  // valeur — un compteur qui ment est pire qu'un compteur absent.
+  const project = citeProject('tokens-used-double', { of: 'cell', hex: '#F2F4F3' });
+  const res = run('design-check.js', ['tokens-used', project]);
+  assert(res.json.citations === 1,
+    `une seule citation doit compter une fois, obtenu ${res.json.citations}`);
+});
+
+test('NEGATIF — un écran qui ne cite aucun token n\'est PAS « conforme »', () => {
+  // Même règle que `component-parity` : un contrôle qui n'a rien lu ne dit pas
+  // « conforme ». Sinon des écrans qui ne nomment aucun token rendent un vert qui
+  // n'atteste rien.
+  //
+  // Et le piège que ce test ferme : le design system **lui-même** contient des
+  // citations — chaque ligne de sa table de jetons est un couple jeton/valeur. Le
+  // compter comme une source vérifiée rendrait cette non-vacuité **verte**,
+  // puisque le design system en produit toujours. Le compteur porte donc sur les
+  // écrans seuls.
+  const project = designProject('tokens-used-vide');
+  writeDeliverable(project, '.forge/design/screens/accueil.md', {
+    type: 'screen',
+    body: '# Accueil\n\nUn écran qui ne nomme aucun token.\n'
+  });
+  run('state.js', ['register', project, 'screen', 'accueil', '.forge/design/screens/accueil.md']);
+  const res = run('design-check.js', ['tokens-used', project]);
+  assert(res.json.citations === 0,
+    `le design system ne doit pas compter comme une citation vérifiée : ${res.json.citations}`);
+  assert(res.json.pass === false, 'rien à vérifier ne peut pas rendre conforme');
+  assert(res.json.offenders.some(x => x.problem === 'aucune_citation'),
+    `le refus doit être nommé : ${JSON.stringify(res.json.offenders)}`);
+});
+
 test('design-check signale un token sans valeur concrète', () => {
   const project = designProject('design-vide', { '--color-accent': ['À DÉCIDER', 'Action principale'] });
   const res = run('design-check.js', ['tokens', project]);

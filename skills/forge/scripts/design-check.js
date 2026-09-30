@@ -513,7 +513,7 @@ function checkTokens(root) {
  */
 function checkTokensUsed(root) {
   const designAbs = L.toAbs(root, DESIGN);
-  const results = { command: 'tokens-used', anchor: root, pass: true, screens: [], offenders: [] };
+  const results = { command: 'tokens-used', anchor: root, pass: true, screens: [], offenders: [], citations: 0, read_screens: [] };
 
   if (!fs.existsSync(designAbs)) {
     results.error = 'design_system_absent';
@@ -535,36 +535,95 @@ function checkTokensUsed(root) {
   ];
 
   // `--color-xxx` `#ABCDEF` — un token et la valeur qu'on lui donne sur la ligne.
-  const CITE = /(--[a-z0-9-]+)`?\s+`(#[0-9a-fA-F]{6})`|(--[a-z0-9-]+)`\s*\|\s*`(#[0-9a-fA-F]{6})`/g;
+  //
+  // ## Les deux formes que la citation prend
+  //
+  // La première version n'acceptait que `` `--color-xxx` `#ABCDEF` ``, c'est-à-dire
+  // le jeton **et** sa valeur séparés par des backticks. Un écran écrit aussi
+  // `--color-background #F1EDE5` en prose, sans backticks, et c'est la forme la
+  // plus fréquente : les sections « Direction visuelle » et « Accessibilité »
+  // nomment les tokens avec leur valeur pour que la mesure soit reproductible.
+  //
+  // Conséquence mesurée sur Onduleur, neuf écrans écrits : **34 citations retenues
+  // sur plusieurs centaines**, et un défaut injecté à la main — un écran citant
+  // `--color-background #7A5A0C` au lieu de `#F1EDE5` — est passé **au vert**.
+  // Le contrôle avait raison de son périmètre, et son périmètre ne contenait pas
+  // ce que les écrans écrivent. Deux fois en un jour, pour la même raison.
+  // La troisième forme — `` | `--color-xxx` | `#ABCDEF` | `` — se reconnaît par la
+  // **cellule de tableau** qui suit, pas par la seule adjacence : sans elle, un
+  // tableau à deux colonnes (`| jeton | valeur |`) et une citation en prose
+  // produisent la même chaîne de caractères, et il faut choisir.
+  // La forme en cellule doit être **la cellule entière**, pipe à pipe : `| jeton | #ABCDEF |`.
+  // Un motif plus lâche (`| `jeton` #ABCDEF` |`) attrapait aussi une cellule de
+  // tableau **à une colonne**, où le texte de la cellule est lui-même une citation
+  // en prose — et une substitution faite pour couvrir plus de formes a supprimé la
+  // moitié des citations au lieu d'en ajouter. Le motif doit dire *quand* il s'agit
+  // d'une paire, pas deviner que deux backticks-separated par un pipe en font une.
+  const CELL = /^[ \t]*\|[ \t]*`?(--[a-z0-9-]+)`?[ \t]*\|[ \t]*`?(#[0-9a-fA-F]{6})`?[ \t]*\|/gm;
+  const CITE = /(--[a-z0-9-]+)`?\s+`(#[0-9a-fA-F]{6})`|(--[a-z0-9-]+)`?\s+(#[0-9a-fA-F]{6})\b/g;
+
+  /** Une citation, une fois : existence et valeur. `s` est l'entrée lue. */
+  const inspect = (s, token, hex, src, index) => {
+    if (!token.startsWith('--')) return;
+    const def = defined.get(token);
+    const line = src.slice(0, index).split('\n').length;
+    const lineOfScreen = s.key;
+    // Le design system est **la référence**, pas une source à vérifier : le compter
+    // dans ses citations ferait dire à `citations` le nombre de jetons définis, et
+    // ferait passer une vérification vide pour une vérification fournie. Seul un
+    // écran produit une citation vérifiable.
+    if (s.path !== DESIGN) results.citations += 1;
+    results.screens.push(lineOfScreen);
+    if (!def) {
+      results.offenders.push({ screen: lineOfScreen, token, hex, line, problem: 'token_absent_du_design_system' });
+      results.pass = false;
+    } else if (def.hex !== hex) {
+      results.offenders.push({
+        screen: lineOfScreen, token, hex, line,
+        problem: 'valeur_differe_de_celle_du_design_system',
+        design_system_value: def.hex, design_system_line: def.line
+      });
+      results.pass = false;
+    }
+  };
 
   for (const s of screens) {
     if (!s.path) continue;
     const abs = L.toAbs(root, s.path);
     if (!fs.existsSync(abs)) continue;
     const src = fs.readFileSync(abs, 'utf-8');
+
+    // Les trois écritures sont lues, et **les positions des cellules sont mises de
+    // côté** avant les deux autres : une citation en tableau est aussi une citation
+    // en adjacence, et sans cette exclusion elle serait comptée deux fois — donc un
+    // défaut signalé deux fois, et un compteur qui ne veut plus rien dire.
+    const cells = [];
+    CELL.lastIndex = 0;
+    let cm;
+    while ((cm = CELL.exec(src)) !== null) cells.push({ at: cm.index, len: cm[0].length, token: cm[1], hex: cm[2] });
+    for (const c of cells) inspect(s, c.token.toLowerCase(), c.hex.toLowerCase(), src, c.at);
+
+    const inCell = i => cells.some(c => i >= c.at && i < c.at + c.len);
     let m;
     CITE.lastIndex = 0;
     while ((m = CITE.exec(src)) !== null) {
-      const token = (m[1] || m[3] || '').toLowerCase();
-      const hex = (m[2] || m[4] || '').toLowerCase();
-      if (!token.startsWith('--')) continue;
-      const line = src.slice(0, m.index).split('\n').length;
-      const def = defined.get(token);
-      results.screens.push(s.key);
-      if (!def) {
-        results.offenders.push({ screen: s.key, token, hex, line, problem: 'token_absent_du_design_system' });
-        results.pass = false;
-      } else if (def.hex !== hex) {
-        results.offenders.push({
-          screen: s.key, token, hex, line,
-          problem: 'valeur_differe_de_celle_du_design_system',
-          design_system_value: def.hex, design_system_line: def.line
-        });
-        results.pass = false;
-      }
+      if (inCell(m.index)) continue;
+      inspect(s, (m[1] || m[3] || '').toLowerCase(), (m[2] || m[4] || '').toLowerCase(), src, m.index);
     }
   }
 
+  results.read_screens = [...new Set(results.screens)];
+  // Non-vacuité : un contrôle qui n'a rien lu ne dit pas « conforme ». Même règle que
+  // `component-parity`, pour la même raison — un périmètre vide rend un vert qui
+  // n'atteste rien.
+  if (!results.citations) {
+    results.offenders.push({
+      problem: 'aucune_citation',
+      why: 'Aucun écran ne cite un token avec sa valeur. Soit les écrans sont vides, soit ils citent ' +
+           'les tokens sans leur valeur — dans les deux cas, ce contrôle n\'a rien vérifié.'
+    });
+    results.pass = false;
+  }
   results.rule = 'Un écran qui cite un token que le design system ne définit pas, ou avec une ' +
     'autre valeur, écrit une spécification qui ne correspond à rien. Corriger le token dans le ' +
     'design system ET dans tous les écrans, ou corriger les écrans avant de changer le token.';

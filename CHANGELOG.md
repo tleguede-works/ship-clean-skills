@@ -27,7 +27,61 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
-## [1.8.0] - 2026-09-30
+## [1.9.0] - 2026-09-30
+
+### fix(tokens-used) — une citation en prose passait, et rien ne vérifiait l'absence
+
+`tokens-used` compare ce que chaque écran écrit à ce que le design system définit.
+C'est la seule chose qui relie un écran à ses tokens, et c'est ce qui a attrapé le
+défaut qu'il était écrit pour attraper : cinq écrans sur neuf continuaient de citer
+les **valeurs anciennes** après correction de trois tokens.
+
+Mais il ne lisait qu'**une** des écritures d'une citation :
+
+```js
+/(--[a-z0-9-]+)`?\s+`(#[0-9a-fA-F]{6})`|.../
+```
+
+C'est-à-dire le jeton et sa valeur **séparés par des backticks**. Or les écrans
+écrivent aussi :
+
+- `--color-background #F1EDE5` en prose, **sans backticks** — la forme la plus
+  fréquente, dans les sections « Direction visuelle » et « Accessibilité » ;
+- `| \`--color-xxx\` | \`#ABCDEF\` |` en cellule de tableau.
+
+Mesuré sur Onduleur, neuf écrans écrits : **34 citations retenues sur plusieurs
+centaines**. Et un défaut injecté à la main — un écran citant
+`--color-background #7A5A0C` au lieu de `#F1EDE5` — est passé **au vert**.
+
+**Le contrôle avait raison de son périmètre, et son périmètre ne contenait pas ce
+que les écrans écrivent.** C'est le neuvième mécanisme du dossier, le **troisième**
+consacré à une forme d'écriture plutôt qu'à une valeur, et le premier où la forme
+manquante est la plus **banale** des trois.
+
+Les trois écritures sont lues, et les positions des cellules sont mises de côté
+avant les deux autres : une citation en cellule est *aussi* une citation en
+adjacence, donc sans exclusion chaque défaut serait compté deux fois — et un
+compteur qui ment est pire qu'un compteur absent.
+
+La forme en cellule doit être la cellule **entière**, pipe à pipe. Un motif plus
+lâche covering les deux colonnes attrapait aussi une cellule à une colonne, où le
+texte de la cellule est lui-même une citation en prose — et **une substitution faite
+pour couvrir plus de formes a supprimé la moitié des citations** au lieu d'en
+ajouter. Le motif doit dire *quand* deux cellules forment une paire, pas deviner que
+deux jetons voisins en forment une.
+
+### fix(tokens-used) — un écran qui ne cite aucun token rendait « conforme »
+
+La non-vacuité, appliquée à ce contrôle aussi. Un design system sans écrans, ou des
+écrans qui ne nomment aucun token, rendaient `pass: true` : même vide, même
+dangereux que `component-parity`, même règle.
+
+Le test qui le ferme porte le piège : le design system **lui-même** contient des
+citations — chaque ligne de sa table de jetons est un couple jeton/valeur. Le
+compter comme une source vérifiée rendrait cette non-vacuité **verte**, puisque le
+design system en produit toujours. Le compteur porte donc sur les **écrans seuls**,
+et `citations` est le nombre que la sortie affiche.
+
 
 ### fix(component-parity) — un contrôle qui n'a rien vérifié rendait « conforme »
 
