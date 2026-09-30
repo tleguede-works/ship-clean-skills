@@ -27,6 +27,40 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(ddl-exec) — deux commandes, deux schémas, et un verdict faux
+
+`execute` et `guards` construisaient le schéma **différemment**. `execute` ignorait
+les `CREATE TABLE` du document et synthesisait les tables depuis les tableaux de
+colonnes ; `guards` faisait de même mais **sans** les tables du document — donc une
+colonne declaree par le DDL n'existait pas au moment d'essayer la garde.
+
+Constaté sur Amberline : `execute` PASS pendant que `guards` annonçait « 2 gardes
+inertes », l'erreur etant `record "new" has no field "revoked_at"` — une **colonne
+fantome**. Un contrôle qui n'a pas exécuté ce qu'il croit avoir exécuté ne peut rien
+conclure, ni « inerte » ni « active ». Les deux commandes construisent maintenant le
+schéma de la **même** façon, et dans l'ordre du document.
+
+Et `execute` ne **fabrique plus** une table que le document déclare lui-même : une
+table a la fois dans un `CREATE TABLE` et dans un tableau de colonnes n'a pas deux
+définitions. La colonne sert à vérifier que la prose et le SQL parlent de la même
+chose, pas à créer le schéma derrière le dos du document. Un schéma qu'un script
+invente n'est pas un schéma du document.
+
+« relation already exists » n'est plus compté comme une erreur de garde : le bloc de
+schéma a pu être joué pour poser les objets, et le passage qui rejoue les données
+les rencontre. Le signaler faisait échouer le contrôle sur un document correct.
+
+### fix(ddl-exec) — `DECLARE a; b;` : le séparateur est le point-virgule
+
+`DECLARE v_id uuid; v_status text;` — le parseur découpait sur la **virgule**, donc
+`v_status` n'était pas enregistré comme variable, et `SELECT status INTO v_status
+FROM definition_version` était lu comme une lecture de la **table** `v_status` :
+`dangling_references: ['v_status']` sur une fonction trigger parfaitement valide.
+
+Un contrôle qui accuse une table inexistante apprend à être ignoré. La section
+`DECLARE` est lue **jusqu'à `BEGIN`**, qui est sa frontière réelle en PL/pgSQL —
+et les paramètres `:=` comme les déclarations par ligne sont couverts.
+
 ## [1.9.4] - 2026-09-30
 
 ### fix(forge-guard) — le premier artefact du projet ne peut pas avoir de source

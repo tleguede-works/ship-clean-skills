@@ -193,11 +193,26 @@ const PLPGSQL_RESERVED = new Set(['old', 'new', 'tg_op', 'tg_relid', 'tg_table_n
 function tablesReadInDdl(code) {
   const out = [];
   // Les variables déclarées par les corps de fonction du bloc.
+  //
+  // `DECLARE v_id uuid; v_status text;` — **le séparateur est le point-virgule**,
+  // pas la virgule. La version précédente découpait sur `,`, donc une déclaration
+  // à deux variables n'en enregistrait qu'une : `v_status` n'était pas « déclaré »,
+  // et `SELECT status INTO v_status FROM definition_version` était lu comme une
+  // lecture de la **table** `v_status`. Résultat : `dangling_references: ['v_status']`
+  // sur une fonctionTrigger parfaitement valide, et un contrôle qui accuse une
+  // table inexistante.
+  //
+  // Le même pars separait aussi les paramètres `:=` des variables, et les
+  // declarations par ligne (`DECLARE\n  v_id uuid;`). On lit donc la section
+  // `DECLARE` **jusqu'à `BEGIN`**, ce qui est la frontiere reelle du bloc de
+  // declarations en PL/pgSQL.
   const declared = new Set();
-  for (const m of code.matchAll(/\bDECLARE\s+([^;]*);/gi)) {
-    for (const item of m[1].split(',')) {
-      const name = /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(item);
+  for (const m of code.matchAll(/\bDECLARE\b([\s\S]*?)\bBEGIN\b/gi)) {
+    for (const item of m[1].split(';')) {
+      const name = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s+(?:[A-Za-z_][A-Za-z0-9_]*(\[\])?|[A-Za-z]+)/.exec(item);
       if (name) declared.add(name[1].toLowerCase());
+      // `name CONSTANT type := valeur` et `name type := valeur` : le nom est
+      // toujours le premier mot, donc le motif ci-dessus suffit.
     }
   }
   // Les lignes de privilèges : `GRANT`/`REVOKE` nomment des rôles après TO/FROM.
@@ -563,8 +578,15 @@ async function checkExecute(root) {
   const errors = [];
   const prerequisites = [];
   const applied = [];
+  const created_by_document = [];
   let statements = 0;
   let refused_blocks = 0;
+
+  // Les tables que le **document** cree lui-meme en SQL. Une table a la fois dans
+  // un `CREATE TABLE` du DDL et dans un tableau de colonnes n'a pas deux
+  // definitions : le DDL fait foi, et la colonne sert a verifier que la prose et le
+  // SQL **parlent de la meme chose** — pas a la creer.
+  const { created: createdInDdl } = tablesTouched(blocks);
 
   // Un rôle absent n'est pas un DDL cassé : c'est un **prérequis** que le
   // document ne déclare pas. Le dire dans le verdict serait faux — le
@@ -578,6 +600,25 @@ async function checkExecute(root) {
   try {
     for (const t of declared) {
       if (t.unresolved.length) continue;   // table incomplète : le script ne l'invente pas
+      // **Ne pas synthétiser une table que le document déclare lui-même.**
+      //
+      // `execute` créait chaque table du tableau de colonnes avant de jouer le DDL.
+      // C'était un的service du script, utile quand une architecture décrit ses tables en
+      // prose et n'écrit que des contraintes — mais alors `completeness`, qui exige un
+      // `CREATE TABLE` dans le DDL, disait que ces tables **n'existaient pas**. Les
+      // deux contrôles lisaient le même document et se contredisaient, et le second
+      // donnait tort au document alors que le premier venait de l'inventer.
+      //
+      // Constaté sur Amberline : `completeness` -> `tables_created_in_ddl: 0`,
+      // `prose_only: [definition_version, signature_event, indicator]`. La correction
+      // n'est pas de synthesizer davantage, ni de supprimer la declaration : c'est
+      // que le document **écrive son schema**, et que le script ne fabrique plus rien
+      // derrière son dos. Un schéma qu'un script invente n'est pas un schéma du
+      // document — c'est un schéma du script.
+      if (createdInDdl.has(t.name.toLowerCase())) {
+        created_by_document.push(t.name);
+        continue;
+      }
       try {
         await db.exec(createTableSql(t));
         applied.push(t.name);
@@ -638,6 +679,7 @@ async function checkExecute(root) {
     guard_blocks_left_to_guards: refused_blocks,
     tables_declared: declared.length,
     tables_created: applied.length,
+    tables_created_by_document: created_by_document,
     tables_not_resolvable: incomplete.map(t => ({
       table: t.name, line: t.line, columns: t.unresolved
     })),
@@ -700,10 +742,39 @@ async function checkGuards(root) {
   const prerequisites = [];
   try {
     // L'ordre est celui du document : les tables déclarées en prose d'abord
-    // (le DDL les `ALTER`), puis les blocs un par un, les gardes étant
-    // **différées** — une garde s'essaie quand le schéma existe, pas avant.
+    // Le schéma vient du **document**, dans les deux sens : ce qu'il écrit en SQL
+    // d'abord, ce qu'il ne décrit qu'en prose ensuite. C'est la meme règle que
+    // dans `execute`, et elle doit l'être : une garde essayée sur un schéma que
+    // l'autre commande construit autrement ne prouve rien, et le verdict « inerte »
+    // qui en découle accuse le document d'un défaut qu'il n'a pas.
+    //
+    // Constaté sur Amberline : `execute` PASS, `guards` « 2 gardes inertes » — parce
+    // que `guards` synthétisait les tables de la prose et ignorait les `CREATE TABLE`
+    // du document, donc `revoked_at` **n'existait pas** et la garde echouait sur une
+    // colonne fantome. Deux commandes, deux schemas, un verdict faux.
+    const { created: createdInDdl } = tablesTouched(sqlBlocks(md));
+    for (const b of sqlBlocks(md)) {
+      if (/--\s*forge:ddl-refuse\b/.test(b.body)) continue;
+      const code = stripSqlComments(b.body);
+      for (const st of splitSqlStatements(code)) {
+        const stmt = st.text.trim();
+        if (!stmt || /^\s*(--|\/\*)/.test(stmt)) continue;
+        if (!/^(CREATE|ALTER)\b/i.test(stmt)) continue;
+        try { await db.exec(stmt); }
+        catch (e) {
+          // « deja existe » n'est pas une erreur ici : ce bloc peut avoir ete joue
+          // pour poser le schema, et la synthese prose qui suit le rejoue. Ce qui
+          // compte pour une garde, c'est que l'objet existe, pas qu'il n'ait pas
+          // existe deux fois.
+          if (!/already exists/i.test(String(e.message))) {
+            /* rendu par `execute`, qui le signale avec la ligne du document */
+          }
+        }
+      }
+    }
     for (const t of declaredTables(md)) {
       if (t.unresolved.length) continue;
+      if (createdInDdl.has(t.name.toLowerCase())) continue;   // le document l'a créée
       try { await db.exec(createTableSql(t)); } catch { /* rendu par `execute` */ }
     }
 
@@ -739,6 +810,12 @@ async function checkGuards(root) {
             prerequisites.push({ kind: 'prerequisite_absent', block_line: b.start, error: msg });
             continue;
           }
+          // Un objet **deja pose** n'est pas une erreur de garde : le schema a ete
+          // applique plus haut, et ce passage rejoue les blocs de donnees. Signaler
+          // « already exists » comme un DDL casse ferait echouer le controle sur un
+          // document correct — c'est ce que faisait la premiere version, et le
+          // projet de test a paye deux tests verts pour un schemasans defaut.
+          if (/already exists/i.test(msg)) continue;
           errors.push({
             kind,
             block_line: b.content_line + code.slice(0, st.index).split('\n').length - 1,

@@ -3725,6 +3725,36 @@ testSkippable('ddl : une garde qui tient n\'est PAS une erreur d\'exécution', (
     `le bloc de garde doit etre compte et laisse a guards : ${JSON.stringify(c).slice(0, 250)}`);
 });
 
+testSkippable('NEGATIF — deux variables dans un DECLARE : la seconde n\'est pas une table', () => {
+  // Constaté sur Amberline : `DECLARE v_id uuid; v_status text;` — le séparateur
+  // PL/pgSQL est le **point-virgule**, pas la virgule. Le parseur découpait sur `,`,
+  // donc `v_status` n'était pas « déclaré », et
+  // `SELECT status INTO v_status FROM definition_version` était lu comme une
+  // lecture de la **table** `v_status` : `dangling_references: ['v_status']` sur
+  // une fonction trigger parfaitement valide.
+  //
+  // Un contrôle qui accuse une table inexistante apprend à être ignoré.
+  const project = freshProject('ddl-declare-deux-variables');
+  writeDeliverable(project, '.forge/architecture.md', {
+    type: 'architecture',
+    body: '# Architecture\n\n## 4.1 `definition_version`\n\n' +
+      '| Champ | Type |\n|---|---|\n| `status` | text |\n\n```sql\n' +
+      'CREATE TABLE definition_version (definition_version_id uuid PRIMARY KEY, status text);\n' +
+      'CREATE FUNCTION lit_le_statut() RETURNS trigger AS $$\n' +
+      'DECLARE v_id uuid; v_status text;\n' +
+      'BEGIN\n' +
+      '  SELECT status INTO v_status FROM definition_version WHERE definition_version_id = NEW.definition_version_id;\n' +
+      '  RETURN NEW;\n' +
+      'END $$ LANGUAGE plpgsql;\n' +
+      '```\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'architecture', '.forge/architecture.md']);
+  const res = run('ddl-exec.js', ['completeness', project]);
+  assert(res.json.dangling_references.length === 0,
+    `une variable PL/pgSQL n'est pas une table : ${JSON.stringify(res.json.dangling_references)}`);
+  assert(res.json.pass === true, `completeness doit passer : ${JSON.stringify(res.json)}`);
+});
+
 testSkippable('ddl : un bloc de pose n\'est pas une déclaration de schéma', () => {
   // Poser trois lignes de fixture ne devrait pas faire dire que `widget` n'est
   // pas créée en SQL — c'est une tautologie, donc un faux positif.
