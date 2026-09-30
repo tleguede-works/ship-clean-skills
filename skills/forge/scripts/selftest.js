@@ -2093,6 +2093,98 @@ function designProject(label, overrides = {}) {
 }
 
 /* ------------------------------------------------------------------ *
+ * component-parity — un composant nommé en français, et un contrôle
+ * qui n'a rien vérifié ne dit pas « conforme »
+ * ------------------------------------------------------------------ */
+
+test('un composant au nom FRANÇAIS est lu, pas ignoré pour cause de forme', () => {
+  // Le défaut trouvé sur Onduleur : la découverte cherchait `### PascalCase`, alors
+  // qu'un design system français écrit `### Tuile produit`. Six composants sur
+  // sept étaient invisibles, et le contrôle rendait `pass: true` en n'ayant lu
+  // qu'un seul composant à zéro état.
+  const project = freshProject('parity-fr');
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design system\n\n## 5. Composants primitifs\n\n### Tuile produit\n\n' +
+      '**États** :\n\n| État | Déclencheur | Rendu |\n|---|---|---|\n' +
+      '| `defaut` | d | r |\n| `rupture` | d | r |\n| `indisponible` | d | r |\n\n' +
+      '### Panneau d\'état\n\n**États** : `defaut` · `focus`\n\n' +
+      '### Ce qui n\'existe pas\n\nAucune surface : ce n\'est pas un composant.\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']);
+  const res = run('design-check.js', ['component-parity', project]);
+  const found = res.json.components.map(c => c.component);
+  assert(found.indexOf('Tuile produit') !== -1,
+    `un nom à espaces doit être lu : ${JSON.stringify(found)}`);
+  assert(found.indexOf("Panneau d'état") !== -1, `un nom à apostrophe doit être lu : ${JSON.stringify(found)}`);
+  assert(found.indexOf('Ce qui n\'existe pas, et pourquoi') === -1 && found.indexOf('Ce qui n\'existe pas') === -1,
+    `une section sans contrat n'est pas un composant : ${JSON.stringify(found)}`);
+});
+
+test('le libellé s\'écrit `États :` ou `États —`, et les deux sont lus', () => {
+  // Les deux écritures coexistent dans les design systems réels. N'en lire qu'une
+  // donnait zéro état à tout un document — donc zéro exigence, et un vert.
+  const project = freshProject('parity-separateur');
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design system\n\n### A — deux points\n\n**États** :\n\n' +
+      '| État | Déclencheur | Rendu |\n|---|---|---|\n| `un` | d | r |\n| `deux` | d | r |\n\n' +
+      '### B — tiret cadratin\n\n**États** —\n\n' +
+      '| État | Déclencheur | Rendu |\n|---|---|---|\n| `un` | d | r |\n| `deux` | d | r |\n\n' +
+      '### C — tiret cadratin suivi de prose, puis un tableau\n\n' +
+      '**États** — rendus par l\'union `À DÉCIDER`, sauf `hover` :\n\n' +
+      '| État | Déclencheur | Rendu |\n|---|---|---|\n| `un` | d | r |\n| `deux` | d | r |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']);
+  const res = run('design-check.js', ['component-parity', project]);
+  for (const c of res.json.components) {
+    assert(c.states === 2, `${c.component} doit déclarer 2 états, obtenu ${c.states} — le libellé n'a pas été lu`);
+  }
+});
+
+test('NEGATIF — un design system sans surface déclarée n\'est PAS « conforme »', () => {
+  // Un contrôle qui n'a rien vérifié ne doit pas rendre `pass: true`. C'est la
+  // correction de fond : le vert le plus dangereux n'est pas un vert faux, c'est
+  // un vert vide.
+  const project = freshProject('parity-vide');
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design system\n\n## 5. Composants primitifs\n\n' +
+      '### Tuile produit\n\nUne tuile. Rien de plus.\n\n' +
+      '### Champ de saisie\n\nUn champ.\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']);
+  const res = run('design-check.js', ['component-parity', project]);
+  assert(res.json.pass === false, 'rien à vérifier ne peut pas rendre conforme');
+  const o = res.json.offenders.find(x => x.problem === 'aucune_surface_declaree');
+  assert(o, `le refus doit être nommé : ${JSON.stringify(res.json.offenders)}`);
+  assert(o.read_headings.indexOf('Tuile produit') !== -1,
+    `les titres lus doivent être rendus, pour qu'on sache quoi écrire : ${JSON.stringify(o.read_headings)}`);
+});
+
+test('NEGATIF — un écran qui propage mal une surface française est signalé', () => {
+  // Le contrôle doit rester capable d'attraper, une fois la découverte corrigée :
+  // sinon on a remplacé un vert vide par un vert faux.
+  const project = freshProject('parity-fr-enum');
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design system\n\n### Tuile produit\n\n**États** :\n\n' +
+      '| État | Déclencheur | Rendu |\n|---|---|---|\n| `defaut` | d | r |\n| `rupture` | d | r |\n| `indisponible` | d | r |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']);
+  writeDeliverable(project, '.forge/design/screens/accueil.md', {
+    type: 'screen',
+    body: '# Accueil\n\nChaque tuile porte ses 2 états : `defaut`, `rupture`.\n'
+  });
+  run('state.js', ['register', project, 'screen', 'accueil', '.forge/design/screens/accueil.md']);
+  const res = run('design-check.js', ['component-parity', project]);
+  const o = res.json.offenders.find(x => x.problem === 'enumeration_perimee');
+  assert(o, `une énumération fausse doit être signalée : ${JSON.stringify(res.json)}`);
+  assert(o.component === 'Tuile produit', `le bon composant doit être nommé : ${o && o.component}`);
+  assert(/indisponible/.test(o.hint), `l'état manquant doit être nommé : ${o.hint}`);
+});
+
+/* ------------------------------------------------------------------ *
  * component-parity — la surface d'un composant, dans tous les écrans
  * ------------------------------------------------------------------ */
 
