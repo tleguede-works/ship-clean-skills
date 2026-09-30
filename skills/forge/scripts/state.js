@@ -1610,10 +1610,29 @@ function cmdAmend(root, key, flags, argv) {
   if (kind === 'slice' || kind === 'foundation') entry.plan_hash = L.contentHash(abs);
   else entry.content_hash = L.contentHash(abs);
 
-  // Le chemin documente : un artefact amende n'est plus celui qui a ete approuve.
+  // Le chemin documente : un artefact amendé n'est plus celui qui a ete approuve.
+  //
+  // Et le **miroir** part avec l'autorite. `state.json` est l'autorite, le front
+  // matter est le miroir : les deux doivent bouger dans la meme operation, comme
+  // le fait `set-status`. Une premiere version ecrivait `entry.status` et
+  // s'arretait la : le fichier gardait `draft`, l'etat disait `stale`, et
+  // `forge-guard sync` signalait `status_mismatch`. Un controle qui se declenche
+  // parce que la commande qui l'evite n'a pas ete terminee, c'est du travail
+  // evitable — et c'est la meme famille que le defaut que `derived_from` a
+  // corrige : une divergence d'etat et de miroir que personne ne regarde.
   if ((L.STATUS_VOCAB.document || []).includes(entry.status) && entry.status !== 'stale') {
     entry.previous_status = entry.status;
     entry.status = 'stale';
+    const mirror = mirrorStatusToFile(root, relPath, 'stale');
+    if (mirror.mirrored) {
+      entry.content_hash = L.contentHash(abs);
+    } else {
+      L.fail({
+        error: 'amend_mirror_failed', key, path: relPath, reason: mirror.reason,
+        hint: 'Le statut d\'un artefact amendé doit etre ecrit dans les deux endroits. ' +
+              'Corrige le front matter, puis relance `state.js set-status`.'
+      });
+    }
   }
 
   audit(state, 'amend', `Amendement enregistre : ${key}`, { kind, reason, renumbered: renumbered.length });
