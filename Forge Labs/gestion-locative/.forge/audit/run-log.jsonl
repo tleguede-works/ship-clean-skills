@@ -1,3 +1,6 @@
 {"ts":"2026-09-30T21:26:29.900Z","type":"init","anchor":"/workspaces/ship-clean-skills/Forge Labs/gestion-locative","anchor_source":"cwd","product":"Bailly","references":[]}
 {"ts":"2026-09-30T21:27:16.012Z","type":"register","deliverable":"conventions","path":".forge/conventions.md","kind":"deliverable"}
 {"ts":"2026-09-30T21:27:22.208Z","type":"register","deliverable":"conventions","path":".forge/conventions.md","kind":"deliverable"}
+{"ts":"2026-09-30T22:12:55.537Z","type":"phase_status","phase":"1_prd","from":"not_started","to":"in_progress"}
+{"ts":"2026-09-30T22:12:55.586Z","type":"register","deliverable":"prd","path":".forge/prd.md","kind":"deliverable"}
+{"ts":"2026-09-30T22:13:02.129Z","type":"register","deliverable":"prd","path":".forge/prd.md","kind":"deliverable"}

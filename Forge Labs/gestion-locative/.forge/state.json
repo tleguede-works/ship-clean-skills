@@ -21,13 +21,13 @@
     "mode": "guided",
     "fast_track": null
   },
-  "current_phase": "0",
+  "current_phase": "1",
   "phases": {
     "0_bootstrap": {
       "status": "in_progress"
     },
     "1_prd": {
-      "status": "not_started"
+      "status": "in_progress"
     },
     "2_roadmap": {
       "status": "not_started"
@@ -68,6 +68,36 @@
         "8": "Les trois questions que le commanditaire me renvoie"
       },
       "updated_at": "2026-09-30T21:27:22.207Z"
+    },
+    "prd": {
+      "path": ".forge/prd.md",
+      "type": "prd",
+      "status": "draft",
+      "content_hash": "sha256:b781a14eb6c0",
+      "headings": {
+        "1": "Résumé exécutif",
+        "2": "Utilisateurs et personas",
+        "3": "User stories",
+        "4": "Règles métier",
+        "5": "Contraintes",
+        "6": "Edge cases",
+        "7": "Exigences non-fonctionnelles",
+        "8": "Risques et inconnues",
+        "9": "Hors scope (explicitement)",
+        "10": "Critères de succès",
+        "11": "Glossaire",
+        "12": "Points à clarifier",
+        "3.1": "Saisir — le quotidien",
+        "3.2": "Le bail — la source des dates",
+        "3.3": "Encaisser — le mensuel",
+        "3.4": "Débloquer — le flux",
+        "3.5": "Le garde-fou — la propriété transverse",
+        "3.6": "Ce que je n'ai pas dans les user stories, et pourquoi"
+      },
+      "updated_at": "2026-09-30T22:13:02.128Z",
+      "derived_from": [
+        ".forge/conventions.md"
+      ]
     }
   },
   "index": {},
@@ -82,7 +112,8 @@
     "metrics": ".forge/audit/metrics.json",
     "counts": {
       "init": 1,
-      "register": 2
+      "register": 4,
+      "phase_status": 1
     }
   },
   "divergences": []
