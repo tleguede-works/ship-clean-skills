@@ -27,6 +27,24 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — `state.js amend` : le miroir part avec l'autorité
+
+`state.json` est l'autorité, le front matter est le miroir. `amend` écrivait
+l'autorité et s'arrêtait là : le fichier gardait `draft`, l'état disait `stale`, et
+`forge-guard sync` signalait `status_mismatch` sur l'architecture.
+
+Un contrôle qui se déclenche parce que la commande qui l'évite n'a pas été
+terminée, c'est du travail évitable — et c'est la même famille que le défaut que
+`derived_from` a corrigé (v1.4.2) : une divergence d'état et de miroir que personne
+ne regarde parce que personne ne regarde.
+
+`amend` écrit donc les deux, recalcule le `content_hash` après écriture, et
+**échoue explicitement** si le miroir n'a pas pu être écrit — plutôt que de laisser
+l'autorité dire `stale` pendant que le fichier dit autre chose.
+
++1 test (173 → 174), qui vérifie les trois : l'autorité, le miroir, et le verdict de
+`forge-guard sync`.
+
 ## [1.6.1] - 2026-09-30
 
 ### fix(forge) — `ddl-exec` : quatre bugs trouvés en corrigeant un vrai document

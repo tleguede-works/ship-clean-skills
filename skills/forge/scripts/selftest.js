@@ -3133,6 +3133,32 @@ test('amend : un amendement sans raison est une édition ordinaire', () => {
     `le refus doit etre nomme : ${JSON.stringify(res.json).slice(0, 200)}`);
 });
 
+test('amend : le statut part dans les DEUX endroits — autorité et miroir', () => {
+  // `state.json` est l'autorité, le front matter est le miroir, et les deux
+  // doivent bouger dans la même opération. Une première version d'`amend`
+  // écrivait l'autorité et s'arrêtait là : le fichier gardait `draft`, l'état
+  // disait `stale`, et `forge-guard sync` signalait `status_mismatch` — un
+  // contrôle qui se déclenche parce que la commande qui l'évite n'a pas été
+  // terminée.
+  const project = amendProject('amend-miroir', BASE);
+  rewrite(project, BASE.concat([{ n: '5.13', t: 'Revoquer' }]));
+  const res = run('state.js', ['amend', project, 'architecture', '--reason', 'ajout en fin']);
+  assert(res.code === 0, `l'amendement doit passer : ${res.stdout}${res.stderr}`);
+
+  const st = JSON.parse(fs.readFileSync(path.join(project, '.forge', 'state.json'), 'utf-8'));
+  const md = fs.readFileSync(path.join(project, '.forge', 'architecture.md'), 'utf-8');
+  const authority = st.deliverables.architecture.status;
+  const mirror = (/^status:\s*(\S+)/m.exec(md) || [])[1];
+  assert(authority === 'stale', `l'autorité doit dire stale : ${authority}`);
+  assert(mirror === 'stale', `le miroir doit dire stale aussi : ${mirror}`);
+
+  // Et le contrôle de synchronisation doit être d'accord.
+  const sync = run('forge-guard.js', ['sync', project]);
+  const c = (sync.json.checks || []).find(x => x.check === 'state_frontmatter_in_sync');
+  assert(c && c.status === 'pass',
+    `forge-guard sync ne doit rien signaler : ${JSON.stringify(c).slice(0, 250)}`);
+});
+
 test('amend : la carte des titres est la référence, capturée à l\'approbation', () => {
   // Sans cette carte, le PREMIER amendement d'un artefact pourrait renumeroter
   // librement : rien ne saurait dire ce qui a change. C'est la même raison que
