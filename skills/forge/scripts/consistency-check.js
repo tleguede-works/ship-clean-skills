@@ -521,11 +521,19 @@ function checkPremises(root, state) {
       const hits = lines
         .map((l, i) => ({ l, i }))
         .filter(({ l }) => new RegExp(`\\b${id}\\b`).test(l))
-        .map(({ l, i }) => ({ line: i + 1, excerpt: l.trim().slice(0, 120) }));
-      // Une mention explicite du retrait est legitimate : c'est même
-      // exactement ce que l'on veut voir.
-      const acknowledged = hits.filter(({ excerpt }) =>
-        /retir[ée]|écarté|abandonn|hors\s*scope|retiré/i.test(excerpt));
+        .map(({ l, i }) => ({
+          line: i + 1,
+          excerpt: l.trim().slice(0, 120),
+          // L'acquittement se lit sur la ligne ENTIÈRE, jamais sur l'extrait.
+          // Sur l'extrait tronqué à 120 caractères, une citation explicitement
+          // acquittée en fin de ligne passait pour non acquittée — donc pour un
+          // défaut. Un contrôle qui signale un défaut inexistant apprend à être
+          // ignoré.
+          acknowledged: /retir[ée]|écarté|écartée|abandonn|hors\s*scope/i.test(l)
+        }));
+      // Une mention explicite du retrait est légitime : c'est même exactement ce
+      // que l'on veut voir.
+      const acknowledged = hits.filter(h => h.acknowledged);
       retiredCited.push({
         deliverable: key, premise: id, path: d.path,
         citations: hits.length,
@@ -536,6 +544,11 @@ function checkPremises(root, state) {
     }
   }
 
+  // Une citation qui ANNONCE le retrait est légitime — c'est même exactement ce
+  // qu'on veut voir. Seules les citations non acquittées méritent un signal :
+  // un contrôle qui signale un défaut inexistant apprend à être ignoré.
+  const unacknowledgedCitations = retiredCited.filter(r => !r.acknowledged_only);
+
   const pass = retired.length === 0 && unknown.length === 0 && untraceable.length === 0 &&
     collisions.length === 0;
   record('premises', pass, {
@@ -545,6 +558,7 @@ function checkPremises(root, state) {
     untraceable,
     collisions,
     retired_cited_in_body: retiredCited,
+    retired_cited_without_acknowledgement: unacknowledgedCitations,
     declared_dependencies: checked.length,
     rule: 'Un livrable approuvé qui se justifie par une exigence retirée reste un livrable ' +
           'approuvé, et rien ne le signale. C\'est le motif le plus coûteux d\'un projet : ' +
@@ -554,7 +568,7 @@ function checkPremises(root, state) {
   // un PRD ne dépend de rien — mais l'omission doit être visible, sinon la
   // dépendance reste non déclarée pour de bon. Idem pour la citation d'un ID
   // retiré : elle est légitime si elle annonce le retrait.
-  if (pass && (undeclared.length || retiredCited.length)) {
+  if (pass && (undeclared.length || unacknowledgedCitations.length)) {
     const entry = results.checks[results.checks.length - 1];
     entry.status = 'warn';
   }
