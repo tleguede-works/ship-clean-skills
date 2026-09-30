@@ -11,3 +11,6 @@
 {"ts":"2026-09-30T17:24:41.333Z","type":"gate_approved","phase":"1_prd","next_phase":"2"}
 {"ts":"2026-09-30T17:24:41.391Z","type":"phase_status","phase":"2_roadmap","from":"not_started","to":"in_progress"}
 {"ts":"2026-09-30T17:25:40.490Z","type":"register","deliverable":"roadmap","path":".forge/roadmap.md","kind":"deliverable"}
+{"ts":"2026-09-30T17:35:09.064Z","type":"phase_status","phase":"3_design","from":"not_started","to":"in_progress"}
+{"ts":"2026-09-30T17:40:44.536Z","type":"register","deliverable":"design_system","path":".forge/design/design-system.md","kind":"deliverable"}
+{"ts":"2026-09-30T17:49:45.806Z","type":"register","deliverable":"design_system","path":".forge/design/design-system.md","kind":"deliverable"}

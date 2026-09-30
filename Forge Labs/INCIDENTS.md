@@ -1207,3 +1207,170 @@ lui demande plus que son périmètre au lieu de lire ce qu'il a réellement dit.
 La conséquence est la même à chaque fois — du travail perdu, et un faux défaut
 annoncé. Ce n'est pas un défaut du skill. C'est une habitude, et elle est à changer
 côté lecteur, pas côté script.
+
+## F-40 — Phase 3 (Onduleur) : le contrôle ne savait pas nommer un texte
+
+Le premier design system **français** passé dans `design-check contrast` a rendu
+`pass: false` avec **huit** signalements. Six semblaient être de vraies corrections.
+Un ne l'était pas — et sous eux il y en avait un **`vrai` que le contrôle ne pouvait
+pas voir**.
+
+### Le mécanisme
+
+`design-check` classe chaque couleur pour lui appliquer le bon seuil : **4,5:1**
+pour du texte (WCAG 1.4.3), **3:1** pour un composant d'interface (1.4.11), rien
+pour une teinte décorative. Pour cela il lisait **le nom du token**, et ses trois
+signaux étaient des littéraux **anglais** :
+
+```
+--color-text-*                                → texte
+--color-ink-50/100/200, *-subtle, --color-surface*  → surface
+le reste                                      → composant non textuel
+```
+
+Ils ont été écrits contre le design system d'**Amberline**, dont les tokens sont
+nommés en anglais.
+
+Or **tout ce que ce skill produit est en français** : `SKILL.md`, les gabarits, les
+agents, et jusqu'à l'exemple canonique d'ambiance de `design-quality.md`, dont la
+ligne dit « Trois mots, pas davantage » et donne « dense, opérationnel, calme ». Un
+vocabulaire de tokens français n'est pas un cas limite : c'est **le cas attendu**.
+
+Sur Onduleur, aucun nom ne correspondait. **Tout** est tombé sur « composant non
+textuel », donc sur 3:1.
+
+### Les deux directions, dont une silencieuse
+
+**Six faux positifs**, prévisibles :
+
+- `--color-texte-inverse` — qui est du texte, et n'est jamais posé que sur l'encre
+  et les quatre teintes sémantiques — mesuré à **1,10:1** contre le papier, où il
+  n'est jamais posé ;
+- les quatre premières teintes de la rampe d'encre, qui sont des **teintes de survol**
+  et des trames d'illustration, exigées à 3:1 contre le fond alors que la 1.4.11 ne
+  parle pas d'un état décoratif.
+
+**Et un faux négatif, dans le dossier que le script venait de mesurer.**
+
+`--color-texte-desactive` est un **token de texte**. Il vaut **3,80:1** sur
+`--color-surface-sunken` : **sous le seuil de texte**. Classé composant, il était
+jugé contre 3:1 — donc **conforme**. Il est apparu dans `measured`, avec son ratio,
+son `against`, son `required`, et **jamais** dans `offenders`.
+
+La sortie disait `pass: false` pour six mauvaises raisons, et ne disait rien de la
+bonne.
+
+C'est exactement le défaut que ce script a été écrit pour trouver :
+`--color-text-secondary` à **4,17:1** sur Amberline, portant les **dates de calcul**,
+c'est-à-dire la provenance — l'information sur laquelle repose tout le produit. Il
+l'a reproduit, à 0,30 du seuil, dans le document sous ses yeux.
+
+**Septième** mécanisme de la même famille, et le premier qui échoue **en silence**.
+Les six autres produisaient du bruit visible ; celui-ci produisait un vert.
+
+### Le correctif : le document déclare, le script mesure
+
+Ajouter `--color-texte-*` à côté de `--color-text-*` aurait été le correctif
+évident, et il est faux : il faudrait réécrire la liste à chaque vocabulaire, et le
+contrôle continuerait à **deviner**. Le principe tenu depuis cinq échecs dans ce
+dossier est l'inverse — *un contrôle qui marche résout un pointeur déclaré ; une
+tentative d'inférence produit du bruit*.
+
+Le design system déclare donc ses classes une fois, dans un bloc
+`<!-- forge:token-classes -->` : `text`, `surface`, `nontext`, `on`, `exempt`.
+Résolution dans cet ordre : **déclaration, puis `EXEMPT`, puis heuristiques** —
+Amberline est donc inchangé, et ses tests existants sont toujours verts. C'est la
+preuve que la correction n'a rien cassé en chemin.
+
+Trois conséquences que la déclaration rend possibles :
+
+- **`on:`** dit sur quels fonds un texte est **réellement** posé. Un texte est
+  mesuré contre toute surface du document : c'est juste pour de l'encre et faux
+  pour un texte inversé, jamais posé que sur des fonds sombres. Sans `on:`, il est
+  mesuré contre le papier et échoue **par construction** — un faux positif par
+  palette, c'est-à-dire presque toutes.
+- **Les tokens exigés ne sont plus une liste de noms anglais.** Exiger
+  `--color-text-primary` d'un document français l'obligerait à déclarer un token
+  qu'il n'a pas, ou à renommer sa palette pour satisfaire un script. L'exigence
+  devient **structurelle** — « il y a au moins un texte, et un fond » — ce qui est ce
+  que la liste en dur cherchait réellement à garantir.
+- **Un token de couleur absent des six listes est signalé.** La déclaration est un
+  engagement, donc l'omettre est un choix, pas un oubli qu'un nom puisse rattraper.
+
+### Trois défauts trouvés en corrigeant le premier
+
+Chacun par un test **négatif** — un défaut observable, pas une intention.
+
+**Un composant déclaré n'entre PAS dans les surfaces.** Ma première version faisait
+entrer tout `nontext` dans les surfaces, « parce qu'un bouton porte son libellé ».
+C'est exact pour le bouton et faux pour tout le reste : un texte courant n'est pas
+posé sur un filet, et le mesureur retient le **pire** couple. Résultat — du texte de
+corps signalé à 2,16:1 sur le fond d'un bouton où il ne sera jamais écrit. **Un
+contrôle plus strict que la réalité n'est pas plus prudent, il est faux.** C'est le
+motif exact des sept échecs, et je l'ai reproduit en corrigeant le précédent.
+
+**Le rapport d'échec nommait le token au lieu de la surface.** La mesure était juste,
+l'attribution ne l'était pas : l'entrée disait `against: --color-texte-inverse` pour un
+texte mesuré sur l'encre. Un rapport qui nomme la mauvaise surface envoie corriger la
+mauvaise couleur — c'est pire qu'aucun rapport, parce qu'il est crédible.
+
+**Le parseur perdait les lignes de continuation.** Une liste sur plusieurs lignes
+n'en retenait que la première. La déclaration **paraissait** complète — `seen: true`,
+cinq directives, aucune erreur — et ne l'était qu'à moitié ; les tokens oubliés
+retombaient silencieusement sur le classement par défaut. Un parseur qui perd une
+partie de son entrée doit en signaler une autre : c'est ce qui a été ajouté.
+
+### Le défaut du projet, séparément
+
+Une fois le contrôle capable de voir, il a vu. `--color-texte-desactive` descendu de
+`#78705F` à `#665E4E` : **3,80:1 → 4,96:1** sur la surface la moins favorable. **Par
+la valeur, pas par une exemption** — une exemption aurait rendu le problème invisible
+au lieu de le résoudre, et c'est la tentation quand on vient d'ajouter une mécanique
+qui excuse.
+
+Et un second trou, trouvé **en remplissant la déclaration** : le document **annonçait**
+au script de mesurer « pastille de statut (fond teinté + texte forte) pour les quatre
+teintes », alors qu'il ne déclarait **aucun fond teinté**. La vérification promise
+n'était pas seulement absente — elle était **impossible**. Les quatre paires
+`-doux` / `-fort` ont été ajoutées, et les deux encre `-fort` qui manquaient pour
+l'attention et l'information. C'est la **troisième** fois dans ce dossier qu'un
+document annonce une vérification qu'il n'a pas rendue possible, et la réponse n'est
+pas de retirer l'annonce : c'est d'ajouter ce qui la rend vérifiable.
+
+**Résultat** : `pass: true`, 0 signalement, 8 surfaces mesurées, 9 tokens de texte
+au-dessus de 4,5:1, 11 composants au-dessus de 3:1, 6 exemptions **chacune avec sa
+raison**.
+
+### Un second défaut, dans la manière de livrer
+
+J'ai promu `[Unreleased]` en `1.7.0` **à la main**, dans le commit de contenu. Le
+workflow a donc trouvé une section vide et a refusé de publier — à raison :
+`decide` dit qu'un niveau demandé à la main ne crée pas de contenu, et publier aurait
+consommé un numéro pour un changement invisible.
+
+`release.js bump` laisse aussi derrière lui l'ancien en-tête vide, d'où **deux**
+`## [Unreleased]` et `entries: 0`. Les deux ont été remis droit dans un PR séparé
+(#36) : la promotion appartient au `chore(release)` du bot, qui l'avait déjà faite
+trois fois sans incident.
+
+Ce n'est pas un défaut du skill — c'est un défaut de **qui** fait quoi, et il ne
+pouvait apparaître que parce que la version avait été réellement publiée puis
+vérifiée par l'archive. Un test qui n'aurait vérifié que `VERSION` et le nombre de
+sections l'aurait laissé passer.
+
+### Ce que cela ajoute au dossier
+
+Le compteur d'heuriques qui ont produit du bruit passe à **sept**, dont une
+silencieuse. Et la règle qui en sort est plus forte que les six précédentes :
+
+> Un contrôle qui **devine** échoue dans le sens silencieux quand le motif est absent,
+> et dans le sens bruyant quand il est présent. Les deux sont des défauts, et le
+> deuxième se voit tout de suite — c'est pour cela qu'il reçoit toute l'attention.
+
+Un motif absent ne produit pas une absence de contrôle. Il produit **le contrôle le
+plus large qui reste**, ici 3:1 pour tout, ce qui est précisément le seuil qui
+laisse passer le pire cas.
+
+**v1.7.0** : PR #35 et #36, archive téléchargée, `snapshot verify` → `pass: true`,
+96 fichiers, 0 différence, et la suite complète rejouée **dans l'archive extraite**
+(177 passés + 7 non exécutés faute de pglite, comptés à part).
