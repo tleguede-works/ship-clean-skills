@@ -52,14 +52,14 @@ récapitulatifs.
 | Cible fond de travail | **Web**, ouvert depuis un navigateur | — | Le portable sert au travail de fond ; il ne justifie pas un second produit natif. |
 | Base de données | **PostgreSQL** managé, région UE | 16 ou supérieur | Un seul éditeur, une seule sauvegarde, et le **SQL** permet d'écrire des contraintes qui tiennent — pas seulement des intentions. Le détail est en Phase 4. |
 | Hébergement | Un petit hébergeur mutualisé ou un VPS, **chiffré au repos**, sauvegardé par l'hébergeur **et** exporté par Bailly | à trancher en Phase 4 | La sauvegarde ne peut pas reposer sur l'hébergeur seul : c'est le seul acteur dont la panne fait tout perdre. |
-| Authentification | À DÉCIDER EN PHASE 4 | — | Un seul utilisateur, mais le secret doit exister. Le mode dépend du stockage chiffré du mobile. |
+| Authentification | **Un secret unique, ressaisi à chaque ouverture**, jamais de session persistante | — | Un seul utilisateur, mais le secret doit exister. Un secret qu'on oublie entre deux utilisations est **le** coût acceptable ; une session à gérer est un coût quotidien. La reprise passe par la réinitialisation à l'hébergeur (R9), pas par un e-mail que le propriétaire n'a pas configuré. |
 | Écriture hors ligne | **Obligatoire, et locale d'abord** | — | Non négociable, ci-dessous. |
-| Signature | À DÉCIDER EN PHASE 4 | — | Une signature d'état des lieux a une portée juridique ; le mécanisme doit être choisi en connaissance de cause. |
-| Validation | À DÉCIDER EN PHASE 4 | — | |
-| State management | À DÉCIDER EN PHASE 4 | — | |
-| Tests unitaires | À DÉCIDER EN PHASE 4 | — | |
-| Tests E2E | À DÉCIDER EN PHASE 4 | — | |
-| Lint / format | À DÉCIDER EN PHASE 4 | — | |
+| Signature | **Pas de signature électronique qualifiée (X12)** ; une signature tracée localement, valide **à la confirmation serveur** | — | B5 : une signature n'est valide qu'à la confirmation. Le composant `Signature` existe au design system mais **aucune slice du MVP ne le réclame**, donc il n'est branché nulle part — et B5 n'a pour l'instant qu'une existence de vocabulaire, pas un écran. **Dit** : ce n'est pas un oubli. |
+| Validation | **Zod**, un schéma par entité, généré depuis la même source que les `CHECK` du DDL | — | Une valeur acceptée par Zod et refusée par PostgreSQL est un bug de **génération**, et il se voit parce que les deux listes sont côte à côte. |
+| State management | **Zustand** | — | L'état global du produit est un compteur, une connectivité et une horloge. Un magasin unique lisible hors de React est la seule forme qui permette de **piloter l'interface depuis un test avec une horloge simulée** — donc ce choix découle de la décision d'horloge, il ne la précède pas. |
+| Tests unitaires | **Vitest** + **fast-check** | — | Le garde-fou est une **property** (US-8) : sans générateur de propriétés, une property n'est pas testée, elle est affirmée. C'est la seule dépendance de test que la roadmap rend obligatoire. |
+| Tests E2E | **Detox** + `adb` pour le mode avion | — | Les trois démonstrations sont au niveau appareil : le 6 du mois, le 11e mois du terme, le mode avion. `adb shell svc wifi disable` donne un mode avion **au niveau du système**, reproductible — c'est la seule façon de ne pas dépendre d'un réglage du développeur. |
+| Lint / format | **ESLint 9** (config plate) + Prettier | — | Le plugin n'est pas le sujet : la règle qui compte est `no-restricted-syntax` sur `Date.now`, `new Date`, `Date.parse` **en dehors du paquet `horloge`**. C'est l'application mécanique de la décision d'horloge simulée, pas une préférence de style. |
 
 ---
 
@@ -126,7 +126,7 @@ Le commanditaire a corrigé la question :
 | état | ce qui | déclenche | durée de conservation |
 |---|---|---|---|
 | **Effacer** | coordonnées, photos, journal de saisie, avis | départ du locataire | aucune |
-| **Anonymiser** | ce qui a servi à décider mais n'identifie plus personne | départ du locataire | conserve le **fait**, retire l'identifiant |
+| **Anonymiser** | ce qui a servi à décider mais n'identifie plus personne | départ du locataire | conserve le **fait**, retire l'identifiant. **La date de fin est inconnue tant que Q2 n'est pas tranchée** : le schéma le sait et ne l'invente pas. |
 | **Conserver pour obligation légale** | bail, quittance, pièce comptable, correspondance de gestion | — | **jusqu'à une date de fin écrite**, affichée |
 
 **Le « bouton tout effacer » est donc interdit par construction**, et pas seulement
