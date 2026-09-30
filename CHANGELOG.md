@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-09-30
+
 ### fix(forge) — L'ordre des phases est appliqué, il n'est plus seulement énoncé
 
 « Ne jamais entamer la phase suivante sans un approuvé clair » est présenté
