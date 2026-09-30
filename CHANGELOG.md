@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-09-30
+
 ### fix(forge) — Un changement de statut détruisait la trace des sources
 
 `derived_from` est écrit en liste sur quatre gabarits : `benchmarks`,
