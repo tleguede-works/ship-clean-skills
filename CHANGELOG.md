@@ -27,7 +27,7 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
-### lab(forge) — Journal du test grandeur nature : Phase 3 approuvée après trois refus
+### docs(forge) — Journal du test grandeur nature : Phase 3 approuvée après trois refus
 
 `Forge Labs/` passe de non suivi à suivi. Ce n'est pas un livrable du produit :
 c'est le **journal** d'un test d'intégration grandeur nature du skill sur un
@@ -49,6 +49,8 @@ ni à vérifier.
 
 Voir `Forge Labs/INCIDENTS.md` (F-01 → F-27) et
 `Forge Labs/bi-dashboard/.forge/audit/issues.md` (INC-001 → INC-008).
+
+## [1.4.0] - 2026-09-30
 
 ### feat(forge) — Un composant ne peut plus avoir deux rendus
 
@@ -87,7 +89,6 @@ Trois pièges rencontrés en l'écrivant, tous deux couverts par un test :
   donc par **preuve** — le composant dont la surface contient tous les noms cités.
 
 +5 tests (135 → 140).
-
 
 ## [1.3.1] - 2026-09-30
 
