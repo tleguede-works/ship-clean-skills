@@ -100,7 +100,7 @@ Applique `references/module-prioritization.md` :
 5. **Enregistre** l'ordre pour qu'il devienne vérifiable :
 
 ```bash
-node scripts/state.js set-nav <anchor> '{
+node "$FORGE/scripts/state.js" set-nav <anchor> '{
   "archetype": "mobile_field_ops",
   "core_loop": "consulter l état, saisir une entree/sortie, agir sur un contrat",
   "items": [
@@ -144,7 +144,7 @@ Ce que le gabarit exige et qui est le plus souvent bâclé :
 **Aucun `{{PLACEHOLDER}}` ne doit subsister.** C'est la cause mécanique des designs génériques : personne n'a eu à choisir.
 
 ```bash
-node scripts/forge-guard.js placeholders <anchor>
+node "$FORGE/scripts/forge-guard.js" placeholders <anchor>
 ```
 
 ### Flows de navigation
@@ -168,8 +168,8 @@ Avant de terminer cette phase, vérifie :
 Puis lance les garde-fous :
 
 ```bash
-node scripts/forge-guard.js placeholders <anchor>
-node scripts/forge-guard.js all <anchor>
+node "$FORGE/scripts/forge-guard.js" placeholders <anchor>
+node "$FORGE/scripts/forge-guard.js" all <anchor>
 ```
 
 ### Génération d'images

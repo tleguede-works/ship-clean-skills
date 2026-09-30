@@ -16,7 +16,7 @@ conventions_ref: .forge/conventions.md
 
 > Ce document décrit *comment implémenter* cette slice. Il contient tout le nécessaire pour qu'un développeur (ou une IA) puisse implémenter la slice sans ambiguïté et sans avoir à consulter d'autres documents.
 >
-> **Exhaustivité obligatoire.** Chaque ID B*/E*/C* du PRD couvert par cette slice doit apparaître dans le tableau de traçabilité (§6). `node scripts/coverage-check.js slice . {{SLICE_NAME}}` vérifie mécaniquement ceci avant le gate.
+> **Exhaustivité obligatoire.** Chaque ID B*/E*/C* du PRD couvert par cette slice doit apparaître dans le tableau de traçabilité (§6). `node "$FORGE/scripts/coverage-check.js" slice . {{SLICE_NAME}}` vérifie mécaniquement ceci avant le gate.
 >
 > **Ce plan doit pouvoir être implémenté sans interprétation** par un modèle peu performant. Les contrats de données sont du code réel. Les algorithmes sont en pseudocode. Les pièges sont anticipés explicitement.
 
@@ -208,7 +208,7 @@ conventions_ref: .forge/conventions.md
 - [ ] Lint sans erreur
 - [ ] Typecheck clean
 - [ ] Tous les tests passent
-- [ ] `node scripts/coverage-check.js slice . {{SLICE_NAME}}` renvoie `pass: true`.
+- [ ] `node "$FORGE/scripts/coverage-check.js" slice . {{SLICE_NAME}}` renvoie `pass: true`.
 
 ---
 
@@ -267,6 +267,6 @@ conventions_ref: .forge/conventions.md
 - [ ] La checklist de tâches ($9) couvre toutes les phases.
 - [ ] Les critères d'acceptation ($10) sont vérifiables individuellement.
 - [ ] Le plan de tests ($11) couvre tous les IDs.
-- [ ] `node scripts/coverage-check.js slice . {{SLICE_NAME}}` renvoie `pass: true`.
+- [ ] `node "$FORGE/scripts/coverage-check.js" slice . {{SLICE_NAME}}` renvoie `pass: true`.
 
 **Statut** : `draft` → en attente de validation.

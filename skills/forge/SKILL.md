@@ -40,12 +40,42 @@ Forge applique cinq principes fondamentaux :
 
 5. **Les livrables vivent dans `.forge`, et rien ailleurs.** Un document produit dans un dossier temporaire est un document perdu. Ce n'est pas une recommandation, c'est une contrainte vérifiée mécaniquement par `forge-guard.js`.
 
+## Comment exécuter les scripts
+
+**Les commandes de ce document sont relatives au dossier DU SKILL, pas au projet.**
+
+Les scripts ne sont pas dans le projet : ils sont installés avec le skill
+(`~/.agents/skills/forge/scripts/`, `.opencode/skills/forge/scripts/`…). Un projet
+n'a pas de dossier `scripts/`. Une commande dont le chemin de script est relatif
+au projet n'est donc exécutable **depuis aucun projet** — à la première
+invocation, elle échoue sur `Cannot find module '<projet>/scripts/state.js'`.
+
+Définis une fois le chemin du skill, et utilise-le partout :
+
+```bash
+# Le dossier de base du skill est communiqué au chargement du skill.
+export FORGE=/chemin/vers/skills/forge
+
+node "$FORGE/scripts/state.js" start
+```
+
+Deux règles qui en découlent :
+
+1. **Le répertoire courant est le projet**, pas le dossier du skill. Les scripts
+   résolvent l'anchor depuis `process.cwd()` : lancés depuis le dossier du skill,
+   ils ancrent le projet sur le dépôt des skills — c'est-à-dire sur le mauvais
+   projet, sans le dire.
+2. **Passe l'anchor explicitement** quand le répertoire courant n'est pas la racine
+   du projet : `node "$FORGE/scripts/state.js" start /chemin/du/projet`.
+
+---
+
 ## Étape 0 — Reprendre l'état réel (EN PREMIER, à chaque invocation)
 
 **Cette étape précède tout le reste** — y compris la lecture de `state.json`, y compris la résolution de l'anchor.
 
 ```bash
-node scripts/state.js start
+node "$FORGE/scripts/state.js" start
 ```
 
 Une commande. Elle affiche : la phase courante, les gates en attente, les slices par statut **avec présence réelle du plan et du nombre de cas de test**, les documents en dérive de hash, les divergences ouvertes, les constats non promus, et l'état de la mémoire du projet (`AGENTS.md` §Definition of Done, ADR ouvertes, volume de `LEARNINGS.md`).
@@ -59,7 +89,7 @@ Si `start` signale des slices **marquées faites sans cas de test**, ce n'est pa
 Un `.forge` créé dans le mauvais dossier est un rattrapage manuel complet.
 
 ```bash
-node scripts/state.js anchor
+node "$FORGE/scripts/state.js" anchor
 ```
 
 La commande affiche l'anchor retenu, sa source (`existing_state` | `project_marker` | `cwd`), s'il a été résolu par remontée, et la chaîne de répertoires parcourue.
@@ -67,7 +97,7 @@ La commande affiche l'anchor retenu, sa source (`existing_state` | `project_mark
 **Si un projet Legacy, un corpus ou un projet de référence est accessible depuis la session, il ne doit JAMAIS devenir l'anchor.** Il se déclare en lecture seule et n'est jamais modifié :
 
 ```bash
-node scripts/state.js init <racine> "<NomProduit>" --reference /chemin/vers/Legacy
+node "$FORGE/scripts/state.js" init <racine> "<NomProduit>" --reference /chemin/vers/Legacy
 ```
 
 La résolution suit trois règles, dans l'ordre :
@@ -85,7 +115,7 @@ Si `anchor` renvoie `state_exists: true`, lis `state.json`. Il indique la derni�
 Si le fichier est au schéma v1, il est **refusé**, pas migré silencieusement :
 
 ```bash
-node scripts/state.js migrate <anchor>
+node "$FORGE/scripts/state.js" migrate <anchor>
 ```
 
 Voir `references/state-schema.md` pour le format exact.
@@ -114,8 +144,8 @@ front matter =  MIROIR    (champ status:), écrit par set-status
 Si un écart apparaît — `state.json` dit `implemented`, le `.md` dit encore `draft` — il est détecté et corrigé mécaniquement :
 
 ```bash
-node scripts/forge-guard.js sync .          # détecte, exit 1
-node scripts/forge-guard.js sync . --fix    # réaligne le miroir sur l'autorité
+node "$FORGE/scripts/forge-guard.js" sync .          # détecte, exit 1
+node "$FORGE/scripts/forge-guard.js" sync . --fix    # réaligne le miroir sur l'autorité
 ```
 
 `content_hash` porte sur le **corps** du document, jamais sur le front matter : changer un statut n'invalide donc pas un plan. Un hash qui ne match plus signale une **édition hors bande** — le document est alors `stale`.
@@ -134,7 +164,7 @@ Deux skills qui ne se connaissent pas produisent deux systèmes de mémoire conc
 Un constat se **route**, il ne s'empile pas :
 
 ```bash
-node scripts/state.js finding <anchor> --domain=testing.md --severity=majeur "<fait>" "<correction>"
+node "$FORGE/scripts/state.js" finding <anchor> --domain=testing.md --severity=majeur "<fait>" "<correction>"
 ```
 
 **Le domaine est obligatoire.** Un constat sans domaine n'a aucune cible de promotion, donc il ne change rien : il devient un journal de plus, en concurrence avec les règles qu'il devait informer. C'est la cause mesurée des promotions à zéro.
@@ -169,8 +199,8 @@ Ce contrat n'est pas une formalité. Les contrôles valident les livrables *déc
 **Avant chaque gate**, lance les garde-fous. Ils sont déterministes, instantanés, et coûtent zéro token :
 
 ```bash
-node scripts/forge-guard.js all <anchor>        # chemins, état, contrat de phase, synchronisation, placeholders, versions
-node scripts/consistency-check.js all <anchor>   # écarts ENTRE artefacts
+node "$FORGE/scripts/forge-guard.js" all <anchor>        # chemins, état, contrat de phase, synchronisation, placeholders, versions
+node "$FORGE/scripts/consistency-check.js" all <anchor>   # écarts ENTRE artefacts
 ```
 
 Un `fail` ici n'est pas une suggestion : corrige avant de présenter le document.
@@ -180,7 +210,7 @@ Un `fail` ici n'est pas une suggestion : corrige avant de présenter le document
 **Déclare de quoi un livrable dépend.** Un livrable approuvé se justifie par des exigences du PRD, et cette dépendance doit être **nommée** :
 
 ```bash
-node scripts/state.js register <anchor> deliverable conventions .forge/conventions.md --requires=B11,C1,C2
+node "$FORGE/scripts/state.js" register <anchor> deliverable conventions .forge/conventions.md --requires=B11,C1,C2
 ```
 
 `consistency-check premises` compare ces IDs à l'état réel du PRD et signale une exigence **retirée** dont un livrable approuvé dépend encore. Sans cette déclaration, un document reste approuvé sur une prémisse que le PRD a abandonnée : sur un test grandeur nature, `conventions.md` justifiait PostgreSQL par « la réponse à l'exigence multi-tenant strict » pendant que le PRD mettait le multi-tenant hors scope faute de second client. Aucun contrôle ne le voyait.
@@ -201,7 +231,7 @@ But : établir le contexte du projet et générer la base des conventions avant 
    - Stack technique envisagée (langage, framework, base de données...)
    - Contraintes techniques ou d'hébergement
    - Outils obligatoires ou exclus
-4. **Crée `.forge/`** : `node scripts/state.js init <anchor> "<Nom>" --reference <projet de référence si applicable>`.
+4. **Crée `.forge/`** : `node "$FORGE/scripts/state.js" init <anchor> "<Nom>" --reference <projet de référence si applicable>`.
 5. Génère `.forge/conventions.md` depuis `templates/conventions.md.tmpl`. Les sections non encore décidées (ex. state management, E2E framework) sont marquées `À DÉCIDER EN PHASE 4`.
 6. Enregistre le livrable : `state.js register <anchor> deliverable conventions .forge/conventions.md`.
 7. Résume à l'utilisateur ce qui a été détecté et demande confirmation.
@@ -351,7 +381,7 @@ Applique `references/module-prioritization.md` :
 L'ordre devient vérifiable :
 
 ```bash
-node scripts/state.js set-nav <anchor> '{ "archetype": "...", "core_loop": "...", "items": [ ... ] }'
+node "$FORGE/scripts/state.js" set-nav <anchor> '{ "archetype": "...", "core_loop": "...", "items": [ ... ] }'
 ```
 
 #### 3.3 Design system
@@ -371,7 +401,7 @@ Pour chaque fonctionnalité du PRD qui a une interface utilisateur :
 3. Le gabarit exige 9 états, une direction visuelle par écran, les interactions, le responsive à chaque breakpoint, l'accessibilité et la traçabilité. **Remplis-le intégralement** — un `{{PLACEHOLDER}}` résiduel est un état qui ne sera pas implémenté.
 4. Définis les flows de navigation entre écrans (happy path, alternatives, erreurs, onboarding).
 
-Puis : `node scripts/forge-guard.js placeholders <anchor>`.
+Puis : `node "$FORGE/scripts/forge-guard.js" placeholders <anchor>`.
 
 #### 3.5 Validation design
 
@@ -420,10 +450,10 @@ Pour chaque slice, définis :
 
 1. **Déclare** le graphe, slice par slice :
    ```bash
-   node scripts/state.js dep <anchor> <slice|fondation> <a,b,c>
+   node "$FORGE/scripts/state.js" dep <anchor> <slice|fondation> <a,b,c>
    ```
    `state.js dep` refuse une dépendance vers une slice inexistante, l'auto-dépendance, et tout ce qui fermerait un cycle. Un graphe faux ne se distingue pas d'un graphe incomplet : une dépendance morte ne sera jamais satisfaite, et rien ne le signale ensuite.
-2. Lance `node scripts/dependency-check.js check <anchor> --write` pour calculer `depended_on_by` et `impl_wave`.
+2. Lance `node "$FORGE/scripts/dependency-check.js" check <anchor> --write` pour calculer `depended_on_by` et `impl_wave`.
 3. Identifie les dépendances circulaires, l'ordre topologique, et quelles slices peuvent être développées en parallèle.
 
 **Déclare ton plan de vagues s'il est plus fin que le minimum.** `dependency-check` calcule le minimum topologique. Un plan d'ordonnancement plus fin est légitime — deux personnes ne peuvent pas porter à la fois la politique RLS et la formule d'écart — mais il doit être écrit dans le front matter de l'architecture :
@@ -515,7 +545,7 @@ Le cadre commun (frameworks, patterns, règles de couverture) est défini dans l
 
 #### 5.9 Vérification de couverture
 
-Avant le gate : `node scripts/coverage-check.js slice <anchor> <slice>` puis `node scripts/forge-guard.js placeholders <anchor>`.
+Avant le gate : `node "$FORGE/scripts/coverage-check.js" slice <anchor> <slice>` puis `node "$FORGE/scripts/forge-guard.js" placeholders <anchor>`.
 
 `pass: false` = retourne compléter le plan. Les scripts vérifient :
 - Chaque ID B*/E*/C* du PRD a une correspondance dans le plan.
@@ -557,22 +587,22 @@ Checklist de gate (`references/review-checklists.md#validation`).
 
 Pour chaque slice dont le plan est approuvé :
 
-1. Vérifie que toutes les dépendances sont implémentées (ou mockées) : `node scripts/state.js check-stale <anchor> <slice>`.
+1. Vérifie que toutes les dépendances sont implémentées (ou mockées) : `node "$FORGE/scripts/state.js" check-stale <anchor> <slice>`.
 2. Lis d'abord le plan d'implémentation de cette slice et les conventions (`.forge/conventions.md`). Si le plan est ambigu sur l'interaction avec une autre slice, consulte uniquement la section concernée de l'architecture — ne lis pas l'architecture entière.
 3. Implémente selon la checklist de tâches, en respectant strictement les contrats de données, algorithmes et pièges documentés.
 4. **Écris les tests en premier** (TDD) quand c'est pertinent, sinon juste après l'implémentation de chaque couche.
 5. Vérifie chaque critère d'acceptation.
 6. **Exécute le critère de sortie** — c'est une porte, pas une checklist :
    ```bash
-   node scripts/forge-exit.js <anchor> <slice>
+   node "$FORGE/scripts/forge-exit.js" <anchor> <slice>
    ```
    Elle lance les vraies commandes du projet et vérifie que la slice a des **cas de test**, pas un fichier de test. « Le test existe » signifie « il y a au moins un cas » — c'est la distinction qui manquait quand 14 slices ont été approuvées sans aucun test.
 7. Lance les vérifications Chrome MCP : overflows, responsive, navigation, états d'erreur.
 8. **Route les constats révélés** avec un domaine — jamais de constat sans cible :
    ```bash
-   node scripts/state.js finding <anchor> --domain=<règle visée> --severity=<s> "<fait>" "<correction>"
+   node "$FORGE/scripts/state.js" finding <anchor> --domain=<règle visée> --severity=<s> "<fait>" "<correction>"
    ```
-9. `node scripts/consistency-check.js all <anchor>` — cette slice ne doit pas apparaître en écart.
+9. `node "$FORGE/scripts/consistency-check.js" all <anchor>` — cette slice ne doit pas apparaître en écart.
 10. Mets à jour le statut : `state.js set-status <anchor> slice <slice> implemented`, puis `validated` après validation.
 11. **GATE** après chaque slice.
 
@@ -587,7 +617,7 @@ Pour chaque slice dont le plan est approuvé :
 1. Lance la suite de régression complète.
 2. Vérifie que tous les critères d'acceptation du PRD sont satisfaits.
 3. Applique la rotation de perspective (posture qualité + posture risques) une dernière fois sur l'ensemble.
-4. Lance `node scripts/forge-guard.js all <anchor>`.
+4. Lance `node "$FORGE/scripts/forge-guard.js" all <anchor>`.
 5. Mets à jour `state.json` : projet → `validated`.
 6. Ferme le journal d'incidents (`.forge/audit/issues.md`) et génère le rapport d'audit du projet.
 
@@ -698,7 +728,7 @@ Chaque exécution de Forge journalise dans `.forge/audit/` :
 ### Ce qui doit être journalisé
 
 ```bash
-node scripts/state.js log <anchor> <type> "<message>" [k=v ...]
+node "$FORGE/scripts/state.js" log <anchor> <type> "<message>" [k=v ...]
 ```
 
 Types à déclencher impérativement :
@@ -721,7 +751,7 @@ Types à déclencher impérativement :
 ### Analyse inter-projets
 
 ```bash
-node scripts/audit-report.js <dossier-contenant-les-projets> --out reports/
+node "$FORGE/scripts/audit-report.js" <dossier-contenant-les-projets> --out reports/
 ```
 
 Fusionne les journaux de plusieurs projets, regroupe les défaillances par **signature normalisée**, et distingue les problèmes **structurels** (présents dans plusieurs projets → dans le skill) des incidents ponctuels (dans un projet). Sort en `0` normally, en `2` si un problème structurel est détecté.
@@ -768,17 +798,21 @@ Fusionne les journaux de plusieurs projets, regroupe les défaillances par **sig
 
 ### Scripts — déterministes, zéro dépendance
 
+Invocation : `node "$FORGE/scripts/<fichier>" [<anchor>] [args…]`. `$FORGE` est le
+dossier du skill, voir « Comment exécuter les scripts » plus haut.
+
 | Script | Rôle | Quand |
 |---|---|---|
 | `state.js start` | État réel : phase, gates, slices **avec nombre de cas de test**, constats non promus | **Étape 0, chaque session** |
 | `state.js anchor` | Résout le projet courant, refuse un projet de référence | Étape 0 bis |
 | `state.js finding` | Route un constat avec son **domaine** de promotion | Dès qu'un défaut est trouvé |
 | `state.js set-status` | Écrit l'**autorité** et son **miroir** en une opération | Chaque changement de statut |
-| `state.js sync` | Réconcilie état ↔ front matter | Avant chaque gate |
+| `state.js sync` | Réconcile état ↔ front matter | Avant chaque gate |
 | `state.js set-nav` | Enregistre l'ordre de navigation et sa justification | Phase 3 |
 | `state.js check-stale` | Document dérivé, ou plan modifié après approbation | Avant d'implémenter |
+| `state.js dep` | Déclare le graphe de dépendances d'une slice ou d'une fondation | Phase 4 |
 | `state.js migrate` | v1 → v2 | Un projet existant |
-| `forge-guard.js all` | Chemins, état, vocabulaire, synchronisation, placeholders, versions | **Avant chaque gate** |
+| `forge-guard.js all` | Chemins, état, vocabulaire, synchronisation, **provenance `derived_from`**, cases « À DÉCIDER », placeholders, versions | **Avant chaque gate** |
 | `consistency-check.js all` | Écarts **entre** artefacts : PRD ↔ archi ↔ plans ↔ tests ↔ écrans | **Avant chaque gate** |
 | `forge-exit.js` | Critère de sortie **exécuté** d'une slice | **Phase 7, par slice** |
 | `coverage-check.js` | Couverture d'un plan de slice | Phase 5 |

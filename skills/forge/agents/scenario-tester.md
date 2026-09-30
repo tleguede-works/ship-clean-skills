@@ -33,7 +33,7 @@ AVANT d'écrire un scénario, répondre par écrit :
 ```
 
 ```bash
-node scripts/state.js finding <anchor> --domain=architecture.md --severity=majeur \
+node "$FORGE/scripts/state.js" finding <anchor> --domain=architecture.md --severity=majeur \
   "Le scénario <nom> ne peut pas écrire <effet> : aucun port applicatif ne l'expose" \
   "Extraire l'écriture dans un port, puis brancher le scénario dessus"
 ```

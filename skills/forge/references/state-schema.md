@@ -24,8 +24,8 @@ front matter =  MIROIR       ──►  réécrit par le même appel, dans la m�
 **Conséquence** : `state.json` dit `implemented`, le `.md` dit `draft` — cette situation est *impossible* à maintenir et immédiatement détectée :
 
 ```bash
-node scripts/forge-guard.js sync .        # détecte, exit 1
-node scripts/forge-guard.js sync . --fix  # réaligne le miroir sur l'autorité
+node "$FORGE/scripts/forge-guard.js" sync .        # détecte, exit 1
+node "$FORGE/scripts/forge-guard.js" sync . --fix  # réaligne le miroir sur l'autorité
 ```
 
 ### 2. `content_hash` porte sur le corps, jamais sur le front matter.
@@ -233,23 +233,23 @@ Dossiers hors livrables : `.forge/audit/`, `.forge/.tmp/`.
 
 1. **Ne jamais éditer `state.json` à la main.** Passer par `scripts/state.js`.
 2. **Ne jamais relire `state.json` juste avant d'écrire pour le préserver** — c'est le rôle de `writeState`. Lire l'état courant à chaque commande.
-3. **Un `state.json` en v1 est refusé**, pas migré silencieusement : `node scripts/state.js migrate <anchor>`.
+3. **Un `state.json` en v1 est refusé**, pas migré silencieusement : `node "$FORGE/scripts/state.js" migrate <anchor>`.
 4. **Aucun contenu de document.** Si l'information ne tient pas dans une métadonnée, elle appartient dans un livrable.
 
 ## Commandes
 
 ```bash
-node scripts/state.js anchor [start]                          # résout l'anchor, refuse un projet de référence
-node scripts/state.js init <root> <nom> [--reference <p>]    # crée .forge/ + state.json v2
-node scripts/state.js register <root> <kind> <clé> <chemin>   # valide le chemin canonique
-node scripts/state.js set-status <root> <kind> <clé> <statut> # ÉCRIT l'autorité + le miroir
-node scripts/state.js set-phase <root> <phase> <statut>
-node scripts/state.js complete-phase <root> <phase>
-node scripts/state.js hash <root> <livrable>
-node scripts/state.js sync <root> [--fix]
-node scripts/state.js check-stale <root> <slice>
-node scripts/state.js set-nav <root> <json>
-node scripts/state.js migrate <root>                          # v1 → v2
-node scripts/state.js status <root>
-node scripts/state.js log <root> <type> <message> [k=v ...]  # journaliser un incident
+node "$FORGE/scripts/state.js" anchor [start]                          # résout l'anchor, refuse un projet de référence
+node "$FORGE/scripts/state.js" init <root> <nom> [--reference <p>]    # crée .forge/ + state.json v2
+node "$FORGE/scripts/state.js" register <root> <kind> <clé> <chemin>   # valide le chemin canonique
+node "$FORGE/scripts/state.js" set-status <root> <kind> <clé> <statut> # ÉCRIT l'autorité + le miroir
+node "$FORGE/scripts/state.js" set-phase <root> <phase> <statut>
+node "$FORGE/scripts/state.js" complete-phase <root> <phase>
+node "$FORGE/scripts/state.js" hash <root> <livrable>
+node "$FORGE/scripts/state.js" sync <root> [--fix]
+node "$FORGE/scripts/state.js" check-stale <root> <slice>
+node "$FORGE/scripts/state.js" set-nav <root> <json>
+node "$FORGE/scripts/state.js" migrate <root>                          # v1 → v2
+node "$FORGE/scripts/state.js" status <root>
+node "$FORGE/scripts/state.js" log <root> <type> <message> [k=v ...]  # journaliser un incident
 ```

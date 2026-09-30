@@ -2,7 +2,7 @@
 
 Génère la checklist pertinente à la fin de chaque document, juste avant validation. Ne demande jamais une validation sans checklist concrète.
 
-**Avant toute checklist**, lance `node scripts/forge-guard.js all <anchor>`. Un garde-fou en échec invalide le gate : ce n'est pas une vérification de plus, c'est un préalable.
+**Avant toute checklist**, lance `node "$FORGE/scripts/forge-guard.js" all <anchor>`. Un garde-fou en échec invalide le gate : ce n'est pas une vérification de plus, c'est un préalable.
 
 ## `prd.md` (Phase 1)
 
@@ -117,9 +117,9 @@ Génère la checklist pertinente à la fin de chaque document, juste avant valid
 - [ ] Les critères d'acceptation sont vérifiables individuellement et liés aux IDs B*/E*/C*.
 - [ ] Le plan de tests ($11 du plan) couvre tous les IDs avec des scénarios concrets.
 - [ ] Les vérifications Chrome MCP sont listées écran par écran.
-- [ ] `node scripts/coverage-check.js slice <anchor> <slice>` renvoie `pass: true`.
-- [ ] `node scripts/forge-guard.js placeholders <anchor>` ne signale rien.
-- [ ] `node scripts/state.js check-stale <anchor> <slice>` renvoie `stale: false`.
+- [ ] `node "$FORGE/scripts/coverage-check.js" slice <anchor> <slice>` renvoie `pass: true`.
+- [ ] `node "$FORGE/scripts/forge-guard.js" placeholders <anchor>` ne signale rien.
+- [ ] `node "$FORGE/scripts/state.js" check-stale <anchor> <slice>` renvoie `stale: false`.
 
 ## `test-plan.md` (Phase 6)
 

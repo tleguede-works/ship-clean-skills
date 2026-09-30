@@ -46,7 +46,7 @@ function loadStateOrFail(root) {
   if (state.version === 1 || state.documents) {
     L.fail({
       error: 'legacy_state_v1',
-      hint: `node scripts/state.js migrate ${root}`,
+      hint: `node "$FORGE/scripts/state.js" migrate ${root}`,
       reference: 'references/migration-v1-v2.md'
     });
   }
@@ -466,7 +466,7 @@ function checkPremises(root, state) {
       undeclared.push({
         deliverable: key,
         why: 'approuvé sans déclarer les exigences dont il dépend',
-        hint: `node scripts/state.js register <anchor> deliverable ${key} ${d.path} --requires=B1,C1`
+        hint: `node "$FORGE/scripts/state.js" register <anchor> deliverable ${key} ${d.path} --requires=B1,C1`
       });
       continue;
     }

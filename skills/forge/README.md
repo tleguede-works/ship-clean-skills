@@ -30,8 +30,8 @@ Ce qui distingue Forge d'une simple checklist de planification.
 Tout document produit par Forge vit dans `<projet>/.forge/`, sur un chemin canonique. Un livrable dans un dossier temporaire est détecté et signalé.
 
 ```bash
-node scripts/forge-guard.js strays <anchor>        # détecte
-node scripts/forge-guard.js strays <anchor> --relocate   # range
+node "$FORGE/scripts/forge-guard.js" strays <anchor>        # détecte
+node "$FORGE/scripts/forge-guard.js" strays <anchor> --relocate   # range
 ```
 
 ### 2. L'état et les documents ne peuvent pas diverger
@@ -39,8 +39,8 @@ node scripts/forge-guard.js strays <anchor> --relocate   # range
 `state.json` fait foi pour le statut ; le champ `status:` du front matter est un miroir, écrit par le même appel. `state.json` ne contient **jamais** de contenu de document — le PRD est un fichier Markdown séparé.
 
 ```bash
-node scripts/forge-guard.js sync <anchor>          # détecte l'écart
-node scripts/forge-guard.js sync <anchor> --fix    # le corrige
+node "$FORGE/scripts/forge-guard.js" sync <anchor>          # détecte l'écart
+node "$FORGE/scripts/forge-guard.js" sync <anchor> --fix    # le corrige
 ```
 
 ### 3. Le projet courant est résolu avant toute écriture
@@ -48,7 +48,7 @@ node scripts/forge-guard.js sync <anchor> --fix    # le corrige
 Un projet Legacy accessible depuis la session ne peut pas devenir l'anchor. C'est le bug le plus coûteux : analyser l'ancien, écrire dans l'ancien.
 
 ```bash
-node scripts/state.js anchor
+node "$FORGE/scripts/state.js" anchor
 ```
 
 ### 4. Forge s'améliore à partir de ses propres exécutions
@@ -56,7 +56,7 @@ node scripts/state.js anchor
 Chaque run journalise ses incidents. Après plusieurs projets, l'analyse croisée fait apparaître ce qui échoue **dans le skill** plutôt que dans les projets.
 
 ```bash
-node scripts/audit-report.js <dossier-des-projets> --out reports/
+node "$FORGE/scripts/audit-report.js" <dossier-des-projets> --out reports/
 ```
 
 ## Les deux modes
@@ -185,33 +185,33 @@ forge/
 
 ```bash
 # Résoudre le projet courant
-node scripts/state.js anchor
+node "$FORGE/scripts/state.js" anchor
 
 # Initialiser
-node scripts/state.js init <anchor> "<Nom>" --reference /chemin/vers/Legacy
+node "$FORGE/scripts/state.js" init <anchor> "<Nom>" --reference /chemin/vers/Legacy
 
 # Statuts (écrit l'état ET le front matter)
-node scripts/state.js set-status <anchor> deliverable prd approved
-node scripts/state.js sync <anchor> --fix
-node scripts/state.js check-stale <anchor> <slice>
-node scripts/state.js migrate <anchor>          # v1 → v2
+node "$FORGE/scripts/state.js" set-status <anchor> deliverable prd approved
+node "$FORGE/scripts/state.js" sync <anchor> --fix
+node "$FORGE/scripts/state.js" check-stale <anchor> <slice>
+node "$FORGE/scripts/state.js" migrate <anchor>          # v1 → v2
 
 # Navigation priorisée
-node scripts/state.js set-nav <anchor> '{ "archetype": "...", "items": [...] }'
+node "$FORGE/scripts/state.js" set-nav <anchor> '{ "archetype": "...", "items": [...] }'
 
 # Garde-fous
-node scripts/forge-guard.js all <anchor>
+node "$FORGE/scripts/forge-guard.js" all <anchor>
 
 # Vérifications
-node scripts/coverage-check.js slice <anchor> <slice>
-node scripts/dependency-check.js check <anchor> --write
+node "$FORGE/scripts/coverage-check.js" slice <anchor> <slice>
+node "$FORGE/scripts/dependency-check.js" check <anchor> --write
 
 # Audit inter-projets
-node scripts/audit-report.js <dossier> --out reports/
+node "$FORGE/scripts/audit-report.js" <dossier> --out reports/
 ```
 
 ## Tests
 
 ```bash
-node scripts/selftest.js
+node "$FORGE/scripts/selftest.js"
 ```

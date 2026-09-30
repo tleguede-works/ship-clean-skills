@@ -107,17 +107,17 @@ Une fois le changement appliqué :
 1. Mets à jour le document source (PRD, architecture, design...).
 2. Propage les conséquences dans tous les documents listés.
 3. **Marque chaque document impacté `stale`** — un plan fondé sur une règle modifiée n'est pas « à jour », il est faux :
-   `node scripts/state.js set-status <anchor> deliverable <clé> stale`
+   `node "$FORGE/scripts/state.js" set-status <anchor> deliverable <clé> stale`
 4. **Recalcule le hash des documents modifiés** pour que la dérive soit détectable :
-   `node scripts/state.js hash <anchor> <clé>`
+   `node "$FORGE/scripts/state.js" hash <anchor> <clé>`
 5. Trouve les slices dépendantes devenues invalides :
-   `node scripts/state.js check-stale <anchor> <slice>`
+   `node "$FORGE/scripts/state.js" check-stale <anchor> <slice>`
 6. Vérifie la cohérence globale :
-   `node scripts/dependency-check.js check <anchor> --full --write`
-   puis `node scripts/forge-guard.js all <anchor>`
+   `node "$FORGE/scripts/dependency-check.js" check <anchor> --full --write`
+   puis `node "$FORGE/scripts/forge-guard.js" all <anchor>`
 7. Signale tout ce qui est devenu incohérent ou stale.
 8. Propose de lancer `scripts/coverage-check.js slice` sur les slices affectées.
-9. Journalise l'incident : `node scripts/state.js log <anchor> impact_change "<résumé>" phase=<n>`
+9. Journalise l'incident : `node "$FORGE/scripts/state.js" log <anchor> impact_change "<résumé>" phase=<n>`
 
 ## Changements en cascade
 

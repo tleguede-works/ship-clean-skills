@@ -696,7 +696,7 @@ test('fast-track exige le passage par les scripts avant les agents', () => {
 
 test('l\'audit est journalisé et l\'analyse inter-projets existe', () => {
   const sk = fs.readFileSync(path.join(SKILL_DIR, 'SKILL.md'), 'utf-8');
-  assert(sk.includes('state.js log'), 'la commande de journalisation doit être documentée');
+  assert(/state\.js"?\s+log/.test(sk), 'la commande de journalisation doit être documentée');
   assert(sk.includes('audit-report.js'), 'l\'analyse inter-projets doit être documentée');
   assert(fs.existsSync(path.join(SKILL_DIR, 'templates', 'audit-issues.md.tmpl')), 'le gabarit d\'incidents manque');
   const t = fs.readFileSync(path.join(SKILL_DIR, 'templates', 'audit-issues.md.tmpl'), 'utf-8');
@@ -1368,6 +1368,173 @@ test('la raison d\'un écart plié est lue, pas son indicateur YAML', () => {
   assert(d.rationale && d.rationale !== '>-',
     `la valeur pliée n\'a pas été dépliée : ${JSON.stringify(d.rationale)}`);
   assert(/plusieurs lignes/.test(d.rationale), `texte inattendu : ${d.rationale}`);
+});
+
+
+/* ------------------------------------------------------------------ *
+ * Front matter — la trace ne doit pas disparaître au changement de statut
+ * ------------------------------------------------------------------ */
+
+section('Front matter — round-trip sans perte');
+
+test('une séquence en bloc est relue comme une séquence', () => {
+  const L = require(path.join(SCRIPTS, 'lib', 'forge-lib.js'));
+  const fm = L.splitFrontMatter('---\ntype: screen\nderived_from:\n  - .forge/prd.md\n  - .forge/architecture.md\n---\n\n# c\n');
+  assert(Array.isArray(fm.data.derived_from), `derived_from n'est pas une liste : ${JSON.stringify(fm.data.derived_from)}`);
+  assert(fm.data.derived_from.length === 2, `liste tronquée : ${JSON.stringify(fm.data.derived_from)}`);
+});
+
+test('set-status préserve derived_from (défaut trouvé sur un test grandeur nature)', () => {
+  // Le bug : la trace des sources d'un artefact disparaissait au PREMIER
+  // `set-status`, donc au moment précis où elle commence à compter — et avec
+  // forge-guard comme consistency-check au vert.
+  const project = freshProject('front-matter-derive');
+  const rel = '.forge/design/screens/accueil.md';
+  const abs = path.join(project, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs,
+    '---\ntype: screen\nstatus: draft\nderived_from:\n  - .forge/prd.md\n  - .forge/design/design-system.md\nrule_ids: [B1, B2]\n---\n\n# Accueil\n\nContenu.\n');
+
+  assert(run('state.js', ['register', project, 'screen', 'accueil', rel]).code === 0, 'register a échoué');
+  assert(run('state.js', ['set-status', project, 'screen', 'accueil', 'approved']).code === 0, 'set-status a échoué');
+
+  const raw = fs.readFileSync(abs, 'utf-8');
+  assert(raw.includes('- .forge/prd.md'), `derived_from a été vidé :\n${raw.slice(0, 200)}`);
+  assert(raw.includes('- .forge/design/design-system.md'), `une source a été perdue :\n${raw.slice(0, 200)}`);
+  assert(/status: approved/.test(raw), 'le statut n\'a pas été écrit');
+});
+
+test('la réécriture du front matter est idempotente et ne bouge pas le content_hash', () => {
+  const L = require(path.join(SCRIPTS, 'lib', 'forge-lib.js'));
+  const raw = '---\ntype: screen\nstatus: draft\nderived_from:\n  - a.md\n  - b.md\nrule_ids: [B1]\n---\n\n# T\n\nCorps.\n';
+  const abs = path.join(tmpRoot, 'fm-idempotent.md');
+  fs.writeFileSync(abs, raw);
+  const hashBefore = L.contentHash(abs);
+
+  const fm = L.readFrontMatter(abs);
+  L.writeFrontMatter(abs, { ...fm.data, status: 'approved' });
+  const once = fs.readFileSync(abs, 'utf-8');
+
+  const fm2 = L.readFrontMatter(abs);
+  L.writeFrontMatter(abs, { ...fm2.data, status: 'in_review' });
+  const twice = fs.readFileSync(abs, 'utf-8');
+
+  assert(once.replace('approved', 'in_review') === twice, 'la réécriture n\'est pas stable');
+  assert(L.contentHash(abs) === hashBefore,
+    'un changement de statut a modifié le content_hash du corps : le document deviendrait stale');
+});
+
+test('forge-guard signale un derived_from vide', () => {
+  const project = freshProject('front-matter-vide');
+  const rel = '.forge/design/screens/vide.md';
+  const abs = path.join(project, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs, '---\ntype: screen\nstatus: draft\nderived_from:\n---\n\n# V\n\nContenu.\n');
+  assert(run('state.js', ['register', project, 'screen', 'vide', rel]).code === 0, 'register a échoué');
+
+  const res = run('forge-guard.js', ['state', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'derived_from_non_empty');
+  assert(check, `le contrôle derived_from_non_empty est absent : ${res.stdout.slice(0, 200)}`);
+  assert(check.status === 'fail', 'un derived_from vide doit échouer');
+});
+
+/* ------------------------------------------------------------------ *
+ * Cases « À DÉCIDER » — bloquante ou différable
+ * ------------------------------------------------------------------ */
+
+section('Cases à décider — bloquantes et différables');
+
+test('forge-guard échoue sur une case AVANT LA PHASE 1 encore ouverte', () => {
+  const project = freshProject('a-decider-bloquante');
+  const rel = '.forge/conventions.md';
+  const abs = path.join(project, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs,
+    '---\ntype: conventions\nstatus: draft\n---\n\n# C\n\n| Identity provider | À DÉCIDER AVANT LA PHASE 1 | — | fail-closed est inapplicable |\n');
+  assert(run('state.js', ['register', project, 'deliverable', 'conventions', rel]).code === 0, 'register a échoué');
+
+  const res = run('forge-guard.js', ['state', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'no_undecided_slots');
+  assert(check && check.status === 'fail', `une case bloquante doit échouer : ${JSON.stringify(check)}`);
+  assert(check.blocking.length === 1, 'la case bloquante doit être nommée');
+});
+
+test('une case EN PHASE 4 est signalée, pas refusée, avant la Phase 4', () => {
+  const project = freshProject('a-decider-differable');
+  const rel = '.forge/conventions.md';
+  const abs = path.join(project, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs,
+    '---\ntype: conventions\nstatus: draft\n---\n\n# C\n\n| State management | À DÉCIDER EN PHASE 4 | — | |\n');
+  assert(run('state.js', ['register', project, 'deliverable', 'conventions', rel]).code === 0, 'register a échoué');
+
+  const res = run('forge-guard.js', ['state', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'no_undecided_slots');
+  assert(check && check.status === 'pass',
+    `une case différable est l'usage normal du gabarit avant la Phase 4 : ${JSON.stringify(check)}`);
+  assert(check.expected.length === 1, 'elle doit rester visible dans la sortie');
+});
+
+test('après la Phase 4, toute case ouverte devient un échec', () => {
+  const project = freshProject('a-decider-apres-phase4');
+  const rel = '.forge/conventions.md';
+  const abs = path.join(project, rel);
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs,
+    '---\ntype: conventions\nstatus: draft\n---\n\n# C\n\n| State management | À DÉCIDER EN PHASE 4 | — | |\n');
+  assert(run('state.js', ['register', project, 'deliverable', 'conventions', rel]).code === 0, 'register a échoué');
+
+  const state = readState(project);
+  state.phases['4_architecture'].status = 'approved';
+  writeState(project, state);
+
+  const res = run('forge-guard.js', ['state', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'no_undecided_slots');
+  assert(check && check.status === 'fail',
+    `un document verrouillé ne doit pas contenir de case ouverte : ${JSON.stringify(check)}`);
+});
+
+test('le gabarit distingue la case bloquante de la case différable', () => {
+  const t = fs.readFileSync(path.join(SKILL_DIR, 'templates', 'conventions.md.tmpl'), 'utf-8');
+  assert(t.includes('À DÉCIDER AVANT LA PHASE 1'), 'le gabarit doit définir le marqueur bloquant');
+  assert(t.includes('Identity provider'), 'le gabarit doit porter une ligne identité');
+  assert(t.includes('Exécution de fond'), 'le gabarit doit porter une ligne exécution de fond');
+});
+
+/* ------------------------------------------------------------------ *
+ * Chemins d'exécution
+ * ------------------------------------------------------------------ */
+
+section("Chemins d'exécution des scripts");
+
+test("SKILL.md dit où sont les scripts et donne une forme exécutable", () => {
+  const c = fs.readFileSync(path.join(SKILL_DIR, 'SKILL.md'), 'utf-8');
+  assert(c.includes('Comment exécuter les scripts'), "la section d'exécution est absente");
+  assert(c.includes('export FORGE='), 'la variable FORGE doit être définie');
+  assert(c.includes('node "$FORGE/scripts/state.js" start'), "l'Étape 0 doit être exécutable");
+});
+
+test("aucune commande livrée ne suppose scripts/ à la racine du projet", () => {
+  // Le défaut trouvé : toutes les commandes étaient écrites `node scripts/…`,
+  // ce qui échoue dans tout projet — et les messages d'erreur des scripts
+  // eux-mêmes reprenaient la forme cassée, au moment précis où l'on copie la
+  // commande pour la rejouer.
+  const offenders = [];
+  const walk = dir => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.(md|tmpl|js)$/.test(entry.name)) continue;
+      if (path.basename(full) === 'selftest.js') continue;
+      const raw = fs.readFileSync(full, 'utf-8');
+      raw.split('\n').forEach((line, i) => {
+        if (/node scripts\//.test(line)) offenders.push(`${path.relative(SKILL_DIR, full)}:${i + 1}`);
+      });
+    }
+  };
+  walk(SKILL_DIR);
+  assert(offenders.length === 0,
+    `commandes encore écrites sans $FORGE : ${offenders.join(', ')}`);
 });
 
   console.log(`\x1b[32m✓ ${passed} tests passés\x1b[0m`);

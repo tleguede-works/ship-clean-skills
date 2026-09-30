@@ -143,7 +143,7 @@ Si le scénario doit écrire, il passe par **le port de l'application** (reposit
 Si le port n'existe pas encore, ce n'est pas un blocage du test : c'est un constat sur la slice.
 
 ```bash
-node scripts/state.js finding <anchor> --domain=architecture.md --severity=majeur \
+node "$FORGE/scripts/state.js" finding <anchor> --domain=architecture.md --severity=majeur \
   "Le scénario locatif ne peut pas écrire un paiement : aucun port applicatif ne l'expose" \
   "Extraire l'écriture dans un port, puis brancher le scénario dessus"
 ```

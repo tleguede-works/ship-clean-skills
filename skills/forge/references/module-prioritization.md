@@ -81,7 +81,7 @@ Chaque item porte sa raison. Sans justification, l'ordre est arbitraire et le pr
 L'ordre devient un **livrable vérifiable**, pas un conseil :
 
 ```bash
-node scripts/state.js set-nav <anchor> '{
+node "$FORGE/scripts/state.js" set-nav <anchor> '{
   "archetype": "mobile_field_ops",
   "platform": "ios,android",
   "core_loop": "consulter l état, saisir une entree/sortie, agir sur un contrat",
