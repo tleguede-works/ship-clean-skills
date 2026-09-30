@@ -56,6 +56,29 @@ def main() -> int:
         with open(f, encoding="utf-8") as fh:
             doc = yaml.safe_load(fh)
         for job_name, job in (doc.get("jobs") or {}).items():
+            # Un `id:` duplique dans un job fait rejeter le workflow ENTIER par
+            # GitHub : « This run likely failed because of a workflow file issue ».
+            # Aucun job ne démarre, donc aucun message ne dit quel `id` est en
+            # double — et le YAML est parfaitement valide.
+            #
+            # Constaté pour de vrai : un patch appliqué deux fois a laissé deux
+            # étapes `id: bump` dans le job `publish`. Le run a échoué en 0 s, sans
+            # log, et le dépôt est resté sans release.
+            seen_ids = {}
+            for step in job.get("steps") or []:
+                sid = step.get("id")
+                if sid:
+                    seen_ids.setdefault(sid, []).append(step.get("name", "?"))
+            for sid, names in seen_ids.items():
+                if len(names) > 1:
+                    problems.append({
+                        "step": "%s :: %s" % (rel, job_name),
+                        "problem": "duplicate_step_id",
+                        "id": sid,
+                        "steps": names,
+                        "error": ["GitHub rejette le workflow entier : aucun job ne demarre"],
+                    })
+
             for step in job.get("steps") or []:
                 if "run" not in step:
                     continue
