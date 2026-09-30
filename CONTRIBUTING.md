@@ -113,5 +113,7 @@ So a pull request:
 - does **not** rewrite an already published section
 
 Correcting a bad release is done with a new entry, not by editing history.
-`scripts/changelog-policy.js` enforces this in CI. It is checked with a real
-base (`--base main`), and also runs standalone to validate the file's shape.
+`scripts/changelog-policy.js` enforces this in CI, **with `--base main`** — the
+base is what enables the two checks that carry the meaning (published section
+untouched, `[Unreleased]` actually changed). Without it the script only validates
+the file's shape, and a pull request that adds no trace passes.

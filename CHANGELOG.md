@@ -27,6 +27,76 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — Le garde-fou hurlait sur chaque transition de phase
+
+`complete-phase` avance `current_phase` à la phase **suivante** dès qu'il
+approuve. Cette phase est alors « courante », et `current_phase_has_deliverables`
+lui demandait ses livrables — dont le roadmap, que personne n'avait encore
+commencé à écrire. Le signal arrivait donc à l'instant exact où il n'y avait rien
+à signaler, et après chaque gate.
+
+Le commentaire du contrôle affirmait l'inverse de ce qu'il faisait. Un contrôle
+qui produit un défaut systématique au moment où l'on n'a rien à faire s'apprend à
+ignorer : c'est la seule façon de « passer », et c'est ce qui arrive.
+
+Le contrat ne s'applique plus qu'aux phases **commencées**. Une phase au statut
+`not_started` produit un `skip` nommé — un `skip` n'est pas un `pass`, et la
+sortie dit ce qu'elle n'a pas couvert.
+
+### fix(forge) — Une exigence retirée pouvait rester active sous un livrable approuvé
+
+`consistency-check premises` ne lit que `state.deliverables[*].requires`, une liste
+**saisie à la main**. Un livrable approuvé peut donc justifier ses décisions par une
+exigence retirée sans que l'ID soit déclaré : la déclaration reste vraie, elle est
+simplement fausse par omission, et rien ne la contredit.
+
+Constaté sur le projet de test BI : `conventions.md`, approuvé en Phase 0,
+justifiait cinq décisions — Next.js SSR, URL-as-state, Playwright, stratégie de
+session, slug+version — par « le partage par lien », exigence retirée en Phase 1.
+Sortie : `retired: []`, `pass: true`.
+
+La justification était en **prose**, donc aucune comparaison d'IDs ne pouvait la
+voir. Ce que l'outil peut voir, en revanche, c'est la citation textuelle de l'ID
+retiré dans le corps d'un livrable approuvé : elle est désormais remontée, avec la
+ligne exacte, et distinguée de la citation qui **annonce** le retrait — laquelle est
+légitime et même attendue.
+
+Et `state.js start`, l'Étape 0, affiche désormais la liste des livrables approuvés
+**sans prémisse déclarée**, avec la commande pour la déclarer. Une prémisse non
+déclarée est une prémisse non vérifiable ; l'Étape 0 est la seule commande que tout
+le monde lance.
+
+### fix(forge) — La règle d'attribution des ID se contredisait
+
+Le skill disait à la fois « une exigence retirée garde son ID » et « numérote les
+exigences retirées dans une plage à part (B1xx, C1xx) ». La seconde consigne casse
+la première : renommer `B18` en `B118` fait disparaître le lien entre un livrable
+approuvé et l'exigence qui le justifiait — et le contrôle de collision, qui doit
+accuser le bon livrable, accuse alors un ID que personne n'a jamais écrit.
+
+La règle est maintenant unique et applicable : **on numérote les exigences retirées
+à partir du plus haut numéro déjà utilisé, et on ne réattribue jamais un numéro
+libéré.** Un trou se voit, une collision ne se voit pas avant d'avoir produit un
+diagnostic faux.
+
+### fix(ci) — La politique CHANGELOG ne tournait pas avec sa base
+
+`ci.yml` lançait `node scripts/changelog-policy.js` **sans `--base main`**. Dans
+cette forme, le script ne vérifie que la *forme* du fichier : les deux contrôles qui
+portent le sens — la partie publiée n'a pas été réécrite, `[Unreleased]` a vraiment
+été modifié — n'existaient pas en CI. Ils sont documentés dans `CONTRIBUTING.md`
+comme exécutés, donc la documentation et la CI divergeaient.
+
+Attrapé en conditions réelles sur ce dépôt : des entrées ont été écrites dans la
+section déjà publiée `[1.1.7]` au lieu de `[Unreleased]`. Sans la base, la CI
+serait passée.
+
+### test(forge) — 6 tests ajoutés (104 → 110)
+
+Citation d'un ID retiré dans un livrable approuvé, acquittement d'une citation qui
+annonce le retrait, remontée des prémisses non déclarées dans `state.js start`,
+transition de phase, phase commencée sans livrable, règle d'attribution des ID.
+
 ## [1.1.7] - 2026-09-30
 
 ### fix(forge) — Un changement de statut détruisait la trace des sources

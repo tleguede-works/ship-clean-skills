@@ -487,6 +487,55 @@ function checkPremises(root, state) {
     }
   }
 
+  /* ---------------------------------------------------------------- *
+   * Ce que `--requires` ne voit pas.
+   *
+   * Les prémisses déclarées sont une liste **saisie à la main**. Un
+   * livrable approuvé peut donc justifier ses décisions par une exigence
+   * retirée sans que l'ID soit déclaré : la déclaration reste vraie — elle
+   * est simplement fausse par omission, et rien ne la contredit.
+   *
+   * Constaté sur un test grandeur nature : `conventions.md`, approuvé en
+   * Phase 0, justifiait cinq décisions (Next.js SSR, URL-as-state, Playwright,
+   * stratégie de session, slug+version) par « le partage par lien », exigence
+   * retirée plus tard en Phase 1. `retired: []`, `pass: true`. La
+   * justification était en **prose**, donc invisible à toute comparaison
+   * d'IDs — ce que ce contrôle peut détecter, en revanche, c'est la
+   * citation textuelle de l'ID retiré dans le document.
+   *
+   * C'est un avertissement, pas un échec : un document a le droit de
+   * *mentionner* une exigence retirée, à condition de le faire
+   * explicitement (« B18 retiré »). Ce que l'avertissement garantit, c'est
+   * que chaque citation soit vue et confirmée — ce qui était impossible
+   * auparavant, puisque l'information n'était produite nulle part.
+   * ---------------------------------------------------------------- */
+  const retiredCited = [];
+  for (const [key, d] of Object.entries(state.deliverables || {})) {
+    if (d.status !== 'approved' && d.status !== 'in_review') continue;
+    if (key === 'prd' || !d.path) continue;
+    const body = read(root, d.path);
+    if (!body) continue;
+    for (const id of inHorsScope) {
+      if (!new RegExp(`\\b${id}\\b`).test(body)) continue;
+      const lines = body.split('\n');
+      const hits = lines
+        .map((l, i) => ({ l, i }))
+        .filter(({ l }) => new RegExp(`\\b${id}\\b`).test(l))
+        .map(({ l, i }) => ({ line: i + 1, excerpt: l.trim().slice(0, 120) }));
+      // Une mention explicite du retrait est legitimate : c'est même
+      // exactement ce que l'on veut voir.
+      const acknowledged = hits.filter(({ excerpt }) =>
+        /retir[ée]|écarté|abandonn|hors\s*scope|retiré/i.test(excerpt));
+      retiredCited.push({
+        deliverable: key, premise: id, path: d.path,
+        citations: hits.length,
+        acknowledged: acknowledged.length,
+        acknowledged_only: acknowledged.length === hits.length,
+        hits: hits.slice(0, 4)
+      });
+    }
+  }
+
   const pass = retired.length === 0 && unknown.length === 0 && untraceable.length === 0 &&
     collisions.length === 0;
   record('premises', pass, {
@@ -495,6 +544,7 @@ function checkPremises(root, state) {
     undeclared,
     untraceable,
     collisions,
+    retired_cited_in_body: retiredCited,
     declared_dependencies: checked.length,
     rule: 'Un livrable approuvé qui se justifie par une exigence retirée reste un livrable ' +
           'approuvé, et rien ne le signale. C\'est le motif le plus coûteux d\'un projet : ' +
@@ -502,8 +552,9 @@ function checkPremises(root, state) {
   });
   // Les livrables approuvés sans prémisse déclarée ne sont pas une erreur —
   // un PRD ne dépend de rien — mais l'omission doit être visible, sinon la
-  // dépendance reste non déclarée pour de bon.
-  if (pass && undeclared.length) {
+  // dépendance reste non déclarée pour de bon. Idem pour la citation d'un ID
+  // retiré : elle est légitime si elle annonce le retrait.
+  if (pass && (undeclared.length || retiredCited.length)) {
     const entry = results.checks[results.checks.length - 1];
     entry.status = 'warn';
   }
