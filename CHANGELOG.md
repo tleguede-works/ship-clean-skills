@@ -90,6 +90,22 @@ un token après avoir écrit les écrans n'est pas une mise à jour, c'est une
 par un écran à ce que le design system définit. Onze divergences sur dix écrans,
 toutes réelles.
 
+### fix(repo) — Un `id:` duplique faisait rejeter le workflow ENTIER
+
+Premier run du nouveau workflow : échec en 0 seconde, aucun job, aucun log, et
+GitHub qui affiche « This run likely failed because of a workflow file issue ».
+
+Le job `publish` contenait deux étapes `id: bump` — un patch appliqué deux fois
+avait laissé l'ancien et le nouveau. GitHub rejette un `id` dupliqué dans un job,
+donc **aucun job ne démarre**. Le message ne dit pas quel identifiant est en
+double, et le YAML est parfaitement valide : `ci.yml` ne le voyait pas, et
+`check-workflows.py` non plus puisqu'il ne vérifiait que le bash.
+
+`check-workflows.py` vérifie maintenant l'unicité des `id:` par job. Le contrôle
+ne s'appelle pas « validité YAML » : il vérifie ce que GitHub rejette réellement,
+et cette suite de merges l'a démontré trois fois en deux jours — YAML valide, bash
+valide, et workflow refusé.
+
 ### fix(forge) — Le contrôle des placeholders signalait sa propre checklist
 
 Un livrable qui écrit « aucun `{{PLACEHOLDER}}` résiduel » — donc qui **documente**
