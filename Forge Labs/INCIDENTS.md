@@ -1527,3 +1527,115 @@ La règle générale, celle qui tient pour les deux :
 
 > **Fais déclarer, puis mesure.** Un contrôle qui déduit d'une forme lit une
 > langue ; un contrôle qui résout un pointeur déclaré lit un document.
+
+## F-42 — Phase 3.4 (Onduleur) : neuf écrans, et trois contrôles qui ne les voyaient pas
+
+Neuf écrans écrits, ~29 Ko chacun, 10 sections, 9 états rendus, aucun ratio écrit,
+aucun `{{PLACEHOLDER}}` résiduel. Puis les contrôles, sur le résultat.
+
+### Ce que neuf écrans change
+
+Le produit a une propriété que la plupart des applications n'ont pas : **le
+catalogue n'est pas la valeur, l'historique d'achat est la raison de venir.** Et le
+PRD a écrit d'avance une règle d'arrêt à trois mois, une bascule d'onglets à 12 %, et
+cinq questions ouvertes.
+
+Un design system juste ne suffit pas quand le produit se juge sur une **mesure** :
+l'accueil doit poser la fiche du client **avant** le premier rail, parce qu'un accueil
+qui commence par du catalogue reviendrait à faire du site un second écran. Et la
+navigation a un rang 3 « borne basse déclarée » (R6 non mesuré) : le document le dit
+plutôt que de le masquer.
+
+**Les 9 états ont tous un rendu.** L'état « vide — aucune donnée » de la recherche
+rend « Aucun produit ne correspond à « laine mérinos ». » avec le terme cité, **ni
+compteur à 0 ni « Réessayer »** : une recherche qui ne trouve rien n'a pas échoué,
+elle a répondu (C7).
+
+Et la fiche produit **ne fait pas de fetch au défilement** et son bouton **ne remonte
+pas en sticky** : le client sait ce qu'il cherche, et un bouton qui suit le doigt
+pendant qu'il parcourt 200 lignes retire l'information qu'il était venu chercher.
+
+### Défaut 1 — le design system ne déclarait pas ses composants
+
+`component-parity` (F-41) lisait 3 composants sur 13. Trois défauts de mon document :
+
+- `### Champ de saisie` n'avait **aucun** libellé `**États**` — juste un tableau ;
+- `### Panneau d'état` écrivait `**États de rendu**` — le lecteur attendait `**États**` ;
+- `### Barre d'onglets, barre de panier, pastille, encart, feuille, squelette` — un
+  titre qui **énumère sept composants**, forme qu'aucune donnée ne peut rendre.
+
+Le troisième est le plus instructif : la donnée est sur la ligne suivante, dans une
+**table**, et le titre promettait sept objets là où la structure en permet un. Le
+document a été scindé en sept sections, chacune avec ses `**États**` et ses `**Slots**`.
+
+Résultat : **13 composants lus**, `Puce de filtre` et `Interrupteur` inclus, avec
+leurs 3 états chacun. `component-parity` est devenu un contrôle qui **exige** quelque
+chose — donc qui peut le manquer.
+
+### Défaut 2 — `tokens-used` ne lisait qu'une forme de citation, sur ~150 citations
+
+`tokens-used` est **le seul** lien entre un écran et ses tokens. Il ne lisait que le
+jeton et sa valeur **séparés par des backticks** :
+
+```js
+/(--[a-z0-9-]+)`?\s+`(#[0-9a-fA-F]{6})`|…/
+```
+
+Or les écrans écrivent `--color-background #F1EDE5` **en prose, sans backticks** —
+la forme la plus fréquente, dans « Direction visuelle » et « Accessibilité ».
+
+**Mesuré** : **34 citations retenues sur plusieurs centaines**, sur neuf écrans. Et un
+défaut injecté à la main — un écran citant `--color-background #7A5A0C` au lieu de
+`#F1EDE5` — est passé **au vert**.
+
+C'est le neuvième mécanisme, le troisième sur une forme d'écriture, et le premier où
+la forme manquante est la plus **banale**.
+
+### Défaut 3 — mon correctif a supprimé la moitié des citations
+
+Le premier correctif élargissait le motif de cellule. Résultat : **34 → 9**.
+
+La forme en tableau attrapait aussi une cellule **à une colonne**, où le texte de la
+cellule est lui-même une citation en prose — et **ma table de jetons, 55 lignes,
+était de cette forme**. J'ai supprimé la moitié des citations en voulant en couvrir
+une de plus.
+
+Un motif doit dire *quand* deux cellules forment une paire, pas deviner que deux
+jetons voisins en forment une. C'est exactement ce que je viens de reprocher aux six
+autres ; je l'ai refait immédiatement, dans l'autre sens, et **le compteur l'a
+montré avant moi**.
+
+### Défaut 4 — le compteur lui-même, et la non-vacuité
+
+Une citation en cellule est **aussi** une citation en adjacence. Sans exclusion des
+positions, chaque défaut est compté **deux fois** — et un compteur qui ment est pire
+qu'un compteur absent, parce qu'on s'en sert pour décider qu'on a vérifié.
+
+Et un écran ne citant aucun token rendait `pass: true`. Même vide, même dangereux que
+`component-parity`. J'ai écrit le test de cette non-vacuité **avec l'erreur
+inverse** : compter le design system comme une source vérifiable — alors que ses
+55 lignes sont des citations — l'aurait rendue **verte**, puisque le design system en
+produit toujours. L'assertion sur le compteur l'a attrapé avant le commit.
+
+### La méthode qui a marché, et qui n'est pas la mienne
+
+Les deux corrections ont été vérifiées **à la main sur un vrai écran d'Onduleur**, pas
+seulement sur mes fixtures :
+
+| injection | forme | détecté |
+|---|---|---|
+| `--color-background #7A5A0C` | prose sans backticks | oui, avec la valeur du design system |
+| `` `--color-encre-200 #000000` `` | prose dans une cellule | oui, ligne et token nommés |
+
+Un contrôle corrigé sur un fixture peut être faux sur un vrai document. Il faut
+l'essayer sur ce que l'agent a réellement écrit, sinon on ne teste que sa propre idée
+de la forme.
+
+### Résultat
+
+`contrast` PASS · `tokens` PASS · `tokens-used` PASS, **148 citations**, 9 écrans ·
+`component-parity` PASS, **13 composants** · `forge-guard all` PASS ·
+`consistency all` PASS.
+
+**v1.9.0** : PR #41, `snapshot verify` sur l'archive publiée, suite rejouée dans
+l'archive extraite.

@@ -120,7 +120,7 @@
       "path": ".forge/design/design-system.md",
       "type": "design-system",
       "status": "draft",
-      "content_hash": "sha256:36574b590687",
+      "content_hash": "sha256:4e1cc6e43dab",
       "headings": {
         "0": "Les trois ancres",
         "1": "Direction de la couleur",
@@ -131,14 +131,231 @@
         "6": "Points à décider en Phase 4",
         "0.0": "Déclaration des classes"
       },
-      "updated_at": "2026-09-30T17:49:45.805Z",
+      "updated_at": "2026-09-30T19:31:41.593Z",
       "derived_from": [
         ".forge/prd.md"
       ]
     }
   },
   "index": {},
-  "screens": {},
+  "screens": {
+    "accueil": {
+      "path": ".forge/design/screens/accueil.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:7d02f7c0d8a4",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T20:12:59.084Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "recherche": {
+      "path": ".forge/design/screens/recherche.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:a3275338278c",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T20:12:59.133Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "produit": {
+      "path": ".forge/design/screens/produit.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:30a3b2ff81ab",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T20:12:59.183Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "panier": {
+      "path": ".forge/design/screens/panier.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:6fbd3fd15582",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T20:12:59.228Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "commandes": {
+      "path": ".forge/design/screens/commandes.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:d685f1c063e8",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T20:12:59.276Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "commande": {
+      "path": ".forge/design/screens/commande.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:3c5bbc8efb93",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T20:12:59.324Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "compte": {
+      "path": ".forge/design/screens/compte.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:32c9862082b2",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T20:12:59.373Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "creer-compte": {
+      "path": ".forge/design/screens/creer-compte.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:52b4cb3eb184",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T20:12:59.425Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "confirmer-email": {
+      "path": ".forge/design/screens/confirmer-email.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:c40edd2a7aa4",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T20:12:59.473Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    }
+  },
   "foundations": {},
   "modules": {},
   "slices": {},
@@ -149,7 +366,7 @@
     "metrics": ".forge/audit/metrics.json",
     "counts": {
       "init": 1,
-      "register": 5,
+      "register": 15,
       "phase_status": 3,
       "status_change": 1,
       "gate_approved": 1

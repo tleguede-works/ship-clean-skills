@@ -263,6 +263,8 @@ Déclenche une action immédiate dont le résultat est visible sur place. Taille
 
 ### Champ de saisie
 
+**États** :
+
 | État | Rendu |
 |---|---|
 | `defaut` | Fond `--color-surface-sunken`, filet `--color-bordure-champ`, étiquette en `--text-caption` |
@@ -324,20 +326,72 @@ Une commande entière sur une seule ligne dense de 56 pt : référence, date, ar
 | `correspondance-echouee` | « Aucune commande trouvée à cette adresse. » + « 2 tentatives sur 3 » | « Vérifier une autre adresse » — au-delà de 3, le compteur **et** le lien disparaissent (B5) |
 | `introuvable` | « Cette commande n'est plus disponible. » | « Retour à mes commandes » |
 
-**États de rendu** — `defaut` et `focus` (focus : filet gauche de 3 px en `--color-encre-700`).
+**États** : `defaut` · `focus` (focus : filet gauche de 3 px en `--color-encre-700`)
 
-### Barre d'onglets, barre de panier, pastille, encart, feuille, squelette
+**Slots** : `titre` · `message` · `action-principale` · `detail` (optionnel)
 
-| Composant | États notables | Règle |
-|---|---|---|
-| **Barre d'onglets** (4 items) | `defaut` texte `--color-texte-secondaire` · `actif` texte `--color-texte-principal` + **soulignement de 3 px en encre-700**, 44 pt de haut | Séparée du contenu par un **filet**, pas par une ombre au repos |
-| **Barre de panier** | `vide` absente · `remplie` fond `--color-surface` + filet · `indisponible` texte `--color-info`, sortie vers le paiement désactivée **avec raison écrite** (E11) | Elle **pousse** le contenu, elle ne le recouvre pas : un bouton masqué viole E3 |
-| **Pastille de statut** | `contour` · `teinte` · `pleine` | Jamais de couleur seule : **pastille + libellé**, toujours |
-| **Encart** | `info` · `attention` · `erreur` · `hors-ligne` | Fond teinté + filet gauche de 3 px + icône + phrase + action, **sous** le contenu qu'il concerne, jamais en bandeau pleine page |
-| **Feuille modale** | `ferme` · `ouvert` `--color-surface-raised` · `glissement` · `confirmation` (récapitulatif avant la sortie vers le paiement) · `erreur` (panier non relu, E11) | Retour arrière ferme la feuille. Aucun piège tactile. |
-| **Squelette** | `photo` · `texte` · `ligne` | **Jamais de squelette pleine page** (B8). Hauteur réelle, durée bornée. |
-| **Puce / filtre** (V1) | `defaut` · `selectionnee` · `pressee` | 44 pt de haut, état sélectionné porté par le fond **et** un crochet |
-| **Interrupteur** (consentements, C9) | `accorde` · `revocable` · `desaccorde` | La révocation prend effet **immédiatement** ; l'état « révocable en attente » n'existe pas (E10) |
+> La variante est une **donnée** du panneau, pas un paramètre de style : six
+> composants distincts qui partagent une coque. Un seul composant à six variantes
+> produit six rendus qu'on ne peut pas juger un par un.
+
+### Barre d'onglets
+
+**États** : `defaut` · `actif` · `presse`
+
+**Slots** : `icone` · `libelle` (4 items, ordre fixé par la navigation § 4)
+
+### Barre de panier
+
+**États** : `absente` · `remplie` · `indisponible`
+
+**Slots** : `libelle-produit` · `prix` · `action-paiement` · `raison-indisponibilite`
+
+> Elle **pousse** le contenu, elle ne le recouvre pas : un bouton masqué viole E3.
+
+### Pastille de statut
+
+**États** : `contour` · `teinte` · `pleine`
+
+**Slots** : `libelle` (jamais de couleur seule)
+
+### Encart
+
+**États** : `info` · `attention` · `erreur` · `hors-ligne`
+
+**Slots** : `icone` · `message` · `action`
+
+### Feuille modale
+
+**États** : `ferme` · `ouvert` · `glissement` · `confirmation` · `erreur`
+
+**Slots** : `titre` · `corps` · `action-principale` · `action-secondaire`
+
+### Squelette
+
+**États** : `photo` · `texte` · `ligne`
+
+**Slots** : `dimensions`
+
+> Jamais de squelette pleine page (B8). Hauteur réelle, durée bornée.
+
+### Puce de filtre
+
+**États** : `defaut` · `selectionnee` · `pressee`
+
+**Slots** : `libelle` · `coche`
+
+> 44 pt de haut. L'état sélectionné est porté par le fond **et** un crochet, jamais
+> par la couleur seule. V1 — absente du MVP.
+
+### Interrupteur
+
+**États** : `accorde` · `revocable` · `desaccorde`
+
+**Slots** : `libelle` · `etiquette` · `description`
+
+> La révocation prend effet **immédiatement** : l'état « révocable en attente »
+> n'existe pas (E10, C9). Un interrupteur qui promet un report est une promesse que
+> le client ne pourra pas vérifier.
 
 ### Ce qui n'existe pas, et pourquoi
 

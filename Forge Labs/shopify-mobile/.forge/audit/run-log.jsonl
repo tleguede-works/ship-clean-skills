@@ -14,3 +14,13 @@
 {"ts":"2026-09-30T17:35:09.064Z","type":"phase_status","phase":"3_design","from":"not_started","to":"in_progress"}
 {"ts":"2026-09-30T17:40:44.536Z","type":"register","deliverable":"design_system","path":".forge/design/design-system.md","kind":"deliverable"}
 {"ts":"2026-09-30T17:49:45.806Z","type":"register","deliverable":"design_system","path":".forge/design/design-system.md","kind":"deliverable"}
+{"ts":"2026-09-30T19:31:41.594Z","type":"register","deliverable":"design_system","path":".forge/design/design-system.md","kind":"deliverable"}
+{"ts":"2026-09-30T20:12:59.085Z","type":"register","deliverable":"accueil","path":".forge/design/screens/accueil.md","kind":"screen"}
+{"ts":"2026-09-30T20:12:59.133Z","type":"register","deliverable":"recherche","path":".forge/design/screens/recherche.md","kind":"screen"}
+{"ts":"2026-09-30T20:12:59.184Z","type":"register","deliverable":"produit","path":".forge/design/screens/produit.md","kind":"screen"}
+{"ts":"2026-09-30T20:12:59.228Z","type":"register","deliverable":"panier","path":".forge/design/screens/panier.md","kind":"screen"}
+{"ts":"2026-09-30T20:12:59.276Z","type":"register","deliverable":"commandes","path":".forge/design/screens/commandes.md","kind":"screen"}
+{"ts":"2026-09-30T20:12:59.325Z","type":"register","deliverable":"commande","path":".forge/design/screens/commande.md","kind":"screen"}
+{"ts":"2026-09-30T20:12:59.374Z","type":"register","deliverable":"compte","path":".forge/design/screens/compte.md","kind":"screen"}
+{"ts":"2026-09-30T20:12:59.426Z","type":"register","deliverable":"creer-compte","path":".forge/design/screens/creer-compte.md","kind":"screen"}
+{"ts":"2026-09-30T20:12:59.474Z","type":"register","deliverable":"confirmer-email","path":".forge/design/screens/confirmer-email.md","kind":"screen"}
