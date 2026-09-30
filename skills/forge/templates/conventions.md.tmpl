@@ -15,12 +15,37 @@ generated_at: {{DATE}}
 
 ## Stack technique cible
 
+<!--
+  Deux marqueurs, et ils ne veulent pas dire la même chose.
+
+  `À DÉCIDER EN PHASE 4`        la décision peut attendre la Phase 4. C'est le
+                             cas de la plupart des choix internes (state
+                             management, bibliothèque de formulaires) : ils se
+                             déduisent de l'architecture, et les changer ne
+                             coûte rien.
+
+  `À DÉCIDER AVANT LA PHASE 1`  la décision engage quelque chose qu'on ne
+                             reprend pas : le fournisseur d'identité, le mode
+                             d'hébergement, l'achat d'un service, l'exécution
+                             de fond. Elle se tranche pendant l'interview,
+                             parce que la réponse change ce qu'on achète et ce
+                             qu'on héberge — pas seulement le code.
+
+  Une case bloquante écrite `À DÉCIDER EN PHASE 4` est INDISCERNABLE d'une case
+  différable, et personne ne la voit avant la Phase 4 — quand il est trop tard.
+  `forge-guard state` échoue sur toute case `AVANT LA PHASE 1` encore présente,
+  et signale celles qui subsistent après la Phase 4.
+-->
+
 | Domaine | Choix | Version | Justification |
 |---|---|---|---|
 | Langage | {{LANGUAGE}} | {{VERSION}} | {{WHY}} |
 | Framework | {{FRAMEWORK}} | {{VERSION}} | {{WHY}} |
+| Identity provider | {{AUTH_PROVIDER}} | {{VERSION}} | {{QUI — « fail-closed » n'est pas implémentable sans une source d'identité nommée}} |
+| Stratégie de session | {{SESSION}} | {{VERSION}} | {{DURÉE, STOCKAGE, RENOUVELLEMENT}} |
 | Base de données | {{DATABASE}} | {{VERSION}} | {{WHY}} |
 | ORM / Query builder | {{ORM}} | {{VERSION}} | {{WHY}} |
+| Exécution de fond | {{JOBS}} | {{VERSION}} | {{FILE DE JOBS, RETRY, RÉTENTION — ou « aucun » si le produit n'a pas de travail long}} |
 | State management | {{STATE}} | {{VERSION}} | À DÉCIDER EN PHASE 4 |
 | Formulaires | {{FORMS}} | {{VERSION}} | À DÉCIDER EN PHASE 4 |
 | Validation | {{VALIDATION}} | {{VERSION}} | À DÉCIDER EN PHASE 4 |
@@ -30,7 +55,7 @@ generated_at: {{DATE}}
 | Icônes | {{ICONS}} | {{VERSION}} | {{WHY}} |
 | Tests unitaires | {{UNIT_TEST}} | {{VERSION}} | {{WHY}} |
 | Tests composants | {{COMPONENT_TEST}} | {{VERSION}} | {{WHY}} |
-| Tests E2E | {{E2E_TEST}} | {{VERSION}} | À DÉCIDER EN PHASE 4 |
+| Tests E2E | {{E2E_TEST}} | {{VERSION}} | À DÉCIDER EN PHASE 4 — sauf si le test E2E impose un accord d'infrastructure (jeu de données de test, navigateur en CI) : alors À DÉCIDER AVANT LA PHASE 1 |
 | Lint | {{LINT}} | {{VERSION}} | {{WHY}} |
 | Format | {{FORMAT}} | {{VERSION}} | {{WHY}} |
 | Package manager | {{PKG_MGR}} | {{VERSION}} | {{WHY}} |

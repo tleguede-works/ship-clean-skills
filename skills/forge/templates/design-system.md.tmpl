@@ -211,7 +211,7 @@ derived_from: .forge/prd.md
 L'ordre retenu est ensuite enregistré de façon vérifiable :
 
 ```bash
-node scripts/state.js set-nav <anchor> '{ "archetype": "...", "items": [ ... ] }'
+node "$FORGE/scripts/state.js" set-nav <anchor> '{ "archetype": "...", "items": [ ... ] }'
 ```
 
 ### 3.3 Breadcrumbs
@@ -257,7 +257,7 @@ Cf. `references/design-quality.md` — cette checklist n'est pas qu'une formalit
 
 **Tokens**
 - [ ] Tous les design tokens ont une **valeur concrète** (pas « à voir plus tard »).
-- [ ] Aucun `{{PLACEHOLDER}}` résiduel — `node scripts/forge-guard.js placeholders <anchor>` ne signale rien.
+- [ ] Aucun `{{PLACEHOLDER}}` résiduel — `node "$FORGE/scripts/forge-guard.js" placeholders <anchor>` ne signale rien.
 - [ ] La palette couvre tous les états (default, hover, active, disabled, error, success).
 - [ ] La palette n'est pas une palette par défaut (`#3B82F6`, `#6B7280`, `#EF4444`).
 - [ ] Le fond n'est pas du blanc pur non choisi.

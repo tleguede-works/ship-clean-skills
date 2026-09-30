@@ -18,7 +18,7 @@ function readState(projectPath) {
     L.fail({
       error: 'legacy_state_v1',
       path: L.statePath(projectPath),
-      hint: `node scripts/state.js migrate ${projectPath}`
+      hint: `node "$FORGE/scripts/state.js" migrate ${projectPath}`
     });
   }
   return state;

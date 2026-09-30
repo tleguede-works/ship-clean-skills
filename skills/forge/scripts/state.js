@@ -50,7 +50,7 @@ function loadState(root) {
     L.fail({
       error: 'no_state',
       message: `Aucun state.json dans ${L.statePath(root)}`,
-      hint: `node scripts/state.js init ${root} "<NomProduit>"`
+      hint: `node "$FORGE/scripts/state.js" init ${root} "<NomProduit>"`
     });
   }
   if (isV1(state)) {
@@ -59,7 +59,7 @@ function loadState(root) {
       version: state.version,
       path: L.statePath(root),
       message: 'state.json est au schéma v1. Il doit être migré avant toute opération.',
-      hint: `node scripts/state.js migrate ${root}`
+      hint: `node "$FORGE/scripts/state.js" migrate ${root}`
     });
   }
   return state;
@@ -533,7 +533,7 @@ function cmdCompletePhase(root, phaseKey) {
       missing,
       deliverables_present: Object.keys(state.deliverables || {}),
       hint: `Enregistre les livrables manquants avant d'approuver : ` +
-        `node scripts/state.js register ${root} deliverable <clé> <chemin>`,
+        `node "$FORGE/scripts/state.js" register ${root} deliverable <clé> <chemin>`,
       rule: 'Approuver une phase qui n\'a rien produit transfère le défaut en aval, ' +
             'où il devient indétectable.'
     });
@@ -1044,7 +1044,7 @@ function cmdStart(rootArg) {
       anchor: root,
       anchor_source: source,
       state_exists: false,
-      next: 'Phase 0 — Bootstrap. Lance : node scripts/state.js init ' + root + ' "<NomProduit>"'
+      next: 'Phase 0 — Bootstrap. Lance : node "$FORGE/scripts/state.js" init ' + root + ' "<NomProduit>"'
     });
     return;
   }
@@ -1052,7 +1052,7 @@ function cmdStart(rootArg) {
     L.fail({
       command: 'start',
       error: 'legacy_state_v1',
-      hint: `node scripts/state.js migrate ${root}`,
+      hint: `node "$FORGE/scripts/state.js" migrate ${root}`,
       reference: 'references/migration-v1-v2.md'
     });
   }
@@ -1114,9 +1114,9 @@ function cmdStart(rootArg) {
 
     next_actions: [
       suspects.length ? `REVOIR ${suspects.length} slice(s) marquée(s) terminée(s) sans test — ne pas les compter comme faites.` : null,
-      stale.length ? `Documents ${stale.length} en dérive de hash : node scripts/forge-guard.js hash-check ${root}` : null,
+      stale.length ? `Documents ${stale.length} en dérive de hash : node "$FORGE/scripts/forge-guard.js" hash-check ${root}` : null,
       unpromoted.length ? `${unpromoted.length} constat(s) non promu(s) — cf. references/skill-boundaries.md` : null,
-      (state.divergences || []).some(d => !d.resolved) ? 'Divergences état/front-matter ouvertes : node scripts/forge-guard.js sync ' + root + ' --fix' : null
+      (state.divergences || []).some(d => !d.resolved) ? 'Divergences état/front-matter ouvertes : node "$FORGE/scripts/forge-guard.js" sync ' + root + ' --fix' : null
     ].filter(Boolean)
   });
 }
@@ -1206,7 +1206,7 @@ function cmdFinding(root, args) {
     command: 'finding',
     action: 'raise',
     finding,
-    next: `Promouvoir : node scripts/state.js finding ${root} --resolve ${finding.id} --promoted-to=${flags.domain}`
+    next: `Promouvoir : node "$FORGE/scripts/state.js" finding ${root} --resolve ${finding.id} --promoted-to=${flags.domain}`
   });
 }
 

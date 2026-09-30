@@ -53,7 +53,7 @@ implementation: test/scenarios/{{SLUG}}.{{EXT}}
 > **Un scénario qui écrit ce que l'application écrit est un faux vert.**
 > Si le port n'existe pas, ce n'est pas un blocage du test : c'est un constat.
 > ```bash
-> node scripts/state.js finding <anchor> --domain=architecture.md --severity=majeur \
+> node "$FORGE/scripts/state.js" finding <anchor> --domain=architecture.md --severity=majeur \
 >   "Le scénario {{SCENARIO_NAME}} ne peut pas écrire : aucun port applicatif ne l'expose" \
 >   "Extraire l'écriture dans un port, puis brancher le scénario dessus"
 > ```

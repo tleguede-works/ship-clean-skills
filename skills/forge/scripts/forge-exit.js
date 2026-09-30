@@ -139,7 +139,7 @@ function check(args) {
   const state = L.readState(anchor);
   if (!state) L.fail({ error: 'no_state', path: L.statePath(anchor) });
   if (state.version === 1 || state.documents) {
-    L.fail({ error: 'legacy_state_v1', hint: `node scripts/state.js migrate ${anchor}`, reference: 'references/migration-v1-v2.md' });
+    L.fail({ error: 'legacy_state_v1', hint: `node "$FORGE/scripts/state.js" migrate ${anchor}`, reference: 'references/migration-v1-v2.md' });
   }
 
   const checks = [];

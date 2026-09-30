@@ -12,7 +12,8 @@
  * Commandes :
  *   paths       tout livrable enregistré est dans .forge/ et sur son chemin canonique
  *   strays      aucun livrable Forge fuera de .forge/ (détection par front matter)
- *   state       state.json respecte ALLOWED/FORBIDDEN keys, le vocabulaire de statuts, les hashs
+ *   state       state.json respecte ALLOWED/FORBIDDEN keys, le vocabulaire de statuts, les hashs,
+ *               `derived_from` n'est pas vide, aucune case « À DÉCIDER » bloquante
  *   sync        state.json (autorité) vs front matter (miroir) — avec --fix
  *   placeholders  aucun gabarit {{NON_RESOLU}} résiduel dans un livrable
  *   all         tout ce qui précède, dans l'ordre d'un gate de phase
@@ -41,7 +42,7 @@ function record(name, pass, details) {
 function loadStateOrFail(root) {
   const state = L.readState(root);
   if (!state) {
-    L.fail({ error: 'no_state', path: L.statePath(root), hint: `node scripts/state.js init ${root} "<Nom>"` });
+    L.fail({ error: 'no_state', path: L.statePath(root), hint: `node "$FORGE/scripts/state.js" init ${root} "<Nom>"` });
   }
   return state;
 }
@@ -310,6 +311,131 @@ function checkHashes(root) {
 }
 
 /* ------------------------------------------------------------------ *
+ * provenance — `derived_from` est le contrat de lecture d'un validateur
+ * ------------------------------------------------------------------ */
+
+/**
+ * Un `derived_from` déclaré ne doit pas être vide.
+ *
+ * `derived_from` dit à un validateur Fast Track quels fichiers lire avec
+ * l'artefact. Une version de ce front matter qui ne savait pas rendre une
+ * séquence en bloc le réduisait à une chaîne vide **au premier changement de
+ * statut** — donc sans erreur, sans journal, et avec tous les garde-fous au
+ * vert. Le validateur se retrouvait ensuite à lire un artefact sans ses
+ * sources, et sa conclusion ne portait plus sur le document.
+ *
+ * Le contrôle est volontairement faible : il ne demande pas *ce que* le
+ * `derived_from` contient, seulement qu'il contienne quelque chose. Une trace
+ * vide est la seule forme de ce défaut qui soit mécaniquement détectable — et
+ * c'est celle qui se produit.
+ */
+function checkProvenance(root) {
+  const state = loadStateOrFail(root);
+  const targets = [
+    ...Object.entries(state.deliverables || {}).filter(([, d]) => d.path).map(([k, d]) => ({ kind: 'deliverable', key: k, path: d.path })),
+    ...Object.entries(state.screens || {}).filter(([, s]) => s.path).map(([k, s]) => ({ kind: 'screen', key: k, path: s.path })),
+    ...Object.entries(state.slices || {}).filter(([, s]) => s.plan_path).map(([k, s]) => ({ kind: 'slice', key: k, path: s.plan_path })),
+    ...Object.entries(state.foundations || {}).filter(([, f]) => f.plan_path).map(([k, f]) => ({ kind: 'foundation', key: k, path: f.plan_path }))
+  ];
+
+  const empty = [];
+  for (const t of targets) {
+    const abs = L.toAbs(root, t.path);
+    if (!fs.existsSync(abs)) continue;
+    const fm = L.readFrontMatter(abs);
+    if (!fm) continue;
+    if (!Object.prototype.hasOwnProperty.call(fm.data, 'derived_from')) continue;
+    const v = fm.data.derived_from;
+    const isEmpty = v === null || v === undefined ||
+      (typeof v === 'string' && v.trim() === '') ||
+      (Array.isArray(v) && v.length === 0);
+    if (isEmpty) {
+      empty.push({
+        kind: t.kind, key: t.key, path: t.path,
+        why: '`derived_from` est déclaré mais vide : les fichiers sources de cet artefact ne sont plus liés.'
+      });
+    }
+  }
+  record('derived_from_non_empty', empty.length === 0, {
+    checked: targets.length,
+    offenders: empty,
+    rule: "Un `derived_from` vide supprime le contrat de lecture du validateur sans laisser de trace. " +
+          "Il est produit par un changement de statut, pas par une édition : c'est pour cela qu'un garde-fou le vérifie."
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Slots non tranchés — `À DÉCIDER`
+ * ------------------------------------------------------------------ */
+
+const UNDECIDED_RE = /À\s*DÉCIDER|TODO\s*:\s*décider/i;
+
+/** Un marqueur cité enters guillemets documente la convention ; il n'est pas une case. */
+function stripCodeSpans(line) {
+  return line.replace(/`[^`]*`/g, ' `` ');
+}
+
+/**
+ * Un gabarit de Forge porte `À DÉCIDER EN PHASE 4` tant que la décision n'est
+ * pas prise. C'est correct tant que la Phase 4 n'est pas franchie.
+ *
+ * Après, c'est un défaut : le document est présenté comme verrouillé alors
+ * qu'il contient une case vide. La checklist de gate du gabarit l'écrit
+ * (« aucune section marquée `À DÉCIDER EN PHASE 4` ne subsiste après la
+ * Phase 4 ») et aucun contrôle ne le vérifiait.
+ *
+ * Avant la Phase 4, une case non tranchée n'est pas un échec — c'est
+ * exactement l'usage prévu du gabarit. Ce qui n'est pas acceptable, en
+ * revanche, c'est qu'une décision **bloquante** soit indiscernable d'une
+ * décision différable : d'où la séparation `À DÉCIDER EN PHASE 4` /
+ * `À DÉCIDER AVANT LA PHASE 1` dans le gabarit.
+ */
+function checkUndecidedSlots(root) {
+  const state = loadStateOrFail(root);
+  const architectureApproved = !!(state.phases || {})['4_architecture'] &&
+    state.phases['4_architecture'].status === 'approved';
+
+  const targets = [
+    ...Object.entries(state.deliverables || {}).filter(([, d]) => d.path).map(([k, d]) => ({ key: k, path: d.path })),
+    ...Object.entries(state.screens || {}).filter(([, s]) => s.path).map(([k, s]) => ({ key: k, path: s.path }))
+  ];
+
+  const found = [];
+  for (const t of targets) {
+    const abs = L.toAbs(root, t.path);
+    if (!fs.existsSync(abs)) continue;
+    const raw = fs.readFileSync(abs, 'utf-8');
+    raw.split('\n').forEach((line, idx) => {
+      if (!UNDECIDED_RE.test(stripCodeSpans(line))) return;
+      found.push({ key: t.key, path: t.path, line: idx + 1, excerpt: line.trim().slice(0, 120) });
+    });
+  }
+
+  const BLOCKING = /AVANT\s+LA\s+PHASE\s+1/;
+  const blocking = found.filter(f => BLOCKING.test(f.excerpt));
+  const differe = found.filter(f => !BLOCKING.test(f.excerpt));
+
+  if (architectureApproved) {
+    record('no_undecided_slots', found.length === 0, {
+      phase: '4_architecture approved',
+      offenders: found,
+      rule: "Un document verrouillé qui contient encore « À DÉCIDER » est un document dont la case vide est devenue invisible."
+    });
+    return;
+  }
+
+  record('no_undecided_slots', blocking.length === 0, {
+    phase: state.current_phase,
+    state: blocking.length ? 'blocking' : 'expected_before_phase_4',
+    blocking,
+    expected: differe,
+    rule: "« À DÉCIDER EN PHASE 4 » est l'usage normal du gabarit avant la Phase 4. " +
+          "« À DÉCIDER AVANT LA PHASE 1 » ne l'est pas : une décision dont dépendent le fournisseur d'identité, " +
+          "le mode d'hébergement ou le recrutement ne peut pas attendre la Phase 4."
+  });
+}
+
+/* ------------------------------------------------------------------ *
  * sync — state.json (autorité) vs front matter (miroir)
  * ------------------------------------------------------------------ */
 
@@ -574,7 +700,7 @@ function checkHashDrift(root) {
   }
   record('no_content_drift', drifted.length === 0, {
     drifted,
-    fix: 'node scripts/state.js hash <anchor> <deliverable>  — après avoir relu le changement',
+    fix: 'node "$FORGE/scripts/state.js" hash <anchor> <deliverable>  — après avoir relu le changement',
     rule: "Un hash qui ne match plus signifie une édition hors bande : le document est stale."
   });
 }
@@ -586,7 +712,15 @@ function checkHashDrift(root) {
 const CHECKS = {
   paths: (root) => checkPaths(root),
   strays: (root, flags) => checkStrays(root, flags.includes('--relocate')),
-  state: (root) => { checkStateSchema(root); checkStatusVocab(root); checkPathsExist(root); checkPhaseRequirements(root); checkHashes(root); },
+  state: (root) => {
+    checkStateSchema(root);
+    checkStatusVocab(root);
+    checkPathsExist(root);
+    checkPhaseRequirements(root);
+    checkHashes(root);
+    checkProvenance(root);
+    checkUndecidedSlots(root);
+  },
   sync: (root, flags) => checkSync(root, flags.includes('--fix')),
   placeholders: (root) => checkPlaceholders(root),
   facts: (root) => checkFacts(root),
@@ -601,6 +735,8 @@ const CHECKS = {
     checkPathsExist(root);
     checkPhaseRequirements(root);
     checkHashes(root);
+    checkProvenance(root);
+    checkUndecidedSlots(root);
     checkSync(root, flags.includes('--fix'));
     checkPlaceholders(root);
     checkHashDrift(root);
@@ -626,7 +762,8 @@ function main() {
         facts: 'forge-guard facts <root>',
         'hash-check': 'forge-guard hash-check <root>',
         anchor: 'forge-guard anchor [start]',
-        all: 'forge-guard all <root> [--fix] [--relocate]'
+        all: 'forge-guard all <root> [--fix] [--relocate]',
+        note: 'Tous les contrôles de `state` sont aussi dans `all`.'
       }
     });
   }

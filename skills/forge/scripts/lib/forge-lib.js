@@ -180,8 +180,45 @@ function fail(obj, code = 1) {
 }
 
 /* ------------------------------------------------------------------ *
- * Front matter YAML (plat, sans dépendance)
+ * Front matter YAML (sans dépendance)
+ *
+ * Ce n'est PAS du YAML complet, et il ne doit pas le devenir : il couvre
+ * exactement ce que les gabarits de Forge écrivent, et refuse de lire une
+ * construction qu'il ne sait pas rendre.
+ *
+ * Deux formes sont donc gérées, parce que les gabarits les utilisent toutes
+ * les deux :
+ *   - les scalaires, y compris les blocs pliés (`>-`) ;
+ *   - les séquences en bloc :
+ *         derived_from:
+ *           - .forge/prd.md
+ *           - .forge/architecture.md
+ *
+ * Le support des séquences n'est pas un détail. `derived_from` EST le contrat
+ * de lecture d'un validateur Fast Track, et `set-status` réécrit le front
+ * matter à chaque changement de statut. Un lecteur qui ne sait pas rendre une
+ * séquence la lit comme une chaîne vide : la trace est détruite au PREMIER
+ * `set-status`, c'est-à-dire au moment précis où elle commence à compter, et
+ * `forge-guard` comme `consistency-check` rapportent un vert.
+ * Constaté sur un test grandeur nature : `benchmarks.md`, `screen.md`,
+ * `implementation-plan.md` et `scenario.md` — les quatre gabarits porteurs
+ * d'une séquence.
  * ------------------------------------------------------------------ */
+
+/** Une valeur est-elle rendue telle quelle par un parseur YAML ? */
+const YAML_UNSAFE = /[[\]{}]|:\s|\s#|^[\s]|["']|^\s*#|^\s*-|^\s*&|^\s*\*/;
+
+function unquote(raw) {
+  const s = raw.trim();
+  if (s.length >= 2 && ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))) {
+    const inner = s.slice(1, -1);
+    // Un scalaire double-quoté est échappé : on ne le décode qu'en partie,
+    // et ce qui reste est rendu tel quel à la réécriture. Mieux vaut une
+    // escapade visible qu'une donnée perdue.
+    return inner.replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
+  }
+  return s;
+}
 
 function splitFrontMatter(content) {
   const normalized = content.replace(/^﻿/, '');
@@ -197,20 +234,68 @@ function splitFrontMatter(content) {
   if (end === -1) return null;
 
   const data = {};
-  for (const line of lines.slice(1, end)) {
+  const src = lines.slice(1, end);
+  let i = 0;
+
+  while (i < src.length) {
+    const line = src[i];
+    i++;
+
     if (!line.trim() || line.trim().startsWith('#')) continue;
+    // Une ligne de séquence orpheline (le parent a déjà été consommé) est ignorée :
+    // elle n'a pas de clé, donc pas de valeur à perdre.
+    if (/^\s*-\s/.test(line)) continue;
+
     const idx = line.indexOf(':');
     if (idx === -1) continue;
     const key = line.slice(0, idx).trim();
     let value = line.slice(idx + 1).trim();
+
+    // Séquence en bloc : `key:` puis des lignes `- item` indentées.
+    if (value === '') {
+      const items = [];
+      const blockLines = [];
+      while (i < src.length && /^\s+\S/.test(src[i])) {
+        const l = src[i];
+        const item = l.match(/^\s*-\s+(.*)$/);
+        if (item) items.push(unquote(item[1]));
+        else blockLines.push(l.trim());
+        i++;
+      }
+      if (items.length) {
+        data[key] = items;
+        continue;
+      }
+      if (blockLines.length) {
+        // Séquence de scalaires Written sur plusieurs lignes sans `-` : on ne
+        // sait pas la rendre. On la garde en texte plutôt que de l'effacer.
+        data[key] = blockLines.join(' ');
+        continue;
+      }
+      data[key] = '';
+      continue;
+    }
+
+    // Bloc plié ou littéral : `key: >-`, `key: |`, …
+    if (/^[>|][-+]?\d*$/.test(value)) {
+      const blockLines = [];
+      while (i < src.length && (/^\s+\S/.test(src[i]) || !src[i].trim())) {
+        if (src[i].trim()) blockLines.push(src[i].trim());
+        i++;
+      }
+      data[key] = blockLines.join(' ').replace(/\s+/g, ' ').trim();
+      continue;
+    }
+
     if (value.startsWith('[') && value.endsWith(']')) {
       const inner = value.slice(1, -1).trim();
       data[key] = inner
-        ? inner.split(',').map(v => v.trim().replace(/^["']|["']$/g, '')).filter(Boolean)
+        ? inner.split(',').map(v => unquote(v)).filter(Boolean)
         : [];
-    } else {
-      data[key] = value.replace(/^["']|["']$/g, '');
+      continue;
     }
+
+    data[key] = unquote(value);
   }
 
   return { data, body: lines.slice(end + 1).join('\n'), bodyStartLine: end + 1 };
@@ -220,9 +305,34 @@ function serializeFrontMatter(data) {
   const lines = ['---'];
   for (const [key, value] of Object.entries(data)) {
     if (value === null || value === undefined) { lines.push(`${key}: null`); continue; }
-    if (Array.isArray(value)) { lines.push(`${key}: [${value.map(v => String(v)).join(', ')}]`); continue; }
+
+    // Une séquence est écrite en bloc, jamais en `[a, b]`. Deux raisons : la
+    // forme `[…]` casse sur un élément contenant une virgule, et elle ne
+    // se relit pas à l'identique — ce qui ferait bouger `content_hash` à
+    // chaque changement de statut.
+    if (Array.isArray(value)) {
+      if (!value.length) { lines.push(`${key}: []`); continue; }
+      lines.push(`${key}:`);
+      for (const item of value) {
+        const str = String(item);
+        lines.push(`  - ${YAML_UNSAFE.test(str) ? JSON.stringify(str) : str}`);
+      }
+      continue;
+    }
+
     const str = String(value);
-    lines.push(`${key}: ${/[[\]{}]|^[\s]|:\s|["']|^\s*#/.test(str) ? JSON.stringify(str) : str}`);
+    if (str.includes('\n')) {
+      // Un scalaire multiligne reste un bloc : le lire comme un seul jeton
+      // produirait des `\n` littéraux dans la valeur.
+      lines.push(`${key}: >-`);
+      for (const part of str.split('\n')) {
+        const t = part.trim();
+        if (!t) continue;
+        lines.push(`  ${YAML_UNSAFE.test(t) ? JSON.stringify(t) : t}`);
+      }
+      continue;
+    }
+    lines.push(`${key}: ${YAML_UNSAFE.test(str) ? JSON.stringify(str) : str}`);
   }
   lines.push('---');
   return lines.join('\n');

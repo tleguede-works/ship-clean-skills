@@ -27,6 +27,62 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — Un changement de statut détruisait la trace des sources
+
+`derived_from` est écrit en liste sur quatre gabarits : `benchmarks`,
+`implementation-plan`, `screen`, `scenario`. Le lecteur de front matter ne
+gérait pas les séquences en bloc : il lisait `derived_from:` suivi de deux
+lignes `  - …` comme une chaîne vide. Puis `set-status` — la seule opération qui
+réécrit le front matter, donc celle qui est appelée à **chaque** changement de
+statut — réécrivait cette chaîne vide.
+
+La trace disparaissait donc au premier `set-status`, sans erreur, sans journal,
+et avec `forge-guard all` comme `consistency-check all` au vert. C'est le contrat
+de lecture d'un validateur Fast Track qui s'évaporait : l'agent lisait un artefact
+sans ses sources, et son verdict ne portait plus sur le document.
+
+Constaté en lançant le projet de test BI du dépôt : `benchmarks.md` a perdu ses
+deux sources au premier `set-status`, en entier, et rien ne l'a signalé.
+
+Le lecteur gère maintenant les séquences en bloc et les blocs pliés, et les
+écrit dans la forme qu'il sait relire. `forge-guard` vérifie en plus qu'un
+`derived_from` déclaré n'est jamais vide : un contrôle qui prouve qu'un fichier a
+été modifié ne peut pas prouver que ce qu'il contenait est encore là.
+
+### fix(forge) — Aucune commande du skill n'était exécutable depuis un projet
+
+`SKILL.md` donnait ses commandes sous la forme `node scripts/state.js start`.
+Les scripts ne sont pas dans le projet : ils sont installés avec le skill, dans
+`~/.agents/skills/forge/scripts/` ou `.opencode/skills/forge/scripts/`. La
+première commande du workflow échouait donc sur `Cannot find module
+'<projet>/scripts/state.js'`.
+
+Pire : les messages d'erreur des scripts eux-mêmes — donc les `hint` copiés au
+moment où l'on vient d'échouer — reprenaient la forme cassée.
+
+Le skill définit maintenant `$FORGE`, donne la forme exécutable, et précise que
+le répertoire courant est le projet : lancés depuis le dossier du skill, les
+scripts résolvent l'anchor sur le dépôt des skills, c'est-à-dire sur le mauvais
+projet, sans rien dire.
+
+### fix(forge) — Une décision bloquante était indiscernable d'une décision différable
+
+Le gabarit `conventions.md` marquait uniformément ses cases non tranchées
+`À DÉCIDER EN PHASE 4`. Or certaines de ces décisions ne peuvent pas attendre la
+Phase 4 : le fournisseur d'identité, le mode d'hébergement, l'exécution de fond.
+Elles changent ce qu'on achète et ce qu'on héberge, pas seulement le code — et
+sans fournisseur d'identité nommé, « fail-closed » n'est pas implémentable.
+
+Le gabarit distingue maintenant `À DÉCIDER EN PHASE 4` de `À DÉCIDER AVANT LA
+PHASE 1`, porte une ligne pour l'identité, la session et l'exécution de fond,
+et `forge-guard state` échoue sur une case bloquante encore ouverte. Après la
+Phase 4, toute case ouverte devient un échec : un document verrouillé qui
+contient une case vide a une case invisible.
+
+Cinq contrôles et une distinction de gabarit, pour un défaut trouvé en une
+phrase du demandeur : « E2E n'est pas différable, ça décide de l'image CI et
+demande un accord d'infrastructure ».
+
 ## [1.1.6] - 2026-09-30
 
 ### fix(forge) — Le graphe de dépendances n'était déclarable par aucune commande

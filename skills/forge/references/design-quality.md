@@ -109,7 +109,7 @@ Ces défauts sont considérés comme des **bugs de conception**, pas comme des p
 ## Étape 5 — Vérification
 
 ```bash
-node scripts/forge-guard.js placeholders <anchor>
+node "$FORGE/scripts/forge-guard.js" placeholders <anchor>
 ```
 
 Détecte les `{{PLACEHOLDER}}` résiduels — le symptôme mécanique d'une spec jamais remplie, et la cause première des designs génériques : personne n'a eu à choisir.
@@ -131,4 +131,4 @@ Le reste est un jugement humain, à faire au gate : ouvrir les écrans côte à 
 - [ ] Les 9 états sont documentés pour chaque écran.
 - [ ] Au moins un choix visuel est assumé et contestable.
 - [ ] L'ordre de navigation est justifié par la fréquence (`references/module-prioritization.md`).
-- [ ] `node scripts/forge-guard.js placeholders <anchor>` ne signale rien.
+- [ ] `node "$FORGE/scripts/forge-guard.js" placeholders <anchor>` ne signale rien.

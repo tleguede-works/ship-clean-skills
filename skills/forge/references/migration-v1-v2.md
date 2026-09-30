@@ -19,7 +19,7 @@ Le test de reconnaissance est simple : **y a-t-il une valeur de plus de 2 000 ca
 ## Étape 0 — Diagnostic
 
 ```bash
-node scripts/forge-guard.js state <anchor>
+node "$FORGE/scripts/forge-guard.js" state <anchor>
 ```
 
 Sortie attendue : une liste de `forbidden_key` et de `content_in_state`. Sans diagnostic, on migre à l'aveugle.
@@ -70,7 +70,7 @@ Créer les fichiers de destination et y déplacer le contenu, **en conservant le
 
 ```bash
 # Un constat qui devient une règle
-node scripts/state.js finding <anchor> --domain=testing.md --severity=majeur \
+node "$FORGE/scripts/state.js" finding <anchor> --domain=testing.md --severity=majeur \
   "<le fait>" "<la correction, en une phrase, sans l'archéologie>"
 ```
 
@@ -79,7 +79,7 @@ node scripts/state.js finding <anchor> --domain=testing.md --severity=majeur \
 ## Étape 3 — Migrer la structure
 
 ```bash
-node scripts/state.js migrate <anchor>
+node "$FORGE/scripts/state.js" migrate <anchor>
 ```
 
 `migrate` fait le strict nécessaire :
@@ -99,7 +99,7 @@ Si le projet est en v1, **toute autre commande refuse de tourner** et dit de lan
 `migrate` produit un `state.json` v2 structurellement valide. Il reste à le **vider de la prose** qui a été copiée à l'étape 2.
 
 ```bash
-node scripts/forge-guard.js state <anchor>
+node "$FORGE/scripts/forge-guard.js" state <anchor>
 ```
 
 Tant qu'il signale `content_in_state` ou `forbidden_key`, l'extraction n'est pas terminée.
@@ -120,9 +120,9 @@ Tout le reste est un document.
 ## Étape 5 — Reprendre
 
 ```bash
-node scripts/state.js start <anchor>
-node scripts/forge-guard.js all <anchor>
-node scripts/consistency-check.js all <anchor>
+node "$FORGE/scripts/state.js" start <anchor>
+node "$FORGE/scripts/forge-guard.js" all <anchor>
+node "$FORGE/scripts/consistency-check.js" all <anchor>
 ```
 
 `state.js start` est la commande qui compte : elle assemble l'état réel, y compris les slices **déclarées faites sans cas de test** et les constats **non promus**. C'est ce que le suivi précédent ne pouvait pas faire.

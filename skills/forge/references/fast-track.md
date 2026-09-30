@@ -47,9 +47,9 @@ Le mode ne s'active que si **tout** est vrai :
 Vérification d'un coup :
 
 ```bash
-node scripts/state.js start <anchor>
-node scripts/forge-guard.js all <anchor>
-node scripts/consistency-check.js all <anchor>
+node "$FORGE/scripts/state.js" start <anchor>
+node "$FORGE/scripts/forge-guard.js" all <anchor>
+node "$FORGE/scripts/consistency-check.js" all <anchor>
 ```
 
 Si une condition échoue, Fast Track **refuse de démarrer** et dit laquelle.
@@ -72,8 +72,8 @@ L'implémentation n'est pas validée par des agents qui relisent le code. Elle e
 **Par slice :**
 
 ```bash
-node scripts/forge-exit.js <anchor> <slice>        # critère de sortie EXÉCUTÉ
-node scripts/consistency-check.js all <anchor>     # écarts inter-artefacts
+node "$FORGE/scripts/forge-exit.js" <anchor> <slice>        # critère de sortie EXÉCUTÉ
+node "$FORGE/scripts/consistency-check.js" all <anchor>     # écarts inter-artefacts
 ```
 
 `forge-exit` exécute les commandes réelles du projet (lint, typecheck, tests) et vérifie que la slice a des **cas de test**, pas un fichier de test. C'est la porte qui aurait attrapé 14 slices approuvées à tort.
@@ -228,9 +228,9 @@ L'audit enregistre l'échappatoire : un mode qui saute la validation est une inf
 Fast Track sans traces ne sert à rien. **Chaque** itération est journalisée :
 
 ```bash
-node scripts/state.js log <anchor> fast_track_validate "<artifact>" agent=quality-analyst verdict=REVISE
-node scripts/state.js log <anchor> fast_track_block    "<artifact>" finding="..."
-node scripts/state.js log <anchor> fast_track_escape   "reason=..."
+node "$FORGE/scripts/state.js" log <anchor> fast_track_validate "<artifact>" agent=quality-analyst verdict=REVISE
+node "$FORGE/scripts/state.js" log <anchor> fast_track_block    "<artifact>" finding="..."
+node "$FORGE/scripts/state.js" log <anchor> fast_track_escape   "reason=..."
 ```
 
 Ces entrées alimentent `audit-report.js`, qui calcule le taux de `REVISE` par phase et par agent — c'est la seule façon de savoir si la validation automatique apporte quelque chose.

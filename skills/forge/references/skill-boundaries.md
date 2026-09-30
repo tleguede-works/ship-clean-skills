@@ -44,7 +44,7 @@ Un `state.json` qui contient de la prose n'est pas un fichier d'état, c'est un 
 Au début de chaque session, **en plus** de `.forge/state.json` :
 
 ```bash
-node scripts/state.js start <anchor>
+node "$FORGE/scripts/state.js" start <anchor>
 ```
 
 Cette commande assemble l'état réel : phase, gates, slices **avec présence réelle du plan et du test**, documents `stale`, constats ouverts **non promus**, et l'état de la mémoire du projet (`AGENTS.md` §Definition of Done, entrées `DECISIONS.md` non fermées, volume de `LEARNINGS.md`).
@@ -70,7 +70,7 @@ Un slice n'est pas une décision : c'est un statut. Une règle métier n'est pas
 Un constat se route, il ne s'empile pas.
 
 ```bash
-node scripts/state.js finding <anchor> --domain=<règle visée> --severity=<majeur|mineur> --origin=<forge|projet|environnement> "<fait>" "<correction>"
+node "$FORGE/scripts/state.js" finding <anchor> --domain=<règle visée> --severity=<majeur|mineur> --origin=<forge|projet|environnement> "<fait>" "<correction>"
 ```
 
 **Le champ `--domain` est obligatoire.** Il n'est pas cosmétique : c'est la cible de promotion. Un constat sans domaine n'a nulle part où aller, donc il ne change rien — il devient un journal de plus, en concurrence avec les règles qu'il était censé informer.
@@ -91,7 +91,7 @@ Règles de routage :
 Quand un constat a été promu, on le marque :
 
 ```bash
-node scripts/state.js finding <anchor> --resolve <id> --promoted-to=<règle visée>
+node "$FORGE/scripts/state.js" finding <anchor> --resolve <id> --promoted-to=<règle visée>
 ```
 
 `audit-report.js` signale tout constat resté non promu au-delà de N sessions : c'est le seul signal qui distingue un skill qui apprend d'un skill qui accumule.
