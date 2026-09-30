@@ -6,15 +6,15 @@ on:
   workflow_dispatch:
     inputs:
       level:
-        description: "Bump de version à forcer"
+        description: "Plancher de version à forcer (le niveau publié reste max(contenu, plancher))"
         required: true
         default: patch
         type: choice
         options: [patch, minor, major]
 
-# Une seule release à la fois. Deux jobs de release concurrents se disputent
-# le même numéro de version, et le perdant écrit un tag qui ne correspond plus
-# à son contenu.
+# Une seule release à la fois. Deux jobs de release concurrents se disputent le
+# même numéro de version, et le perdant écrit un tag qui ne correspond plus à son
+# contenu.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -29,6 +29,7 @@ jobs:
     outputs:
       should_release: ${{ steps.decide.outputs.should_release }}
       level: ${{ steps.decide.outputs.level }}
+      reason: ${{ steps.decide.outputs.reason }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,52 +45,47 @@ jobs:
       - name: Suite du skill forge
         run: node skills/forge/scripts/selftest.js
 
+      - name: release.js en bac à sable
+        run: node scripts/release-smoke.js
+
+      # Construit l'archive et la revérifie **avant** de publier quoi que ce
+      # soit. Une release dont l'archive ne reproduit pas la version est pire
+      # qu'une release sans archive : elle affirme une reproductibilité fausse.
+      - name: Snapshot — construction et vérification
+        run: |
+          set -euo pipefail
+          node scripts/snapshot.js build --out dist --json | tee /tmp/snapshot.json
+          node scripts/snapshot.js verify "dist/$(node -p "require('/tmp/snapshot.json').archive.split('/').pop()")" --against .
+
       - name: Cohérence VERSION ↔ CHANGELOG
         run: node scripts/release.js check
 
+      # La décision vit dans `release.js`, pas dans ce workflow.
+      #
+      # Elle y était, en `node -e` échappé dans un heredoc, dupliquée trois fois,
+      # donc testable seulement en publiant. Et `workflow_dispatch` court-circuitait
+      # AVANT l'analyse : le niveau demandé était un plafond, alors que la
+      # documentation annonçait un plancher. Une demande de `patch` sur une
+      # section contenant un `feat` publiait un patch.
       - name: Décider s'il faut publier
         id: decide
         env:
           FORCE_LEVEL: ${{ inputs.level || '' }}
         run: |
-          # Une section [Unreleased] vide signifie « rien à publier ». Publier
-          # quand même consommerait un numéro pour un changement invisible, et
-          # l'historique des versions finit par ne plus rien signifier.
+          set -euo pipefail
           if [ -n "$FORCE_LEVEL" ]; then
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            echo "level=$FORCE_LEVEL"    >> "$GITHUB_OUTPUT"
-            echo "forcée manuellement"
-            exit 0
-          fi
-
-          if node -e "
-            const fs=require('fs');
-            const t=fs.readFileSync('CHANGELOG.md','utf-8');
-            const m=t.match(/^## \[Unreleased\]\n([\s\S]*?)(?=\n## )/m);
-            const body=m?m[1]:'';
-            process.exit(/^###\s+(breaking|feat|fix|docs|chore|test|perf)/m.test(body)?0:1);
-          "; then
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            # breaking → major, feat → minor, sinon patch
-            if node -e "
-              const fs=require('fs');
-              const t=fs.readFileSync('CHANGELOG.md','utf-8');
-              const m=t.match(/^## \[Unreleased\]\n([\s\S]*?)(?=\n## )/m);
-              process.exit(/^###\s+breaking/m.test(m?m[1]:'')?0:1);
-            "; then level=major
-            elif node -e "
-              const fs=require('fs');
-              const t=fs.readFileSync('CHANGELOG.md','utf-8');
-              const m=t.match(/^## \[Unreleased\]\n([\s\S]*?)(?=\n## )/m);
-              process.exit(/^###\s+feat/m.test(m?m[1]:'')?0:1);
-            "; then level=minor
-            else level=patch
-            fi
-            echo "level=$level" >> "$GITHUB_OUTPUT"
+            node scripts/release.js decide --force "$FORCE_LEVEL" | tee /tmp/decide.json
           else
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "rien à publier"
+            node scripts/release.js decide | tee /tmp/decide.json
           fi
+          node -e "
+            const fs = require('fs');
+            const d = JSON.parse(fs.readFileSync('/tmp/decide.json', 'utf-8'));
+            fs.appendFileSync(process.env.GITHUB_OUTPUT,
+              'should_release=' + d.should_release + '\n' +
+              'level=' + (d.level || '') + '\n' +
+              'reason=' + String(d.reason).replace(/\n/g, ' ') + '\n');
+          "
 
       - name: Résumé
         run: |
@@ -97,7 +93,8 @@ jobs:
             echo "### Décision de release"
             echo ""
             echo "- publier : \`${{ steps.decide.outputs.should_release }}\`"
-            echo "- niveau   : \`${{ steps.decide.outputs.level }}\`"
+            echo "- niveau   : \`${{ steps.decide.outputs.level || '—' }}\`"
+            echo "- motif    : ${{ steps.decide.outputs.reason }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
@@ -137,6 +134,7 @@ jobs:
 
       - name: Committer VERSION et CHANGELOG
         run: |
+          set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add VERSION CHANGELOG.md
@@ -148,36 +146,48 @@ jobs:
           git commit -m "chore(release): ${{ steps.bump.outputs.to }}"
           git push
 
+      # L'archive porte le CONTENU, pas les notes.
+      #
+      # Le skill n'est pas compilé : il n'y a aucun exécutable à produire. Sans
+      # archive, une release ne permet pas de retrouver la version publiée d'un
+      # skill — constaté sur v1.1.6 à v1.1.8, dont le seul asset était
+      # `notes.md`, le fichier de notes lui-même.
+      - name: Construire le snapshot de la version publiée
+        id: snapshot
+        run: |
+          set -euo pipefail
+          node scripts/snapshot.js build --version "${{ steps.bump.outputs.to }}" --out dist --json | tee /tmp/snapshot.json
+          archive=$(node -p "require('/tmp/snapshot.json').archive")
+          files=$(node -p "require('/tmp/snapshot.json').files")
+          digest=$(node -p "require('/tmp/snapshot.json').content_sha256")
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "files=$files"      >> "$GITHUB_OUTPUT"
+          echo "digest=$digest"    >> "$GITHUB_OUTPUT"
+          echo "MANIFEST.json" >> /tmp/assets.txt
+          echo "$archive"     >> /tmp/assets.txt
+
+      - name: Vérifier l'archive contre le commit publié
+        run: |
+          set -euo pipefail
+          # Ce contrôle est la raison d'être du manifeste : il prouve que
+          # l'archive qu'on va joindre reproduit bien l'état publié.
+          node scripts/snapshot.js verify "${{ steps.snapshot.outputs.archive }}" --against .
+
       - name: Créer la release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: "v${{ steps.bump.outputs.to }}"
-          VERSION: ${{ steps.bump.outputs.to }}
+          VERSION: "${{ steps.bump.outputs.to }}"
         run: |
+          set -euo pipefail
           # Les notes viennent de release.js, pas d'une regex écrite ici.
-          # Cette regex a lived dans le workflow pendant une release entière,
-          # échappée deux fois, et cherchait « \[ » — un antislash littéral
-          # devant le crochet. Elle ne trouvait rien, et le garde-fou levait
-          # « notes vides » sur un CHANGELOG parfaitement valide : un
-          # diagnostic qui accuse le mauvais fichier.
           NOTES=$(node scripts/release.js notes "$VERSION")
 
-          {
-            echo "## ${{ steps.bump.outputs.to }}"
-            echo ""
-            echo "$(date -u +%Y-%m-%d)"
-            echo ""
-            echo "$NOTES"
-            echo ""
-            echo "---"
-            echo ""
-            echo "Installer : \`npx skills add tleguede-works/ship-clean-skills --skill <nom> -g -a opencode\`"
-          } > /tmp/notes.md
-
           # Dernier rempart. Une release avec un tag non sémantique, des notes
-          # vides, ou une VERSION qui ne correspond pas est exactement le
-          # « mécanisme arbitraire » à éviter. Mieux vaut un run en échec qu'une
-          # release illisible dans l'historique.
+          # vides, une VERSION qui ne correspond pas, ou une archive qui ne
+          # reproduit pas la version, est exactement le « mécanisme arbitraire »
+          # à éviter. Mieux vaut un run en échec qu'une release illisible dans
+          # l'historique.
           if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::tag « $TAG » non sémantique — refus de publier"
             exit 1
@@ -190,15 +200,75 @@ jobs:
             echo "::error::notes de release vides pour $TAG — la section CHANGELOG correspondante est vide ou introuvable"
             exit 1
           fi
+          if [ ! -f "${{ steps.snapshot.outputs.archive }}" ]; then
+            echo "::error::archive absente : une release sans snapshot ne reproduit pas la version publiée"
+            exit 1
+          fi
+
+          {
+            echo "## ${TAG#v}"
+            echo ""
+            echo "$(date -u +%Y-%m-%d)"
+            echo ""
+            echo "$NOTES"
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Snapshot"
+            echo ""
+            echo "Le skill n'est pas compilé : **l'archive jointe EST la version publiée**."
+            echo "Elle contient \`MANIFEST.json\` en premier membre, avec le SHA-256 de chaque"
+            echo "fichier, et l'identifiant du commit publié."
+            echo ""
+            echo "- archive : \`$(basename ${{ steps.snapshot.outputs.archive }})\`"
+            echo "- fichiers : ${{ steps.snapshot.outputs.files }}"
+            echo "- empreinte du contenu : \`${{ steps.snapshot.outputs.digest }}\`"
+            echo ""
+            echo "Reproduire l'extraction et vérifier :"
+            echo ""
+            echo '```bash'
+            echo "tar -xzf $(basename ${{ steps.snapshot.outputs.archive }})"
+            echo "node -e \"const m=require('./MANIFEST.json');console.log(m.version, m.commit)\""
+            echo '```'
+            echo ""
+            echo "Installer : \`npx skills add tleguede-works/ship-clean-skills --skill <nom> -g -a opencode\`"
+          } > /tmp/notes.md
 
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "le tag $TAG existe déjà — rien à créer"
             exit 0
           fi
 
-          git tag -a "$TAG" -m "release ${{ steps.bump.outputs.to }}"
+          git tag -a "$TAG" -m "release ${TAG#v}"
           git push origin "$TAG"
 
-          gh release create "$TAG" /tmp/notes.md \
+          # Les assets sont `-#-` : ce sont des FICHIERS à joindre, pas des
+          # notes. Une release dont l'unique asset est son propre texte de notes
+          # ne permet pas de récupérer ce qu'elle a publié.
+          gh release create "$TAG" \
             --title "$TAG" \
-            --notes-file /tmp/notes.md
+            --notes-file /tmp/notes.md \
+            $(cat /tmp/assets.txt | sed 's/^/"/; s/$/"/' | tr '\n' ' ')
+
+      - name: Re-télécharger la release et vérifier son contenu
+        run: |
+          set -euo pipefail
+          # On ne fait pas confiance à ce qu'on vient d'envoyer. On relit la
+          # release depuis l'API, on télécharge l'archive, on l'extrait, et on la
+          # compare au commit publié. C'est la seule vérification qui prouve que
+          # la release, telle qu'un utilisateur la trouvera, est exploitable.
+          gh release download "v${{ steps.bump.outputs.to }}" \
+            --dir /tmp/relcheck \
+            --pattern "$(basename ${{ steps.snapshot.outputs.archive }})" \
+            --repo "$GITHUB_REPOSITORY"
+          mkdir -p /tmp/relcheck/x
+          tar -xzf "/tmp/relcheck/$(basename ${{ steps.snapshot.outputs.archive }})" -C /tmp/relcheck/x
+          test -f /tmp/relcheck/x/MANIFEST.json || { echo "::error::MANIFEST.json absent de l'archive publiée"; exit 1; }
+          test -f /tmp/relcheck/x/skills/forge/SKILL.md || { echo "::error::le skill forge est absent de l'archive publiée"; exit 1; }
+          node -e "
+            const m = require('/tmp/relcheck/x/MANIFEST.json');
+            const expected = process.argv[1];
+            if (m.version !== expected) { console.error('version de l\\'archive : ' + m.version + ', attendu ' + expected); process.exit(1); }
+            console.log('archive publiée : ' + m.version + ' — ' + m.file_count + ' fichiers, commit ' + m.commit);
+          " "${{ steps.bump.outputs.to }}"
+          echo "::notice::release v${{ steps.bump.outputs.to }} vérifiée par re-téléchargement"

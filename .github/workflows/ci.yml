@@ -35,6 +35,13 @@ jobs:
       - name: release.js en bac à sable
         run: node scripts/release-smoke.js
 
+      # L'archive de release est construite, vérifiée contre le checkout, puis
+      # vérifiée APRÈS altération. Un contrôle qui ne peut pas échouer ne prouve
+      # rien : c'est le test négatif qui distingue une archive vérifiée d'une
+      # archive simplement absente.
+      - name: Snapshot de release en bac à sable
+        run: node scripts/snapshot-smoke.js
+
       # Le workflow de release commite VERSION et CHANGELOG sur main. Sans
       # cette règle, la prochaine pull request qui touche ces deux fichiers
       # entre en conflit — et le conflit s'installe au pire moment, entre deux

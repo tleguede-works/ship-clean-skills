@@ -84,20 +84,53 @@ drift silently. `CHANGELOG.md` says which skill changed.
 3. Merge to `main`.
 
 `.github/workflows/release.yml` then runs on its own: it verifies, decides
-whether there is anything to publish, bumps, commits, tags, and creates the
-release. Nothing is published when `[Unreleased]` is empty — a version number
-spent on an invisible change makes the history stop meaning anything.
+whether there is anything to publish, bumps, commits, tags, builds the snapshot,
+and creates the release. Nothing is published when `[Unreleased]` is empty — a
+version number spent on an invisible change makes the history stop meaning
+anything.
 
 ```bash
 node scripts/release.js current     # the version
 node scripts/release.js check       # VERSION ↔ CHANGELOG coherence (in CI)
+node scripts/release.js decide      # publish or not, and at which level
 node scripts/release.js notes 1.2.0 # release body for a version
 node scripts/release.js bump --minor
+
+node scripts/snapshot.js build      # build the archive for this version
+node scripts/snapshot.js verify dist/<archive> --against .
+node scripts/snapshot.js list       # what the archive contains
 ```
 
-Manual publication, when a version is genuinely warranted with no pending
-entry: `workflow_dispatch` with a level. The level is a floor, not a ceiling —
-if `[Unreleased]` holds a `feat`, a `patch` request publishes a minor.
+### The version level is decided in one place
+
+`release.js decide` is the whole mechanism: a `breaking` entry forces a major, a
+`feat` forces a minor, anything else is a patch. It used to live in the workflow
+as three escaped `node -e` blocks, so it could only be tested by publishing — and
+`workflow_dispatch` short-circuited *before* the analysis, which made the requested
+level a **ceiling**. `CONTRIBUTING.md` has claimed it was a floor since the day it
+was written.
+
+Now: the requested level is a **floor**, the published level is the greater of the
+two, and a forced level never creates content — an empty `[Unreleased]` is not
+publishable, by hand or automatically.
+
+### Every release carries a snapshot
+
+The skill is not compiled, so a release has no executable to attach. It used to
+attach its own release notes and nothing else, which meant a release could not be
+used to recover the version it published.
+
+Each release now carries `ship-clean-skills-v<version>.tar.gz`:
+
+- the complete skill (`skills/`, `scripts/`, `README`, `LICENSE`, `VERSION`,
+  `CHANGELOG`), excluding the repository's own maintenance tooling;
+- `MANIFEST.json` as its **first** member, with the SHA-256 of every file, the
+  version and the published commit;
+- deterministic bytes — same version in, same archive out, byte for byte.
+
+The workflow verifies the archive **against the checkout before publishing**, then
+**re-downloads the release and extracts it afterwards**. It does not trust what it
+just sent.
 
 ### Rules a pull request must respect
 
