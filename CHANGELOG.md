@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-09-30
+
 ### fix(forge) — Le périmètre d'un validateur, le caractère parasite, et la règle de l'auto-test
 
 Trois corrections, dont deux confirmées par un **second** projet grandeur nature
