@@ -256,3 +256,6 @@
 {"ts":"2026-09-30T14:23:46.708Z","type":"sync","found":0,"fixed":0,"divergences":[]}
 {"ts":"2026-09-30T14:30:05.365Z","type":"status_change","kind":"screen","key":"definitions","from":"approved","to":"draft","mirrored":{"mirrored":true,"changed":true,"path":".forge/design/screens/definitions.md","from":"approved","to":"draft"}}
 {"ts":"2026-09-30T14:30:05.409Z","type":"hash","kind":"screen","entry":"definitions","content_hash":"sha256:f18b5fcc14f2"}
+{"ts":"2026-09-30T16:27:16.340Z","type":"amend","kind":"deliverable","key":"architecture","reason":"les trois décisions arbitrées, plus le défaut que leur application a révélé"}
+{"ts":"2026-09-30T16:27:58.005Z","type":"status_change","kind":"deliverable","key":"architecture","from":"stale","to":"draft","mirrored":{"mirrored":true,"changed":false,"path":".forge/architecture.md","status":"draft"}}
+{"ts":"2026-09-30T16:27:58.076Z","type":"amend","kind":"deliverable","key":"architecture","reason":"les trois décisions arbitrées, plus le défaut que leur application a révélé"}
