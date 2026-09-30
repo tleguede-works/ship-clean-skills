@@ -2903,6 +2903,57 @@ function refProject(label, body) {
   return project;
 }
 
+test('state-parity : une union documentée reste lisible', () => {
+  // La lecture d'une union était bornée à **600 caractères**. Une union où chaque
+  // membre porte *pourquoi il existe* — celle-là même qu'on veut écrire — dépasse
+  // 600 caractères, donc la borne la faisait disparaître et le contrôle rendait
+  // `union_introuvable_dans_l_architecture` sur un document parfaitement correct.
+  //
+  // Même famille que la fenêtre d'adjacence de 140 caractères, et même leçon : un
+  // motif plus étroit que ce que les documents écrivent n'est pas plus prudent, il
+  // est **faux**.
+  const src = fs.readFileSync(path.join(SCRIPTS, 'consistency-check.js'), 'utf8');
+  const at = src.indexOf('function readUnionMembers');
+  const body = src.slice(at, src.indexOf('\n}', at));
+  assert(/\{0,2000\}\?/.test(body),
+    `la borne doit laisser une union documentee : ${/\{0,\d+\}/.exec(body)}`);
+  assert(/;[^\n]*\\n/.test(body),
+    'le vrai terminateur reste « point-virgule en fin de ligne »');
+
+  // Et le témoin : une union **courte** reste lisible aussi.
+  const project = freshProject('state-parity-union-documentee');
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '## Tile\n\n' +
+      '**États** — rendus par l\'union `TileState`, sauf `hover` : états d\'interaction.\n\n' +
+      '| État | Déclencheur | Apparence |\n|---|---|---|\n' +
+      '| `default` | valeur | chiffre |\n' +
+      '| `unknown` | date absente | mention |\n'
+  });
+  writeDeliverable(project, '.forge/architecture.md', {
+    type: 'architecture',
+    body: '```ts\n' +
+      "export type TileState =\n" +
+      "  // Un état par raison d'être : l'union est le contrat que le design\n" +
+      "  // pointerait, donc chaque membre se défend seul.\n" +
+      "  | 'default'\n" +
+      "  | 'unknown'\n" +
+      "  | 'loading'   // calcul en cours, skeleton de la forme du chiffre\n" +
+      "  | 'denied';   // E5 : la tuile n'est pas rendue, c'est une absence\n" +
+      '```\n'
+  });
+  const st = JSON.parse(fs.readFileSync(path.join(project, '.forge', 'state.json'), 'utf-8'));
+  st.deliverables['design_system'] = { path: '.forge/design/design-system.md', type: 'design-system' };
+  st.deliverables.architecture = { path: '.forge/architecture.md', type: 'architecture' };
+  fs.writeFileSync(path.join(project, '.forge', 'state.json'), JSON.stringify(st, null, 2));
+
+  const res = run('consistency-check.js', ['state-parity', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'declared_state_parity');
+  assert(c && c.unions_resolved === 1, `l'union documentee doit etre resolue : ${JSON.stringify(c).slice(0, 250)}`);
+  assert(!c.offenders.some(o => o.problem === 'union_introuvable_dans_l_architecture'),
+    `une union documentee ne doit pas disparaitre : ${JSON.stringify(c.offenders)}`);
+});
+
 test('references : un renvoi vers une section absente est un pointeur cassé', () => {
   // La forme **explicite** : le renvoi nomme sa cible, à côté. Le contrôle sait
   // alors exactement où regarder, et sa conclusion ne dépend d'aucune

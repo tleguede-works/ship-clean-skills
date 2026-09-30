@@ -721,8 +721,20 @@ function readUnionMembers(md, union) {
   // ainsi qu'une variante de composant (`'drill' | 'reference'`) se faisait
   // passer pour des états. C'était le troisième essai de ce contrôle qui
   // tombait là.
+  // La borne de 600 caracteres etait une **Bornage de commodite**, pas une regle :
+  // une union **documentee** — celle-la meme ou chaque membre porte pourquoi il
+  // existe — depasse 600 caracteres, donc la borne la faisait disparaitre et le
+  // controle rendait `union_introuvable_dans_l_architecture` sur un document
+  // parfaitement correct. C'est la meme famille que la fenetre d'adjacence de
+  // 140 caracteres, et la meme lecon : un motif plus etroit que ce que les
+  // documents ecrivent n'est pas plus prudent, il est **faux**.
+  //
+  // Le vrai terminateur est deja ailleurs et il est bon : `;` **en fin de ligne**.
+  // Une declaration de type s'y termine ; la ligne suivante est la suivante. La
+  // borne n'est donc plus qu'une garde-fou contre un document pathologique — elle
+  // peut etre large sans rien laisser passer.
   const re = new RegExp(
-    'export\\s+type\\s+' + union + '\\s*=\\s*([\\s\\S]{0,600}?);[^\\n]*\\n', 'g');
+    'export\\s+type\\s+' + union + '\\s*=\\s*([\\s\\S]{0,2000}?);[^\\n]*\\n', 'g');
   const members = new Set();
   let m;
   while ((m = re.exec(md)) !== null) {
