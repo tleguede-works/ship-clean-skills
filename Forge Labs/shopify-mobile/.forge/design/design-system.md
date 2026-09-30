@@ -399,17 +399,30 @@ Pas d'avatar, pas de fil, pas de carte produit ombrée, pas d'illustration d'ét
 
 ---
 
-## 6. Points à décider en Phase 4
+## 6. Où sont les sept points, et où ne sont-ils pas
 
-| # | Point | Pourquoi ce n'est pas ici |
+> **La Phase 4 a tranché les points 1, 2, 3, 5 et 7.** Ils sont écrits ici pour que la
+> décision soit lisible à côté de ce qu'elle décide, et non enfouie dans
+> `architecture.md`. Le contrôle `no_undecided_slots` refuse qu'un point non tranché
+> survive à une architecture approuvée : un document verrouillé qui contient encore
+> une case vide est un document dont la case est devenue invisible.
+
+| # | Point | Où c'est tranché, et quoi |
 |---|---|---|
-| 1 | **Nom de l'union des états de lecture** qui rend les états listés ci-dessus | Vocabulaire d'architecture. Sans lui, aucun contrôle ne peut dire si un état déclaré ici a un rendu, et un contrôle qui le devinerait produirait des signalements impossibles à fermer. |
-| 2 | **Le système de styles** qui porte ces tokens | Aucun impact sur les valeurs : un changement de bibliothèque ne déplace pas un hex. |
-| 3 | **La bibliothèque de composants UI** et le jeu d'icônes | Ce qui est fixé ici est le *contrat* : trait de 1,5 px, icône de 20 px dans une zone de 44 pt, **aucun contrôle sans libellé**. Le jeu est un achat. |
-| 4 | **Substitution de `--color-encre-*` par la couleur de marque** | La règle est prête (elle ne remplace que cette famille, jamais les quatre teintes sémantiques) mais la charte n'existe pas : personne ne l'a demandée au marchand. |
-| 5 | **Survie du panier avant la sortie vers le paiement (Q2)** | Le composant a les deux rendus, mais lequel s'affiche dépend de la réponse du marchand. |
-| 6 | **Rendu du retour produit (Q1)** et formulation exacte de la limite (B13) | Le libellé et la procédure relèvent du marchand. |
-| 7 | **La bascule Accueil ↔ Commandes** que le PRD n'a pas écrite | Ce n'est pas une question de Phase 4 : c'est un **trou du PRD** (§ 8 n'écrit la bascule que dans un sens). |
+| 1 | **Nom de l'union des états de lecture** | **Tranché** — `EtatLecture<T>`, dans `architecture.md` § 2.1. Cinq états discriminants, plus `EtatEcran<T>` qui ajoute `chargement` pour que B18 (« aucun écran ne rend sa structure avant que l'état soit résolu ») soit une contrainte de **type** et non une intention. `socle-interface` le porte. |
+| 2 | **Le système de styles qui porte ces tokens** | **Tranché** — NativeWind 4, `conventions.md` § Stack et `architecture.md` § 1.1. Les tokens sont consommés **tels quels** comme clés de thème : la valeur hexadécimale n'existe qu'à un seul endroit, donc un hex ne peut pas dériver. |
+| 3 | **La bibliothèque de composants UI et le jeu d'icônes** | **Tranché** — aucune bibliothèque pour les composants, `lucide-react-native` pour les icônes. Le contrat est resté ici (trait 1,5 px, icône 20 px dans une zone 44 pt, aucun contrôle sans libellé) et l'achat est à `architecture.md` § 1.1. Une bibliothèque aurait apporté une **deuxième** source de vérité pour exactement les valeurs qui viennent d'être mesures contraste par contraste. |
+| 4 | **Substitution de `--color-encre-*` par la couleur de marque** | **Non tranché, et ce n'est pas un trou** — la règle est prête (elle ne remplace que cette famille, jamais les quatre teintes sémantiques) et le point de substitution est écrit : le thème NativeWind de `conventions.md` § Stack. Ce qui manque n'est pas une décision, c'est une **demande** : personne n'a demandé la charte au marchand. `B6` décrit le marchand comme une source, pas comme un commanditaire, donc la charte n'existe pas et ne doit pas être inventée. Elle arrivera par la substitution, en un endroit, quand quelqu'un l'aura demandée. |
+| 5 | **Survie du panier avant la sortie (Q2)** | **Renvoyée au PRD, avec sa sortie écrite** — `architecture.md` § 7.1 (ADR-10) pose le contrat de la sortie vers le paiement, et la slice `mecanisme-renvoi-paiement` le produit : **soit un mécanisme constaté et testé, soit la preuve écrite qu'il n'existe pas.** Les deux sont acceptables ; en supposer un n'est pas. C'est une question que le PRD date « avant la conception » et que la Phase 4 rend explicite sans y répondre — répondre à la place du marchand serait exactement ce que Q2 interdit. |
+| 6 | **Rendu du retour produit (Q1) et formulation de la limite (B13)** | **Renvoyé au PRD, décision nommée** — Q1 demande **qui** porte la décision de retour, et c'est le marchand. B13 impose déjà ce qui est de notre ressort : les deux dates s'affichent ensemble, ou aucune. Le libellé et la procédure restent hors de portée jusqu'à ce qu'un porteur soit nommé. `US-9` est déjà repoussé en V2 par le roadmap § 2.2, donc rien n'est bloqué. |
+| 7 | **La bascule Accueil ↔ Commandes que le PRD n'a pas écrite** | **Constaté comme trou du PRD, pas comme décision de design** — le § 8 du PRD n'écrit la bascule que dans un sens (Recherche passe derrière Commandes). Le design system a donc fait ce qu'il pouvait : il **déclare que le rang 3 de Commandes est une borne basse issue de R6**, non une mesure, et que si Q4 révèle plus de deux achats par an, Commandes passe au rang 2. La règle de bascule elle-même appartient au PRD, où elle sera écrite avec un seuil. |
+
+**Le point qui n'en est pas un.** Le 3e rail de l'accueil (Q-F) n'est pas dans cette
+liste parce que ce n'est pas un point de design : B9 impose trois rails, E4 en nomme
+deux, et la **chaîne de repli du troisième** est écrite dans `accueil.md` § 3. Ce qui
+reste ouvert est la *source* du troisième niveau, et elle est traitée par la slice
+`accueil-trois-rails` — avec sa condition d'échec écrite : si le droit d'inventaire
+n'est pas accordé, la réponse ne revient pas au rail mais au PRD.
 
 ---
 

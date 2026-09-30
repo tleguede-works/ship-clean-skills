@@ -43,16 +43,16 @@ generated_at: 2026-09-30
 | Framework | Expo (React Native) en **development build**, jamais Expo Go · Expo Router pour la navigation par fichiers | dernier SDK stable, épinglé dans `package.json` | Ni chaîne native Xcode/CocoaPods, ni routeur à configurer à la main. Le development build est le seul moyen d'avoir les notifications push et le secure store sans réécrire le projet en bare React Native. |
 | Identity provider | Supabase Auth — email + mot de passe avec confirmation par email | — | Source d'identité unique et nommée, exigée par la règle *fail-closed*. La source d'identité est le `user_id` de Supabase Auth : un compte sans correspondance Shopify confirmée n'accède **qu'au catalogue**, et rien d'autre. Un défaut de correspondance est un refus, jamais un accès accordé par défaut. |
 | Stratégie de session | Access token court + refresh token · **secure store** (Keychain / Keystore via `expo-secure-store`), **jamais `AsyncStorage`** · rafraîchissement au retour au premier plan au-delà de 15 min · la déconnexion explicite révoque le refresh token côté serveur | — | `AsyncStorage` est lisible par un appareil compromis ; le secure store ne l'est pas. La révocation côté serveur est ce qui rend la déconnexion effective plutôt que cosmétique. |
-| Base de données | PostgreSQL managé (Supabase, région UE) | — | Elle ne contient que **quatre** choses : correspondance compte ↔ client Shopify, jetons de push et consentements, favoris, produits récemment vus. Tout est rattaché au compte, donc un client qui change de téléphone retrouve sa liste. |
-| ORM / Query builder | À DÉCIDER EN PHASE 4 | — | Se déduit de l'accès direct à Postgres pour les correspondances, et de l'absence de miroir catalogue. |
+| Base de données | PostgreSQL managé (Supabase, région UE) | 16 ou supérieur | Elle ne contient que **quatre** choses : correspondance compte ↔ client Shopify, jetons de push et consentements, favoris, produits récemment vus. Tout est rattaché au compte, donc un client qui change de téléphone retrouve sa liste. **La Phase 4 en ajoute une cinquième** — la mesure calculée côté serveur — parce que C9 interdit la jointure dans l'outil d'audit ; l'architecture § 4 le consigne comme un écart, pas comme un oubli. |
+| ORM / Query builder | **Drizzle ORM** + `drizzle-kit` | 0.45.3 · 0.31.11 | Se déduit de l'accès direct à Postgres pour les correspondances, et de l'absence de miroir catalogue. Et le § 4.10 de l'architecture écrit du **SQL exécutable** : un ORM qui génèrerait son propre DDL produirait un schéma différent de celui qui a été exécuté, donc la preuve porterait sur autre chose. Drizzle garde le SQL comme source de vérité tout en donnant les types de colonnes. |
 | Exécution de fond | **Aucun.** Une seule fonction serverless réveillée par un webhook Shopify, qui envoie une notification push via le service Expo, protégée par une table d'idempotence | — | Shopify rejoue ses webhooks : sans table d'idempotence, le même événement notifie deux fois. Une file de messages est de l'infrastructure pour deux personnes ; si le volume la rend nécessaire, c'est une décision de version 2. |
-| State management | À DÉCIDER EN PHASE 4 | — | |
-| Formulaires | À DÉCIDER EN PHASE 4 | — | Aucun formulaire de paiement n'existe en v1 : le panier se construit chez nous et la main est tendue au checkout Shopify. |
-| Validation | À DÉCIDER EN PHASE 4 | — | |
-| HTTP client | À DÉCIDER EN PHASE 4 | — | La règle « un fait, un seul endroit » impose que le prix affiché vienne de la même fonction partout : c'est une contrainte d'architecture, pas de bibliothèque. |
-| Styling | À DÉCIDER EN PHASE 4 | — | |
-| Composants UI | À DÉCIDER EN PHASE 4 | — | |
-| Icônes | À DÉCIDER EN PHASE 4 | — | |
+| State management | **TanStack Query** pour l'état serveur · **contexte React + `useReducer`** pour la session et le panier · `useState` local sinon | 5.104.0 | Deux états qui ne sont pas la même chose : la donnée du marchand, périssable et annotée d'un âge (C8, B19), et l'état de session. TanStack Query porte la première avec sa sémantique de fraîcheur ; un contexte ne sait rien de la péremption et le réinventer serait le réécrire. Le contexte ne porte que la session. |
+| Formulaires | **react-hook-form** + Zod, via `@hookform/resolvers` | 7.89.0 · 4.6.5 | Aucun formulaire de paiement n'existe en v1 : le panier se construit chez nous et la main est tendue au checkout Shopify. Le resolver fait valider **le même schéma** dans l'écran et dans la fonction serverless, donc un champ invalide ne peut pas passer à côté du serveur. |
+| Validation | **Zod** | 4.6.5 | Un seul langage de schéma pour l'application et la fonction serverless, et des schémas qui se reflètent dans les types des contrats d'API. C'est la condition pour que « un fait, un seul endroit » s'applique aussi aux formes. |
+| HTTP client | **`fetch` natif**, enveloppé dans un client typé unique `src/api/http.ts` | — | La règle « un fait, un seul endroit » impose que le prix affiché vienne de la même fonction partout : c'est une contrainte d'architecture, pas de bibliothèque. Aucune couche au-dessus du `fetch` natif : elle coûterait des kilo-octets sur le chemin critique de C6 pour des fonctions que TanStack Query fait déjà. Le client ne fait que trois choses qu'aucun autre ne fait — poser l'`Authorization`, mesurer le délai, convertir toute erreur en `EtatLecture`. |
+| Styling | **NativeWind 4**, alimenté par les tokens du design system | 4.2.7 | Les tokens s'appellent `--color-texte-principal`, `--text-body`, `--space-md` : NativeWind les consomme tels quels comme clés de thème, donc **la valeur hexadécimale n'existe qu'à un seul endroit** et le nom de classe est le nom du token. Un module `tokens.ts` écrit à la main dupliquerait chaque valeur et laisserait un hex dériver en silence. |
+| Composants UI | **Aucune bibliothèque** — primitives maison dans `app/_design/` | — | Le design system a fixé le contrat (trait 1,5 px, icône 20 px dans une zone 44 pt, aucun contrôle sans libellé) et il a été vérifié contraste par contraste sur treize primitives. Une bibliothèque apporte ses propres tokens et son propre thème : ce serait une deuxième source de vérité pour exactement les valeurs qui viennent d'être mesurées. |
+| Icônes | **lucide-react-native** | 1.49.0 | Le contrat du design system — trait 1,5 px, icône de 20 px — est déjà le dessin de ce jeu. C'est le seul achat graphique du projet, et il est remplaçable sans toucher à un écran. |
 | Tests unitaires | Jest, preset `jest-expo` | — | C'est ce que la chaîne Expo teste réellement ; un runner plus rapide mais moins bien intégré nous ferait perdre plus de temps qu'il n'économise. |
 | Tests composants | React Native Testing Library | — | Toute règle métier — disponibilité, éligibilité au réassort, correspondance compte-client — se teste en unitaire, **avec un test qui échoue quand on casse la règle**. |
 | Tests E2E | **Maestro, en local, sur le development build. Aucun runner en intégration continue, aucun parc d'appareils.** | — | C'est le seul test qui traverse les écrans, la navigation et la redirection vers Shopify ; les tests de composants rendent un état, pas un trajet. Pas de runner en CI parce que C11 rend la publication manuelle : un test qui vise un build publié ne peut pas être un portail de fusion. |
@@ -158,11 +158,17 @@ lib/                        # ce qu'elle ne sait pas encore
 
 ### State management
 
-À DÉCIDER EN PHASE 4.
+**TanStack Query** pour l'état serveur, **contexte + `useReducer`** pour la session et le panier.
+
+La frontière suit la nature de la donnée : la donnée du marchand est périssable, rejouable, annotée d'un âge — TanStack Query porte sa péremption, son annulation au démontage et sa déduplication, ce qui est exactement B18 et B7. La session est la seule donnée réellement globale et mutable, donc la seule qui justifie un contexte. Le reste est local.
 
 ### Formulaires
 
-À DÉCIDER EN PHASE 4. Règle transverse déjà tranchée : **aucun formulaire ne saisit de donnée de paiement.**
+**react-hook-form**, validé par **Zod** via `@hookform/resolvers`.
+
+Le design system impose la validation au blur et interdit un champ qui perd sa saisie à l'erreur ; react-hook-form gère le `touched` par champ sans état dérivé manuel. Le resolver fait valider le même schéma dans l'écran **et** dans la fonction serverless : un champ invalide ne peut donc pas passer à côté du serveur.
+
+Règle transverse déjà tranchée : **aucun formulaire ne saisit de donnée de paiement.**
 
 ### Data fetching
 
@@ -186,7 +192,7 @@ les rails même quand la commande en cours n'est pas encore revenue.
 
 ### Erreurs de validation
 
-À DÉCIDER EN PHASE 4, avec la bibliothèque de formulaires.
+Zod, avec la bibliothèque de formulaires : le même schéma valide à l'écran et côté serveur, donc une erreur de validation a un seul libellé possible.
 
 ### Erreurs serveur
 

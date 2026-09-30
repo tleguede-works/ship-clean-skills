@@ -1756,3 +1756,124 @@ Et pour les tests eux-mêmes :
 **v1.9.1 et v1.9.2** : PR #44 et #45, `snapshot verify` → `pass: true`, 96 fichiers,
 0 différence, et la suite rejouée dans l'archive extraite — **14 tests de fumée
 verts**, contre 1 échec en v1.9.1.
+
+## F-44 — Phase 4 (Onduleur) : l'architecture, et deux contrôles qui divergeaient sur la même entrée
+
+1 573 lignes, 15 slices, 6 fondations, 10 `CREATE TABLE`, 10 gardes DDL, 7 vagues
+topologiques, zéro cycle. Dix gates verts. Et **deux contrôles qui ne se
+contredisaient pas** : ils lisaient deux champs différents de la même entrée, et
+chacun en tirait une conclusion défendable.
+
+### Le compte de slices est exact, et vérifiable
+
+Le roadmap annonçait **15 slices** : 9 fonctionnelles et 6 d'obligation transverse.
+L'architecture en déclare 15, nommées, avec pour chacune dépendances, parallèle
+possible, données et ce qu'elle **ne fait pas**. Le compte n'est pas approché — il
+est **compté**, et c'est la première fois que le compte du roadmap et celui de
+l'architecture coïncident sans que personne ait dû choisir le plus petit des deux.
+
+Trois décisions qui ont porté l'essentiel :
+
+**La base passe de quatre choses à cinq.** C9 interdit tout identifiant de personne
+dans un événement d'audit, et l'outil d'audit fait la jointure « compte créé /
+Commandes ouverte » par un identifiant pseudo-aléatoire — qui reste un identifiant
+de personne. Donc la jointure se fait chez nous. C'est la question Q-C du roadmap,
+et elle a une réponse architecturale, pas un « à demander ».
+
+**`fenetre_mesure` est une ligne, pas une configuration.** B3 rend le rapprochement
+unique et définitif, donc la fenêtre d'observation **ne s'ouvre qu'une fois**. Un
+trigger refuse toute mise à jour, et ce refus est écrit comme garde DDL — donc
+exécuté, pas affirmé.
+
+**`session_mesure` n'a aucune clé étrangère vers `compte`.** C'est la garantie
+mécanique de C9 : il n'existe pas de chemin dans le schéma qui relie une session à
+une personne. Une garde le vérifie. C'est le genre de contrainte qui tient quand
+personne n'y pense, et qui cède dès que quelqu'un ajoute une colonne.
+
+### Défaut 1 — une slice de Phase 4 se croyait avoir un plan
+
+`register` écrivait `plan_path = relPath`. Les slices sont enregistrées **contre le
+document d'architecture** — c'est leur lieu de description — donc `plan_path` valait
+`.forge/architecture.md`. Deux contrôles divergeaient :
+
+| contrôle | lit | conclut |
+|---|---|---|
+| `no_premature_artifacts` | `plan_path` | un plan existe → « plan écrit avant la phase 5 » |
+| `slice_plan_exists` | `content_hash` | un plan a été écrit → il a **disparu** → réécris-le |
+
+Le premier signalait les **15 slices**. Le second en exigeait **15 plans**, dont
+personne n'avait écrit le nom, sur une phase où les écrire est le travail de la
+phase **suivante**.
+
+**Le garde-fou n'était pas faux dans les deux cas. L'entrée mentait**, et de deux
+façons incompatibles.
+
+La correction est un prédicat unique, `isPlanPath`, qui décide sur le **chemin** —
+la seule chose que l'enregistrement connaisse. Le contenu n'existe pas encore, et le
+nom de la slice est identique dans les deux cas. Sans un endroit unique, les deux
+lectures divergent à nouveau : c'est ce que j'ai d'abord fait, et le test l'a vu
+avant moi.
+
+Et `content_hash` ne prouve **rien** sur un fichier absent. `plan_hash` le remplace,
+écrit seulement pour un chemin de plan.
+
+### Défaut 2 — la même entrée ne peut pas avoir deux propriétaires
+
+En appliquant le correctif, un second écart est apparu, de la même famille : une
+slice de Phase 4 et le document d'architecture sont **le même fichier**. Donc
+`state_frontmatter_in_sync` comparait le statut de 15 slices au `status:` d'un seul
+front matter, et en concluait 15 divergences — dont il ne pouvait y en avoir qu'une.
+
+Les 15 slices sont désormais des **entrées sans statut propre** : leur statut est
+`identified`, et le statut du fichier appartient au document. C'est plus cohérent,
+et c'est la seule forme qui ne ment pas.
+
+### Le contrôle `no_undecided_slots` a fait son travail, et il avait raison
+
+Architecture approuvée, donc **plus aucun « À DÉCIDER » ne doit survivre**. Il en
+restait 16. Le contrôle bloquait, et il avait raison : les huit cases de
+`conventions.md` étaient des cases vides **réellement** vides — l'ORM, le state
+management, le HTTP client, la validation, le styling, la bibliothèque de
+composants, les icônes, les formulaires. Aucune n'avait été remplie, et le tableau
+avait été approuvé tel quel.
+
+Elles sont maintenant tranchées, chacune avec sa raison :
+
+- **Drizzle** et non un ORM qui génère son DDL : le § 4.10 écrit du SQL exécutable,
+  donc la preuve doit porter sur le SQL exécuté, pas sur un schéma dérivé d'objets
+  JavaScript ;
+- **`fetch` natif** et non une couche : elle coûterait des kilo-octets sur le chemin
+  critique de C6 pour des fonctions que TanStack Query fait déjà ;
+- **aucune bibliothèque de composants** : elle apporterait une deuxième source de
+  vérité pour exactement les valeurs qui viennent d'être mesurées contraste par
+  contraste.
+
+Et les points du design system, eux, ne sont pas tous des décisions à prendre —
+c'est ce que la section 6 réécrite dit. Le point 4 (charte de marque) n'est **pas**
+un trou : la règle est prête, le point de substitution est écrit, et ce qui manque
+c'est une **demande** que personne n'a faite. B6 décrit le marchand comme une
+source, pas comme un commanditaire.
+
+### Un défaut que je n'ai pas cherché
+
+En relisant la sortie de `no_undecided_slots`, une de ses propres lignes de règle
+apparaissait dans le document que j'avais écrit — le contrôle qui interdit « À
+DÉCIDER » citait son propre motif dans le design system, et se signalait lui-même.
+
+C'est une classe de défaut que je n'avais jamais rencontrée : **un contrôle qui
+porte sur son propre vocabulaire se déclenche sur la documentation du contrôle**.
+Le motif a été reformulé, et le contrôle a raison de tout de même — les 15 autres
+cas étaient réels.
+
+### Résultat
+
+| gate | |
+|---|---|
+| `forge-guard all` | **PASS** — 15 contrôles |
+| `consistency all` | **PASS** — 8 contrôles, 3 skips attendus |
+| `design-check contrast` / `tokens` / `tokens-used` / `component-parity` | **PASS** ×4 |
+| `ddl-exec completeness` / `execute` / `guards` | **PASS** ×3 — 8 tables, 10 gardes, 0 morte |
+| `dependency-check` | **PASS** — 7 vagues, 0 cycle, 0 orphelin |
+
+**v1.9.3** : PR #47, `snapshot verify` → `pass: true`, 96 fichiers, 0 différence,
+188 tests + 7 non exécutés dans l'archive extraite, 14 tests de fumée verts.
