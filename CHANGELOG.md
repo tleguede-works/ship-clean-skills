@@ -27,8 +27,6 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
-## [1.9.0] - 2026-09-30
-
 ### fix(tokens-used) — une citation en prose passait, et rien ne vérifiait l'absence
 
 `tokens-used` compare ce que chaque écran écrit à ce que le design system définit.
@@ -82,6 +80,134 @@ compter comme une source vérifiée rendrait cette non-vacuité **verte**, puisq
 design system en produit toujours. Le compteur porte donc sur les **écrans seuls**,
 et `citations` est le nombre que la sortie affiche.
 
+
+### fix(component-parity) — un contrôle qui n'a rien vérifié rendait « conforme »
+
+`component-parity` découvrait les composants par la **forme de leur nom** —
+`^### PascalCase$` — puis n'en retenait que ceux dont le libellé de contrat
+s'écrivait exactement `**États** :`.
+
+Or tout ce que ce skill produit est en français. Sur Onduleur, premier design
+system français à passer par ici, la mesure est celle-ci :
+
+```
+pass: true
+components: [ { component: "Bouton", slots: 3, states: 0 } ]
+```
+
+**Un composant lu sur sept. Zéro état lu sur celui-là. Zéro exigence portée sur
+aucun écran. Et `pass: true`.**
+
+`### Tuile produit`, `### Champ de saisie`, `### Ligne de commande`,
+`### Panneau d'état` sont invisibles : la forme du nom ne correspond pas. Et
+`Bouton` est trouvé, mais son libellé s'écrit `**États** —` là où le lecteur
+attendait `**États** :`, donc ses six états n'existent pas pour le contrôle. Le
+pire n'est pas le faux positif : c'est un contrôle dont **le périmètre vide se
+déclare conforme**.
+
+**La correction de fond est la non-vacuité.** Un composant est désormais
+reconnu par la **présence de son contrat** — `**États**` ou `**Slots**` — et non
+par la forme de son nom. Le nom redevient ce qu'il est : une étiquette, lisible,
+avec ses espaces et son apostrophe. Et si le design system ne déclare la surface
+d'aucun composant, le contrôle **refuse** et rend les titres qu'il a lus, pour
+qu'on sache quoi écrire. Un contrôle qui n'a rien vérifié ne dit plus
+« conforme ».
+
+Le séparateur du libellé est lu des deux côtés (`:` ou tiret cadratin), et **ce
+qui suit le libellé décide de la forme** — tableau ou prose. Un document écrit
+volontiers `**États** — rendus par X :` suivi d'un tableau ; déduire la forme de
+ce qui vient après le séparateur envoyait lire l'en-tête du tableau comme une
+prose inline, et déclarait zéro état.
+
+**Et le cinquième mécanisme du dossier, reproduit en corrigeant le sixième.**
+Ajouter `[ \t]*` après le séparateur suffisait ; j'ai écrit `\s*`, qui franchit le
+retour à la ligne : il avalait la ligne vide et l'en-tête du tableau, `(.*)` lisait
+`| État | Déclencheur |` comme une prose, ne trouvait aucun backtick, et déclarait
+zéro état. C'est le motif exact de la borne de 600 caractères et du
+`^\s*` qui traversait les lignes — le **deuxième** contrôle à rejouer le même
+schéma en corrigeant le précédent.
+
+`skipped_headings` est désormais dans la sortie : un composant absent de la liste
+des lus est **visible**, au lieu d'être une absence.
+
+### fix(design-check) — un texte français à 3,80:1 passait, parce que le contrôle ne savait pas le nommer
+
+`design-check` classait chaque couleur d'après son **nom**, et ses trois signaux
+étaient des littéraux anglais : `--color-text-*`, `--color-ink-50/100/200`,
+`*-subtle`. Ils ont été écrits contre le design system d'« Amberline », dont les
+tokens sont nommés en anglais.
+
+Or tout ce que ce skill produit est en français — `SKILL.md`, les gabarits, les
+agents, et jusqu'à l'exemple canonique d'ambiance de `design-quality.md ». Sur
+« Onduleur », premier design system français passé ici, **tout** est tombé sur
+« composant non textuel » et s'est trouvé jugé à 3:1. Les deux directions sont
+mortes, et la seconde est la grave :
+
+- **faux positifs** — un texte inversé, jamais posé que sur de l'encre, mesuré à
+  1,10:1 sur le papier ; quatre teintes d'état, qui sont des teintes de survol et
+  des trames, exigées à 3:1 alors que la WCAG 1.4.11 ne s'applique pas à un état
+  décoratif ;
+- **faux négatif, et il est dans le dossier mesuré** — `--color-texte-desactive`
+  est un token de texte, mesuré à **3,80:1** sur `--color-surface-sunken`. Classé
+  composant, il était jugé contre 3:1, donc **conforme**, et il est apparu dans
+  `measured` sans jamais apparaître dans `offenders`. C'est exactement le défaut
+  que ce script a été écrit pour trouver — `--color-text-secondary` à 4,17:1 sur
+  Amberline — reproduit dans le document qu'il venait de mesurer.
+
+C'est le **septième** mécanisme de la même famille, et le premier qui échoue en
+silence : les six autres produisaient du bruit visible, celui-ci produisait un
+vert.
+
+### feat(design-check) — le document déclare ses classes, le script mesure
+
+Ajouter `--color-texte-*` à côté de `--color-text-*` n'aurait fait que déplacer le
+problème : il faudrait réécrire la liste à chaque vocabulaire, et le contrôle
+continuerait à **deviner**. Le principe tenu depuis cinq échecs est l'inverse — un
+contrôle qui marche **résout un pointeur déclaré**.
+
+Le design system déclare donc ses classes une fois, dans un bloc
+`<!-- forge:token-classes -->` : `text`, `surface`, `nontext`, `on`, `exempt`. La
+résolution passe par la déclaration, puis par `EXEMPT`, puis par les heuristiques
+historiques — ce qui laisse inchangés les design systems déjà écrits, dont Amberline
+et ses 184 tests.
+
+`on:` est ce qui manquait le plus. Un texte est mesuré contre **toute** surface du
+document, ce qui est juste pour de l'encre et faux pour un texte inversé : sans
+`on:`, il est mesuré contre le papier, où il n'est jamais posé, et échoue par
+construction. Un faux positif par palette, c'est-à-dire presque toutes. `on:` dit
+sur quels fonds ce texte est réellement posé, et la mesure porte enfin sur
+l'endroit où l'on lit.
+
+`exempt:` porte une **raison** obligatoire, comme `EXEMPT` en portait une. Une
+teinte décorative n'est pas un composant d'interface, et l'exempter sans dire
+pourquoi serait exactement le contrôle qui s'ignore.
+
+Les tokens exigés ne sont plus une liste de **noms anglais** quand le document
+déclare ses classes : exiger `--color-text-primary` d'un document français
+l'obligerait à déclarer un token qu'il n'a pas, ou à renommer sa palette pour
+satisfaire un script. L'exigence devient structurelle — « il y a au moins un
+texte, et un fond » — ce qui est ce que la liste en dur cherchait réellement à
+garantir. Un token de couleur absent des six listes est signalé : la déclaration
+est un engagement, donc l'omettre est un choix, pas un oubli qu'un nom puisse
+rattraper.
+
+**Deux défauts trouvés en corrigeant le premier.** Un composant déclaré
+n'`entre` pas dans les surfaces : la mesure retain le pire couple, et du texte de
+corps se retrouvait signalé à 2,16:1 sur le fond d'un bouton où il ne sera jamais
+écrit. Un contrôle plus strict que la réalité n'est pas plus prudent, il est faux.
+Et le rapport d'échec nommait le **token** au lieu de la **surface** : la mesure
+était juste, l'attribution ne l'était pas — ce qui envoie corriger la mauvaise
+couleur. Plus une ligne de continuation de liste, que le parseur perdait : la
+déclaration paraissait complète et ne l'était qu'à moitié.
+
+### feat(design-system) — le gabarit déclare ses classes, et explique pourquoi
+
+Le gabarit pose la déclaration avant la section 1, avec les cinq directives, leurs
+seuils, et la raison de `on:`. Un design system rédigé en suivant le gabarit est
+donc mesuré correctement **sans avoir lu le code du contrôle** — ce qui est le
+seul moyen que la règle tienne pour quelqu'un qui écrit en français.
+
+## [1.8.0] - 2026-09-30
 
 ### fix(component-parity) — un contrôle qui n'a rien vérifié rendait « conforme »
 

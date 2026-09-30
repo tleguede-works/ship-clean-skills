@@ -22,6 +22,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const VERSION_FILE = path.join(ROOT, 'VERSION');
@@ -129,6 +130,29 @@ function cmdCheck() {
   if (!pass) process.exit(1);
 }
 
+/** Les versions dont le tag existe : elles sont publiées, quoi qu'en dise le fichier. */
+function publishedTags() {
+  try {
+    const raw = execFileSync('git', ['tag', '--list'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return raw.split('\n').map(s => s.trim()).filter(s => /^v?\d+\.\d+\.\d+$/.test(s))
+      .map(s => s.replace(/^v/, ''));
+  } catch {
+    // Hors d'un dépôt git, la protection n'est pas disponible — et il faut le dire
+    // plutôt que de laisser croire qu'elle a tourné.
+    return [];
+  }
+}
+
+function cmpVersion(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
 function cmdBump(kind) {
   if (!['major', 'minor', 'patch'].includes(kind)) {
     process.stdout.write(JSON.stringify({
@@ -164,6 +188,50 @@ function cmdBump(kind) {
   const from = currentVersion();
   const to = bump(from, kind);
   const today = new Date().toISOString().slice(0, 10);
+
+  // ## La promotion ne peut pas écraser une version déjà publiée
+  //
+  // Constaté trois fois dans ce dépôt, par trois chemins différents qui aboutissent
+  // au même geste : couper une branche **avant** le `chore(release)` du bot, puis
+  // promouvoir `[Unreleased]` en 1.9.0 et merger. Le titre écrit **remplace**
+  // `## [1.8.0]` dans le fichier reconstruit, et la section 1.8.0 — celle du
+  // correctif `component-parity` — disparaît du CHANGELOG, **sans erreur**.
+  //
+  // `check` ne voit rien : il compare VERSION à la dernière section, et une section
+  // disparue ne se signale pas d'elle-même. Le.tag, lui, existe encore.
+  //
+  // Donc la protection est ici, avant d'écrire : si la version qu'on s'apprête à
+  // écrire **correspond à un tag existant**, c'est qu'elle est déjà publiée, et la
+  // promotion est un effacement. Le même contrôle refuse aussi une version
+  // **antérieure** à la dernière section datée, qui est un retour en arrière.
+  //
+  // La promotion reste une opération du bot. Ce contrôle ne la rend pas plus sûr à
+  // la main : il rend **le dégât impossible à écrire sans s'en apercevoir**.
+  const tags = publishedTags();
+  if (tags.includes(to)) {
+    process.stdout.write(JSON.stringify({
+      error: 'version_deja_publiee',
+      version: to,
+      rule: 'Un tag existe déjà pour cette version. La promouvoir ici remplacerait la ' +
+            'section `[' + to + ']` déjà publiée — ou, si elle est absente du CHANGELOG, ' +
+            'la laisserait absente. Les tags : ' + tags.slice(-5).join(', '),
+      hint: 'Rejouer `git pull` avant de bumper : la branche est probablement antérieure au ' +
+            '`chore(release)` du bot, et son CHANGELOG ne connaît pas cette version.'
+    }, null, 2) + '\n');
+    process.exit(1);
+  }
+  const dated = sections.filter(s => s.version !== 'Unreleased').map(s => s.version);
+  if (cmpVersion(to, dated[0] || '0.0.0') < 0) {
+    process.stdout.write(JSON.stringify({
+      error: 'promotion_en_arriere',
+      version: to,
+      derniere_version_au_changelog: dated[0],
+      rule: 'La version à écrire est antérieure à la dernière section datée. C\'est le ' +
+            'signe d\'un CHANGELOG antérieur au `chore(release)` du bot.',
+      hint: 'Rejouer `git pull --rebase` avant de bumper.'
+    }, null, 2) + '\n');
+    process.exit(1);
+  }
 
   // Reconstruire le CHANGELOG : on promeut [Unreleased] en version datée.
   const lines = text.split('\n');
