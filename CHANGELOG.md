@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-09-30
+
 ### fix(release) — la protection par tag interrogeait le mauvais dépôt
 
 `release.js` résout `VERSION` et `CHANGELOG.md` depuis `__dirname`, mais
