@@ -434,6 +434,16 @@ function cmdRegister(root, kind, key, relPath, type, opts) {
   entry.type = type || (fm && fm.data.type) || key;
   entry.status = entry.status || fileStatus;
   entry.content_hash = L.contentHash(abs);
+  // La carte des titres numerotes est la **reference de renumerotation** : sans
+  // elle, le premier amendement d'un artefact pourrait renumeroter librement,
+  // puisque rien ne saurait dire ce qui a change. C'est la meme raison que
+  // `content_hash` : on memorise la forme au moment ou l'artefact entre.
+  //
+  // Un artefact peut etre enregistre **avant** d'etre ecrit — c'est un
+  // workflow legitime, et `check-stale` sait lire `plan_file_missing`. Lire le
+  // fichier sans garde ferait echouer un enregistrement qui fonctionnait.
+  if (fs.existsSync(abs)) entry.headings = numberedHeadings(fs.readFileSync(abs, 'utf8'));
+  else delete entry.headings;
   entry.updated_at = new Date().toISOString();
   if (fm && fm.data.version) entry.version = fm.data.version;
   if (fm && fm.data.slice) entry.slice = fm.data.slice;
@@ -504,7 +514,14 @@ function cmdSetStatus(root, kind, key, status) {
   if (relPath) {
     mirror = mirrorStatusToFile(root, relPath, status);
     if (mirror.mirrored) {
-      entry.content_hash = L.contentHash(L.toAbs(root, relPath));
+      const abs2 = L.toAbs(root, relPath);
+      entry.content_hash = L.contentHash(abs2);
+      // La reference de renumerotation se prend a l'approbation, pas seulement a
+      // l'enregistrement : c'est la version **approuvee** que les autres artefacts
+      // citent par numero. Une version jamais approuvee n'a pas de reference.
+      if (status === 'approved' && fs.existsSync(abs2)) {
+        entry.headings = numberedHeadings(fs.readFileSync(abs2, 'utf8'));
+      }
     }
     if (!mirror.mirrored) {
       state.divergences.push({
@@ -1409,8 +1426,211 @@ const USAGE = {
   finding: 'state.js finding <root> --domain=<règle> --severity=<s> --origin=<o> "<fait>" "<correction>"',
   resolve: 'state.js finding <root> --resolve <id> --promoted-to=<règle>',
   status: 'state.js status <root>',
-  log: 'state.js log <root> <type> <message> [k=v ...]'
+  log: 'state.js log <root> <type> <message> [k=v ...]',
+  amend: 'state.js amend <root> <key> --reason <texte> [--changes <f>] [--allow-renumber --renumber-reason <texte>]'
 };
+
+/* ------------------------------------------------------------------ *
+ * Amendement : etendre, jamais renumeroter
+ * ------------------------------------------------------------------ */
+
+/**
+ * Les titres numerotes d'un document : `{ '5.15': 'DELETE /api/v1/…' }`.
+ *
+ * Meme lecture que `consistency-check headingMap` — quatre formes acceptees
+ * (`## 5.15`, `## §5 —`, `## §5.15`, `## Étape 3 —`). Deux lectures qui
+ * divergent sur un meme fichier donneraient deux verdicts opposes sur le meme
+ * document, ce qui est la pire des formes du probleme.
+ */
+function numberedHeadings(md) {
+  const out = {};
+  const re = /^#{1,6}[ \t]+(?:§[ \t]*)?(?:[Ee\u00C9\u00E9]tape[ \t]+)?(\d+(?:\.\d+)*)\b[ \t.—–-]*(.*)$/gm;
+  let m;
+  while ((m = re.exec(md)) !== null) {
+    if (!(m[1] in out)) out[m[1]] = m[2].trim().slice(0, 120);
+  }
+  return out;
+}
+
+/** Retrouver une entree et son genre, comme `cmdHash`. */
+function findEntry(state, key) {
+  const buckets = [
+    ['deliverable', state.deliverables || {}],
+    ['screen', state.screens || {}],
+    ['slice', state.slices || {}],
+    ['foundation', state.foundations || {}]
+  ];
+  for (const [kind, bucket] of buckets) if (bucket[key]) return { kind, bucket, entry: bucket[key] };
+  return null;
+}
+
+/**
+ * Enregistrer un amendement, et refuser le renumerotage.
+ *
+ * ## Ce que garantit cet amendement
+ *
+ * Un document que d'autres artefacts citent **par numero** ne doit pas etre
+ * renumerote : il doit etre **etendu**. Inserer en § 5.9 decale § 5.10, § 5.11,
+ * tout le reste — et chaque renvoi pointe alors vers une section qui existe
+ * encore, donc **vers la mauvaise**. Rien ne signale la derive : le pointeur
+ * resout, il resout vers n'importe quoi.
+ *
+ * Constate, INC-011 : l'amendement des deux causes racines critiques a insere
+ * deux endpoints en § 5.9 et § 5.10 ; dix-sept renvois dans huit plans sont
+ * devenu faux, `error-handling` (4), `restriction-lignes` (3), `journal-acces`
+ * (4), `export-provenance` (4). Le correctif sans risque etait d'ajouter les
+ * deux endpoints **en fin de § 5**.
+ *
+ * ## Pourquoi un refus, et pas un avertissement
+ *
+ * Parce que l'avertissement se contourne : un auteur pressed rajoute au milieu,
+ * voit un avertissement, passe outre. Alors que **refuser** oblige a ecrire
+ * `--allow-renumber` avec une raison — et cette raison se lit six mois plus
+ * tard, dans l'etat, a cote du numero casse. C'est la seule trace qui reste.
+ *
+ * `--allow-renumber` n'est donc pas un interrupteur : c'est une **decision
+ * ecrite**, exigeante une raison, et elle est enregistree.
+ *
+ * ## Pourquoi le statut redevient `stale`
+ *
+ * Un artefact amende n'est plus celui qui a ete approuve. Le remettre en
+ * `stale` plutot qu'en `draft` suit le chemin deja documente : un amendement du
+ * PRD rend `conventions.md` `stale`, qui repasse `approved` au gate. La
+ * terminalite ici n'est donc pas une sanction : c'est le meme trajet que celui
+ * que le skill decrit deja pour un document vivant.
+ */
+function cmdAmend(root, key, flags, argv) {
+  const state = loadState(root);
+  const found = findEntry(state, key);
+  if (!found) {
+    L.fail({ error: 'unknown_entry', key, hint: 'amender un artefact enregistre : state.js status' });
+  }
+  const { kind, entry } = found;
+  const relPath = entry.path || entry.plan_path;
+  const abs = L.toAbs(root, relPath);
+  if (!fs.existsSync(abs)) {
+    L.fail({ error: 'artifact_missing', key, path: relPath });
+  }
+
+  // La valeur d'un drapeau n'est pas dans `flags` — `flags` ne contient que ce
+  // qui commence par `--`. Elle est dans `argv`, comme le fait deja `register`
+  // pour `--requires`. Lire le mauvais tableau donne silencieusement `null` :
+  // un amendement sans raison passe pour un amendement sans raison.
+  const flag = n => {
+    const g = argv.find(x => x.startsWith(`--${n}=`));
+    if (g) return g.slice(n.length + 3);
+    if (argv.includes(`--${n}`)) {
+      const v = argv[argv.indexOf(`--${n}`) + 1];
+      if (v && !v.startsWith('--')) return v;
+    }
+    return null;
+  };
+  const reason = flag('reason');
+  if (!reason) {
+    L.fail({
+      error: 'amend_without_reason', key,
+      hint: 'Un amendement sans raison est une edition ordinaire. --reason <texte> dit pourquoi.'
+    });
+  }
+
+  const before = entry.headings || null;
+  const md = fs.readFileSync(abs, 'utf8');
+  const after = numberedHeadings(md);
+
+  // Trois classes de derive, du plus grave au moins grave.
+  const reused = [];    // meme numero, autre sujet → les renvois pointent ailleurs
+  const removed = [];   // le numero a disparu → les renvois pointent dans le vide
+  const added = [];     // le numero est nouveau → sans risque, c'est l'extension
+  if (before) {
+    for (const [num, title] of Object.entries(before)) {
+      if (!(num in after)) removed.push({ section: num, was: title });
+      else if (after[num] !== title) reused.push({ section: num, was: title, now: after[num] });
+    }
+    for (const num of Object.keys(after)) if (!(num in before)) added.push({ section: num, now: after[num] });
+  }
+
+  const renumbered = reused.concat(removed);
+  const allow = flags.includes('--allow-renumber');
+  if (renumbered.length && !allow) {
+    L.fail({
+      error: 'renumbering_refused', key, path: relPath,
+      removed, reused,
+      how_to_continue: [
+        'Un document cite par numero s\'etend, il ne se renumerote pas.',
+        'Corrige sans risque : ajouter les sections NOUVELLES en fin de numerotation,',
+        'et ne toucher a aucun numero existant. Les renvois des autres artefacts',
+        'restent alors exacts.',
+        'Si le renumerotage est unavoidable, il doit etre explicite :',
+        `--reason "${reason}" --allow-renumber   # et la raison sera lue dans l'etat`
+      ],
+      rule: 'Inserer dans l\'ordre renumerote tout le reste, et chaque renvoi pointe ' +
+            'alors vers une section qui existe encore — donc vers la mauvaise. Aucun ' +
+            'controle ne voit une derive qui resout.'
+    });
+  }
+  if (renumbered.length && allow && !flag('renumber-reason')) {
+    L.fail({
+      error: 'renumber_without_reason', key,
+      hint: '--allow-renumber exige --renumber-reason <texte> : la raison de ' +
+            'renumeroter est ce qui reste lisible quand personne ne se souvient pourquoi.'
+    });
+  }
+
+  // Le chemin d'un amendement : la liste de ce qui change, ecrite par l'auteur.
+  const changesFlag = flag('changes');
+  let changes = null;
+  if (changesFlag) {
+    const cpath = L.toAbs(root, changesFlag);
+    if (!fs.existsSync(cpath)) {
+      L.fail({ error: 'changes_file_missing', path: changesFlag });
+    }
+    changes = fs.readFileSync(cpath, 'utf8').split('\n')
+      .map(l => l.replace(/^\s*[-*]\s*/, '').trim())
+      .filter(Boolean);
+    if (!changes.length) {
+      L.fail({ error: 'changes_empty', path: changesFlag,
+        hint: 'Un amendement sans liste de changements est un amendement non explain.' });
+    }
+  }
+
+  entry.amended_from = entry.content_hash || null;
+  entry.amended_at = new Date().toISOString();
+  entry.amendment = {
+    reason,
+    changes: changes || null,
+    renumbered: renumbered.length ? {
+      acknowledged: allow,
+      reason: flag('renumber-reason'),
+      removed, reused
+    } : null,
+    added_sections: added,
+    headings: after
+  };
+  entry.headings = after;
+  if (kind === 'slice' || kind === 'foundation') entry.plan_hash = L.contentHash(abs);
+  else entry.content_hash = L.contentHash(abs);
+
+  // Le chemin documente : un artefact amende n'est plus celui qui a ete approuve.
+  if ((L.STATUS_VOCAB.document || []).includes(entry.status) && entry.status !== 'stale') {
+    entry.previous_status = entry.status;
+    entry.status = 'stale';
+  }
+
+  audit(state, 'amend', `Amendement enregistre : ${key}`, { kind, reason, renumbered: renumbered.length });
+  save(root, state, { type: 'amend', kind, key, reason });
+
+  L.out({
+    command: 'amend', kind, key, path: relPath, reason,
+    status: entry.status, previous_status: entry.previous_status || null,
+    amended_from: entry.amended_from,
+    sections_added: added.length,
+    renumbered: renumbered.length,
+    renumbering_acknowledged: !!allow,
+    removed, reused, added,
+    changes: changes || null,
+    rule: 'Un amendement etend un document, il ne le renumerote pas.'
+  });
+}
 
 function main() {
   const argv = process.argv.slice(2);
@@ -1431,6 +1651,7 @@ function main() {
       return cmdInit(positional[0], positional[1], refs);
     }
     case 'dep': return cmdDep(positional[0], positional[1], positional[2]);
+    case 'amend': return cmdAmend(positional[0], positional[1], flags, argv);
     case 'register': {
       // `--requires` et `--amended-by` sont des dépendances déclarées, pas des
       // options de confort : sans elles, un livrable approuvé peut reposer sur

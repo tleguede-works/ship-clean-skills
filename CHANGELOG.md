@@ -27,6 +27,100 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### feat(forge) — Le contrat d'amendement : étendre, jamais renuméroter
+
+Un amendement n'est plus une édition : c'est une commande, et elle **refuse** le
+renumérotage.
+
+## Le motif
+
+Un document que d'autres artefacts citent **par numéro** ne doit pas être
+renuméroté : il doit être **étendu**. Insérer en § 5.9 décale § 5.10, § 5.11, tout
+le reste — et chaque renvoi pointe alors vers une section **qui existe encore**,
+donc vers la **mauvaise**. C'est la pire forme de dérive : elle **résout**, un
+contrôle la juge saine, et rien ne la signale.
+
+INC-011, mesuré : l'amendement de deux causes racines critiques a inséré deux
+endpoints en § 5.9 et § 5.10. **Dix-sept renvois** dans huit plans sont devenus
+faux — `error-handling` (4), `restriction-lignes` (3), `journal-acces` (4),
+`export-provenance` (4) — et pas une seule ligne ne le disait. Le correctif sans
+risque était d'ajouter les deux endpoints **en fin de § 5**.
+
+## `state.js amend`
+
+```bash
+state.js amend <anchor> <clé> --reason "<pourquoi>" [--changes <f>]
+```
+
+| | |
+|---|---|
+| `--reason` obligatoire | un amendement sans raison est une édition ordinaire. Le dire est ce qui le distingue. |
+| carte des titres | capturée à l'**approbation** — la version que les autres artefacts citent. Sans elle, le premier amendement pourrait renuméroter librement : rien ne saurait dire ce qui a changé. |
+| renumérotage → **refus** | un numéro qui porte un autre sujet, ou qui disparaît, refuse la commande et nomme la dérive **dans l'ordre**. |
+| `--allow-renumber` | n'est pas un interrupteur : il exige `--renumber-reason <texte>`, qui reste **dans l'état**, à côté des numéros cassés. |
+| statut → `stale` | un artefact amendé n'est plus celui qui a été approuvé. `stale` et non `draft` : c'est le trajet déjà décrit pour un document vivant. |
+
+**Pourquoi un refus et non un avertissement** : l'avertissement se contourne. Le
+refus oblige à écrire, et cette raison se lit six mois plus tard, dans l'état, à
+côté du numéro cassé. C'est la seule trace qui reste.
+
+## `consistency-check references` — la troisième famille de pointeurs
+
+Après `exigée → produite` et `produite → rendue`, voici **`citée → résolue`**.
+Deux verdicts, parce que ce sont deux défauts de nature différente :
+
+- **pointeur cassé** — cible nommée, section absente → **échec**. C'est la dérive
+  de numérotation. Sur le projet de test : **0**.
+- **cible non déclarée** — renvoi nu (`§ 5.15` sans nommer le document) →
+  **compté**, jamais échec. Sur le projet de test : **276**.
+
+Les faire tous échouer produirait un contrôle qu'on éteint au bout d'une semaine
+— ce qui est arrivé **quatre fois** dans ce dossier. Les 276 ont donc une **voie de
+sortie écrite dans la sortie du contrôle** : nommer le fichier, et le compte tombe.
+
+## Cinq échecs de cette mesure, tous de la même famille
+
+Cinquième série de contrôles à devoir **déduire** plutôt que résoudre. Le compte :
+
+| conception | cassés | faux positifs |
+|---|---|---|
+| fenêtre 140 car. après un nom de fichier | **539** | tous |
+| fenêtre 60 car. | 13 | tous |
+| fenêtre 30 car. | 5 | tous |
+| fenêtre 20 car. | 3 | tous |
+| **fenêtre 12 car.** | **1** | 0 |
+
+Un nom de fichier et un numéro de section ne sont pas voisins en prose. Un
+document nomme `design-system.md` une fois, puis cite `§ 2.3` quarante caractères
+plus loin, dans un autre paragraphe. Une fenêtre large attribue au premier nom
+trouvé tout ce qui suit dans le document.
+
+Puis **quatre formes de titre numéroté**, parce qu'un motif trop étroit est aussi
+un motif faux :
+
+| forme | d'où |
+|---|---|
+| `## 5.15 Titre` | gabarits du skill |
+| `## §5 — Titre` | `references/archetypes.md` |
+| `## §5.15 Titre` | mélange des deux |
+| `## Étape 3 — Titre` | `references/design-quality.md`, qui écrit « le §3 » de sa propre prose |
+
+N'en lire qu'une produisait **dix-neuf faux positifs** — dont dix-huit vers
+`archetypes.md § 4` et `§ 9`, qui existent. Et `[Ee]tape` ne matchait pas
+`## **É**tape 3` : l'accentué de `Étape` est un `É` majuscule (U+00C9). Même
+famille que la corruption `U+BC95`/`U+C5D0` d'un écran approuvé : **l'annotation
+typographique fait partie de la donnée**.
+
+## Tests
+
++10 (159 → 169) : cinq pour les renvois, cinq pour l'amendement. Chacun **vu
+échouer** avant d'être corrigé, chacun avec son témoin propre.
+
+Le plus important des deux côtés est le témoin : sans « un renvoi valide est
+résolu » on ne sait pas si le contrôle distingue un renvoi cassé d'un renvoi
+valide ; sans « étendre en fin passe » on ne sait pas si `amend` refuse *tout*, y
+compris ce qu'il faut laisser passer.
+
 ## [1.5.0] - 2026-09-30
 
 ### feat(forge) — `ddl-exec` : le DDL s'exécute, ou n'est pas écrit

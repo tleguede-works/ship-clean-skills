@@ -253,6 +253,43 @@ But : établir le contexte du projet et générer la base des conventions avant 
 
 **`conventions.md` est un document vivant.** Il démarre avec ce qui est connu en Phase 0, s'enrichit en Phase 4 (architecture : choix de validation library, state management), et peut être amendé à tout moment. Les plans d'implémentation (Phase 5) y font référence ; toute modification ultérieure de `conventions.md` invalide les plans qui en dépendent — lance `state.js check-stale` après chaque amendement.
 
+#### Le contrat d'amendement — **étendre, jamais renuméroter**
+
+Un document que d'autres artefacts citent **par numéro** ne doit pas être renuméroté : il doit être **étendu**. Insérer en § 5.9 décale § 5.10, § 5.11, tout le reste — et chaque renvoi pointe alors vers une section **qui existe encore**, donc vers la mauvaise. C'est la pire forme de dérive : elle **résout**, un contrôle la juge saine, et rien ne la signale.
+
+Constaté, INC-011 : l'amendement de deux causes racines critiques a inséré deux endpoints en § 5.9 et § 5.10. **Dix-sept renvois** dans huit plans sont devenus faux — `error-handling` (4), `restriction-lignes` (3), `journal-acces` (4), `export-provenance` (4) — et pas une seule ligne ne le disait. Le correctif sans risque était d'ajouter les deux endpoints **en fin de § 5**.
+
+**N'edite pas un artefact approuvé. Amende-le :**
+
+```bash
+node "$FORGE/scripts/state.js" amend <anchor> <clé> \
+  --reason "<pourquoi cet amendement existe>" \
+  [--changes <fichier-listant-ce-qui-change>]
+```
+
+Ce que la commande fait, et pourquoi chaque point est là :
+
+| | |
+|---|---|
+| **`--reason` obligatoire** | un amendement sans raison est une édition ordinaire. Le dire est ce qui le distingue. |
+| **carte des titres** | elle est capturée à l'**approbation** — c'est la version que les autres artefacts citent. Sans elle, le premier amendement pourrait renuméroter librement. |
+| **renumérotage → refus** | un numéro qui porte un autre sujet, ou qui disparaît, **refuse** la commande et nomme la dérive, dans l'ordre. L'avertissement se contourne ; le refus oblige à écrire. |
+| **`--allow-renumber`** | n'est pas un interrupteur : il exige `--renumber-reason <texte>`, et cette raison reste **dans l'état**, à côté des numéros cassés. C'est la seule trace qui demeure quand personne ne se souvient pourquoi. |
+| **statut → `stale`** | un artefact amendé n'est plus celui qui a été approuvé. `stale` et non `draft` : c'est le trajet déjà décrit pour un document vivant — il repasse `approved` au gate. |
+
+Quand le refus tombe, il dit quoi faire :
+
+```
+Un document cité par numéro s'étend, il ne se renumérote pas.
+Corrige sans risque : ajouter les sections NOUVELLES en fin de numérotation,
+et ne toucher à aucun numéro existant.
+```
+
+**Un renvoi doit nommer sa cible.** `§ 5.15` seul ne dit pas de quel document il parle. Écris `` `architecture.md` § 5.15 `` : le contrôle sait alors exactement où regarder, sans interpréter quoi que ce soit. `consistency-check references` rend deux verdicts :
+
+- **pointeur cassé** — cible nommée, section absente → **échec**. C'est une dérive de numérotation, la forme d'INC-011 ;
+- **cible non déclarée** — renvoi nu → **compté**, jamais échec. Sur le projet de test : **276**. Les faire échouer produirait un contrôle qu'on éteint au bout d'une semaine — ce qui est arrivé quatre fois dans ce dossier. Sa voie de sortie est écrite dans sa sortie : nommer le fichier, et le compte tombe.
+
 ### Phase 1 — Discovery (PRD)
 
 But : transformer une idée vague en un Product Requirements Document complet et cohérent.
@@ -908,9 +945,10 @@ le pire des contrôles, parce qu'il donne un vert.
 | `state.js set-nav` | Enregistre l'ordre de navigation et sa justification | Phase 3 |
 | `state.js check-stale` | Document dérivé, ou plan modifié après approbation | Avant d'implémenter |
 | `state.js dep` | Déclare le graphe de dépendances d'une slice ou d'une fondation | Phase 4 |
+| `state.js amend` | Enregistre un amendement et **refuse le renumérotage** ; écrit `amended_from`, la raison, la liste des changements | Chaque amendment |
 | `state.js migrate` | v1 → v2 | Un projet existant |
 | `forge-guard.js all` | Chemins, état, vocabulaire, synchronisation, **provenance `derived_from`**, **artefacts produits en avance**, **caractères parasites**, cases « À DÉCIDER », placeholders, versions | **Avant chaque gate** |
-| `consistency-check.js all` | Écarts **entre** artefacts : PRD ↔ archi ↔ plans ↔ tests ↔ écrans | **Avant chaque gate** |
+| `consistency-check.js all` | Écarts **entre** artefacts : PRD ↔ archi ↔ plans ↔ tests ↔ écrans, et **renvois de section résolus** | **Avant chaque gate** |
 | `forge-exit.js` | Critère de sortie **exécuté** d'une slice | **Phase 7, par slice** |
 | `coverage-check.js` | Couverture d'un plan de slice | Phase 5 |
 | `design-check.js` | **Mesure** contrastes (WCAG 1.4.3 / 1.4.11), tokens sans valeur, et **parité de surface** entre composant et écrans | **Phase 3, au gate** |
