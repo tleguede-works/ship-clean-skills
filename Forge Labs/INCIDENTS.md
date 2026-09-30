@@ -1877,3 +1877,130 @@ cas étaient réels.
 
 **v1.9.3** : PR #47, `snapshot verify` → `pass: true`, 96 fichiers, 0 différence,
 188 tests + 7 non exécutés dans l'archive extraite, 14 tests de fumée verts.
+
+## F-45 — Bailly, projet 3 : le premier artefact n'a personne à qui emprunter une source
+
+Troisième projet du banc d'essai, et le premier où le **dossier de départ est vide**.
+C'est ce détail qui a produit le défaut : les deux projets précédents avaient un
+`derived_from` omis, ce qui est invisible. Ici l'agent a écrit `derived_from: []` —
+une **déclaration de vérité** — et le contrôle l'a refusée.
+
+### Le commanditaire a reformulé la question, et il avait raison
+
+J'ai demandé « où tourne le logiciel ? ». La réponse :
+
+> *« Ta question est mal posée, et c'est important. Tu me demandes une seule chose,
+> mais il y en a deux : **où vit la donnée de référence**, et **sur quels appareils je
+> la touche**. Ces deux réponses sont différentes et j'ai des réponses différentes. »*
+
+Donnée de référence **chez un hébergeur**, pas sur ses machines. Raison : « si elle
+vit sur mon téléphone, les sauvegardes deviennent *mon* boulot, et je ne ferai pas les
+sauvegardes ». Appareils : **téléphone d'abord** — parce que c'est là que la donnée se
+*crée* — portable ensuite pour le travail de fond.
+
+**Le sous-entendu « application mobile » a été contesté**, et c'est la contestation
+la plus utile de la phase : si le téléphone n'est qu'un client qui affiche ce qui est
+sur le serveur, alors **le sous-sol sans réseau ne marche pas** — et c'est le moment
+où la donnée est la plus précieuse. C'est écrit dans `conventions.md` § 3 comme une
+contrainte de structure, pas comme un souhait.
+
+### La règle qui domine le projet
+
+> *« Si je signe un état des lieux dans un sous-sol et que l'application me dit
+> « enregistré » alors que ce n'est pas parti, ce n'est pas un bug, c'est un
+> contentieux. »*
+
+Trois exigences, dans cet'ordre : **ne jamais mentir sur la sauvegarde** ; **photo et
+signature sur l'appareil avant toute tentative réseau** ; et **ce qui exige une
+preuve d'envoi ne peut pas être produit hors ligne** — ce dernier point est
+**acceptable**, et c'est dit, donc ce n'est pas un défaut à corriger plus tard.
+
+La troisième est celle qui distingue ce projet des deux autres : elle interdit
+d'ajouter une fonctionnalité pour « être complet », parce que la preuve d'envoi est
+hors de portée du hors-ligne par nature.
+
+### Trois données de fait, trois appréciations — et pas de bouton « tout effacer »
+
+Le commanditaire a corrigé ma question sur l'effacement :
+
+> *« On m'a présenté « effacer », mais ce n'est pas binaire. Les baux, quittances et
+> pièces comptables ont une durée légale de conservation. Si tu me conçois un « bouton
+> tout effacer », tu me mets en infraction. »*
+
+**Trois états**, donc : effacer · anonymiser · conserver pour obligation légale
+**jusqu'à une date de fin écrite**. Et le bouton est interdit **par construction** —
+pas par convention : chaque ligne a son état, et les trois ne se déclenchent pas au
+même moment.
+
+Et la frontière **constaté / apprécié** est une **contrainte de schéma**, pas une
+convention d'écriture : deux champs distincts, deux destinations d'export distinctes,
+aucun chemin de l'un vers l'autre. Le piège qu'il a nommé — « un espace notes où tout
+se mélange, où un jugement devient un fait parce qu'il est dans le même champ » — est
+la raison pour laquelle la saisie libre doit **demander la classe**, et ne peut pas
+avoir « ce que j'ai lu quelque part » pour défaut.
+
+### L'export est un produit du MVP, pas une fonction
+
+> *« Si l'hébergeur meurt demain, je dois pouvoir récupérer mes 14 baux en une
+> journée. »*
+
+**Trois formes, trois destinataires** : dossier locataire (lisible, daté, au nom de
+la personne — « constaté » seul) · reprise complète (**lisible sans Bailly**) ·
+comptes. La deuxième est la plus dure : « un export que seul Bailly sait lire n'est
+pas une sauvegarde, c'est une raison de plus de ne jamais quitter Bailly ».
+
+### Il a contesté sa propre fréquence, et c'est la partie la plus utile
+
+Ses trois tâches hebdomadaires sont réelles. Mais il a ajouté :
+
+> *« « Hebdomadaire » est un bon proxy de fréquence, pas de risque. Il y a des
+> obligations mensuelles ou annuelles que je peux rater, et quand je les rate ça coûte
+> de l'argent ou ça me bloque juridiquement. »*
+
+Sa demande n'est pas de les calculer — c'est de **ne pas le laisser les oublier**. Un
+simple rappel de date pour cinq échéances, « rien de plus ». C'est donc un MVP de
+**3 tâches + 1 garde-fou**, et le garde-fou n'est pas une fonctionnalité : c'est
+l'obligation de dire, à l'écran, **ce qui n'a pas été fait**.
+
+### Le défaut du contrôle
+
+`derived_from_non_empty` refuse une liste vide. Juste en général — mais
+`conventions.md` est le **premier** document du projet, il dérive d'un **entretien**,
+et écrire `derived_from: []` y est une **déclaration de vérité**.
+
+Le contrôle confondait « j'ai déclaré que je n'ai pas de source » et « j'ai oublié de
+dire d'où ça vient ». Il a raison de la forme et tort du fond.
+
+**Un contre-test a rejeté ma première correction.** J'avais écrit « si personne
+d'autre ne déclare de source, c'est le premier » — ce qui accepte un **écran seul**
+dans un projet vide. Faux : un écran sans conception n'est pas le premier, il est
+**en avance**. Un contrôle assoupli jusqu'à ne plus rien voir n'est pas un contrôle
+assoupli, c'est un contrôle supprimé — et c'est le **dixième** encounter de cette
+famille.
+
+Et `current_phase` est un **nombre**, pas une clé de phase : je l'ai comparé à
+`PHASE_KEYS.indexOf(...)`, qui renvoie `-1` en phase 0. Le premier artefact était donc
+refusé **pour la raison inverse** de celle que je corrigeais. **Deux bugs dans le même
+correctif, tous deux invisibles sans le contre-test** — dont un que j'ai introduit en
+corrigeant l'autre.
+
+### La règle qui reste, et qui est la onzième du même genre
+
+Les dix échappatoires déjà relevées portaient toutes sur un motif lu, un périmètre
+interrogé, ou un test exercé ailleurs que là où le défaut apparaît. Celui-ci est un
+**sens** : le contrôle confondait deux intentions opposées qui s'écrivent de la même façon.
+
+> **Une valeur vide a toujours deux lectures.** « Je n'ai pas de source » et « j'ai
+> oublié de dire d'où ça vient » s'écrivent `[]`. Ce qui les sépare n'est pas la
+> valeur : c'est **la position de l'artefact dans la chaîne**. Donc le contrôle doit
+> lire la position, jamais la valeur.
+
+Et le corollaire, qui vaut pour toutes les corrections de ce dossier :
+
+> **Un correctif doit avoir son contre-test, et le contre-test doit pouvoir le
+> rejeter.** Le premier correctif d'`isPlanPath`, celui de `derived_from`, celui de la
+> sélection de l'état de session — tous les trois ont été rejetés par un test
+> existant. Aucun n'a été accepté du premier coup, et c'est le meilleur indicateur
+> qu'on ait sur la santé d'une suite.
+
+**v1.9.4** : PR #49, 197 tests.

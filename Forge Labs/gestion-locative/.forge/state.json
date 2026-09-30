@@ -1,0 +1,89 @@
+{
+  "version": 2,
+  "forge_skill_version": "2.0.0",
+  "product": {
+    "name": "Bailly",
+    "created_at": "2026-09-30T21:26:29.900Z",
+    "description": "",
+    "archetype": null
+  },
+  "project": {
+    "path": "/workspaces/ship-clean-skills/Forge Labs/gestion-locative",
+    "anchor_source": "cwd",
+    "stack": {},
+    "package_manager": null,
+    "testing": {}
+  },
+  "reference_projects": [],
+  "run": {
+    "id": "run-muom7xfw",
+    "started_at": "2026-09-30T21:26:29.900Z",
+    "mode": "guided",
+    "fast_track": null
+  },
+  "current_phase": "0",
+  "phases": {
+    "0_bootstrap": {
+      "status": "in_progress"
+    },
+    "1_prd": {
+      "status": "not_started"
+    },
+    "2_roadmap": {
+      "status": "not_started"
+    },
+    "3_design": {
+      "status": "not_started"
+    },
+    "4_architecture": {
+      "status": "not_started"
+    },
+    "5_implementation_plan": {
+      "status": "not_started"
+    },
+    "6_validation": {
+      "status": "not_started"
+    },
+    "7_implementation": {
+      "status": "not_started"
+    },
+    "8_final_validation": {
+      "status": "not_started"
+    }
+  },
+  "deliverables": {
+    "conventions": {
+      "path": ".forge/conventions.md",
+      "type": "conventions",
+      "status": "draft",
+      "content_hash": "sha256:89ae536e7620",
+      "headings": {
+        "1": "Ce que ce projet est, et ce qu'il n'est pas",
+        "2": "Stack technique",
+        "3": "La règle qui domine toutes les autres : ne jamais mentir sur la sauvegarde",
+        "4": "La frontière donnée de fait / appréciation — imposée par la donnée, pas par l'usage",
+        "5": "RGPD : trois états, pas deux",
+        "6": "Portabilité : l'export est un produit, pas une fonction",
+        "7": "Périmètre : ce que le commanditaire exclut, et ce qu'il refuse qu'on oublie",
+        "8": "Les trois questions que le commanditaire me renvoie"
+      },
+      "updated_at": "2026-09-30T21:27:22.207Z"
+    }
+  },
+  "index": {},
+  "screens": {},
+  "foundations": {},
+  "modules": {},
+  "slices": {},
+  "gates_pending": [],
+  "audit": {
+    "log": ".forge/audit/run-log.jsonl",
+    "issues": ".forge/audit/issues.md",
+    "metrics": ".forge/audit/metrics.json",
+    "counts": {
+      "init": 1,
+      "register": 2
+    }
+  },
+  "divergences": []
+}
