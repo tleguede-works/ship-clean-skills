@@ -1014,3 +1014,91 @@ Ce n'est pas corrigible par un script de plus. C'est corrigible par une **conven
 de transcription** : ce qui entre dans un livrable depuis une sortie d'agent est
 relu, parce que la corruption naît au point d'entrée. C'est à trancher avec le
 commanditaire.
+
+---
+
+## F-38 — Phase 1 (Onduleur) : deux contrôles ont bloqué, et j'ai failli accuser un innocent
+
+### 1. `premature_artifact` a refusé, et il avait raison
+
+J'ai écrit `.forge/prd.md` **en Phase 0**, puis enregistré. Le garde-fou a refusé :
+
+```
+premature_artifact : enregistré avant la phase 1
+fix : state.js set-phase . 1_prd in_progress
+```
+
+Il a nommé la phase d'appartenance de l'artefact, et la commande qui débloque. C'est
+le comportement attendu, et il n'a rien laissé passer.
+
+### 2. `no_stray_characters` a trouvé trois caractères CJK que j'avais laissés passer
+
+Une fois le PRD enregistré, le contrôle a scané **2** fichiers au lieu de 1, et a
+rapporté :
+
+```
+OutOfContext:U+770B  prd.md:263   E9  …veut看看 un autre historique…
+OutOfContext:U+7EF4  prd.md:266   E12 …pendant une维护.
+OutOfContext:U+62A4  prd.md:266   E12
+```
+
+Trois caractères, deux lignes, dans les cases E9 et E12. Ils venaient de la sortie de
+l'agent qui joue le commanditaire, comme F-37. **Le contrôle fait son travail.**
+
+### 3. J'ai failli déclarer un faux négatif, et j'avais tort
+
+Entre l'écriture et l'enregistrement, j'ai lu `no_stray_characters: pass` alors que
+le PRD contenait ces caractères, et j'ai conclu : *« défaut grave dans un contrôle que
+j'ai livré en v1.4.2 »*.
+
+**C'était faux, et l'erreur était la mienne.** Le contrôle scannait **un** fichier,
+parce que le PRD n'était pas enregistré : l'enregistrement avait échoué sur
+`premature_artifact`, et j'avais lu par-dessus l'échec. Le contrôle avait rendu un
+verdict exact sur ce qu'on lui avait donné.
+
+C'est la **cinquième** fois dans ce dossier que je lis mal la sortie d'un contrôle —
+après les 283 « fausses » citations du contrôle de citations, les sept tables
+imaginaires de `completeness`, les 539 renvois, la borne de 600 caractères, et les
+deux tests dont la fixture était fausse. Le motif est stable : **un contrôle est
+juste sur son périmètre, et j'ai tendance à lui demander plus que son périmètre.**
+
+Le contrôle dit ce qu'il a regardé. Il faut le **lire** avant de le contredire.
+
+### 4. La limite réelle du contrôle, qu'il a lui-même montrée
+
+En plus des trois caractères CJK, le PRD contenait :
+
+| fragment | forme |
+|---|---|
+| `Le client a bought dans l'application` | **anglais dans une phrase française** |
+| `elle ne proceed pas` | idem |
+| `rattachtées` | faute de frappe |
+
+`no_stray_characters` ne les a **pas** signalés — et il ne pouvait pas. Ce sont des
+caractères latins parfaitement valides qui forment un mot faux. Un scan de
+caractères ne voit pas un mot incorrect.
+
+**La corruption générative a donc deux formes, et le contrôle n'en couvre qu'une :**
+
+| forme | exemple | couvert ? |
+|---|---|---|
+| caractère d'une autre écriture | `维护`, `首屏`, `旁` | **oui** — liste blanche |
+| mot anglais dans une phrase française | `a bought`, `proceed`, `underneath` | **non** — impossible par construction |
+
+F-29 (`méthode` en grec et en hébreu) et l'INC-002 du projet de référence sont de la
+première forme. La seconde est **invisible à tout contrôle de caractères**, et elle
+est aussi fréquente dans la sortie des agents : `underneath`, `purely e-mail`,
+`l advantage`, `Chronométrer`, `malpresented` sont tous apparus dans les réponses du
+commanditaire de ce lancement, dans des documents **valides** du point de vue du
+scan.
+
+Ce n'est pas corrigeable par un script de plus : **une liste blanche de caractères ne
+peut pas détecter un mot étranger écrit en caractères légitimes.** Ce qui peut le
+faire, c'est une relecture humaine du texte qui entre dans un livrable — donc une
+règle de processus, pas un contrôle.
+
+### 5. Ce que le contrôle a coûté, et ce qu'il a rapporté
+
+Sur ce seul document : **5 corrections**, dont 3 trouvées par le contrôle et 2 par la
+relecture du diff. Le rapport est bon, et il ne dit pas la même chose que
+l'autre moitié.
