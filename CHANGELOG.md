@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.9.6] - 2026-09-30
+
 ### fix(forge-guard) — le premier artefact cessait d'être le premier dès que le projet avançait
 
 `derived_from` vide est accepté pour l'artefact **premier de sa chaîne** — c'est-à-dire
