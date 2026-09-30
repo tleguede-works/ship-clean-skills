@@ -87,7 +87,7 @@ Cet écran ne doit ressembler **à aucun** de ces défauts :
 │    └─ Tuile produit 128 px  (photo 128×128, nom --text-h3, prix en encre)
 ├─ Rail 2 — "De retour en stock"  --text-h2, défilement horizontal      ← E4 niveau 2
 │    └─ Tuile produit 128 px, pastille --color-succes
-├─ Rail 3 — source à décider (Q-F), chaîne de repli écrite             ← B9 : trois emplacements
+├─ Rail 3 — source Q-F routée vers la slice, chaîne de repli écrite   ← B9 : trois emplacements
 │    └─ Tuile produit 128 px
 ├─ Filet --color-secondaire (séparation du groupe bas)
 └─ Barre d'onglets (4 items, accueil actif) + Barre de panier au-dessus
@@ -105,7 +105,7 @@ Cet écran ne doit ressembler **à aucun** de ces défauts :
 **Trois rails, pas deux (B9, et la question Q-F laissée ouverte par le roadmap §2.5).**
 Les deux premiers niveaux sont écrits par E4 et sont donc fermés : *nouveautés et modifications récentes*, puis *réassorts et articles réapprovisionnés*. Le troisième emplacement n'a pas de source nommée dans le PRD, et Q-F demande qu'elle soit non vide **sans compte et sans travail marchand**. La chaîne de repli est donc écrite ici :
 
-1. source du troisième niveau — **à décider en Phase 4, Q-F** ; le candidat déjà nommé par le PRD est « derniers consultés », qui échoue à la condition « sans compte » parce qu'il suppose un historique local ;
+1. **source du troisième niveau** — tranchée par la slice `accueil-trois-rails`, qui pose sa propre condition d'échec : le candidat déjà nommé par le PRD est « derniers consultés », et il **échoue** à la condition « sans compte » parce qu'il suppose un historique local ; si le droit d'inventaire n'est pas accordé, la réponse ne revient pas au rail mais au PRD (Q-F reste ouverte **chez le commanditaire**) ;
 2. **repli 1** — la suite du rail 2 (les éléments suivants du même flux de réassorts), le titre du rail devient « De retour en stock — suite » ;
 3. **repli 2** — si la chaîne entière est vide, l'emplacement rend un `Panneau d'état · aucune-donnee` sur une ligne, sans illustration et sans « Réessayer » : ce n'est pas une panne, c'est un catalogue sans article, et C7 interdit de le présenter comme un échec.
 
