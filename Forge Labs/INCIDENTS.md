@@ -453,3 +453,93 @@ décidé de ne pas les promouvoir en `project-rules` : les promouvoir aurait
 vert qui cache un MVP non démarrable est pire qu'un rouge. Ils demandent un
 **enregistrement de décision avec titulaire et date** (`DECISIONS.md`, absent
 du livrable), pas une règle de plus.
+---
+
+## F-33 — Le DDL n'a jamais été exécuté, et il ne pouvait pas l'être
+
+**Signalé par** `ddl-exec` (skill v1.5.0), sur `.forge/architecture.md` de « Amberline ».
+
+Trois verdicts, un seul vrai défaut, **zéro faux positif**.
+
+### 1. `execute` — une erreur, et c'est une porte qui n'existe pas
+
+```
+ligne 1077 : cannot use subquery in check constraint
+```
+
+```sql
+ALTER TABLE signature_event ADD CONSTRAINT signer_is_not_author CHECK (
+  act NOT IN ('sign','refuse') OR actor_id <> (
+    SELECT author_actor_id FROM definition_version
+     WHERE definition_version_id = signature_event.definition_version_id)
+);
+```
+
+Un `CHECK` doit être évaluable sur la **ligne seule**. PostgreSQL refuse celui-ci à
+la création : **la contrainte n'existe pas**. Or c'est la contrainte qui porte
+`B2` — l'auto-signature est impossible, *y compris en cas de bug d'interface*
+(ADR-1). La porte est écrite, commentée, justifiée par une décision
+d'architecture — et elle n'est pas là.
+
+C'est le premier des trois défauts d'exécution du dossier, et le seul des trois
+qui soit une **erreur** : les deux autres sont des défauts sémantiques, qu'aucune
+relecture ne voit.
+
+### 2. `completeness` — deux tables modifiées sans être créées
+
+`tables_created_in_ddl: 0`, `tables_declared_in_prose: 17`.
+
+L'architecture ne contient **aucun `CREATE TABLE`**. Elle décrit ses tables comme
+tableaux de colonnes (`| Champ | Type | Nullable | Défaut |`) et écrit ensuite un
+DDL qui les `ALTER` :
+
+| table | touchée | décrite |
+|---|---|---|
+| `signature_event` | ligne 1082 (`ALTER TABLE`) | ligne 1035 |
+| `definition_version` | ligne 1084 | ligne 927 |
+
+Le DML suppose donc un schéma préexistant dont le document ne tient pas la source.
+**C'est la raison pour laquelle ses défauts n'ont jamais été vus** : il n'y a rien
+à exécuter. Aucune référence dans le vide, en revanche — `dangling_references: 0`.
+
+### 3. `execute` — un prérequis, pas une erreur
+
+```
+ligne 1348, 1351, 1352, 1353 : role "amberline_app" does not exist
+```
+
+Classés **préalable**, pas erreur : le provisionnement d'un rôle appartient au
+déploiement, pas à l'architecture. Compter ces quatre instructions comme des
+erreurs de DDL serait faux. Les faire disparaître serait pire : le document
+envoie ses privilèges à un rôle dont **personne ne peut dire qu'il existe**.
+
+### 4. `guards` — zéro garde déclarée
+
+```
+guards_declared: 0
+```
+
+`.forge/architecture.md` **ne déclare aucune garde**. Les deux triggers du
+document — `lifecycle_needs_an_act` et `definition_content_is_frozen` — sont
+précisément des portes, et aucune n'est essayée. Le contrôle rend `pass` et le
+dit dans la même phrase : *« Une porte non écrite n'est pas testée : ni par un
+script, ni par un relecteur, ni par elle-même. »*
+
+C'est le troisième défaut, celui qui n'a **aucune signature** : rien ne le
+signale, dans aucun rapport, et `forge-guard all` est vert.
+
+### Ce qui reste à faire dans le document
+
+| # | action | où |
+|---|---|---|
+| 1 | réécrire `signer_is_not_author` sans sous-requête — un `NOT EXISTS` dans un **trigger**, ou un `CHECK` sur des colonnes de la même ligne | § 4.8, ligne 1077 |
+| 2 | porter les `CREATE TABLE` dans le document, ou pointer la migration qui les porte | § 4.2 à § 4.18 |
+| 3 | déclarer le rôle `amberline_app` comme prérequis nommé | § 4.19, ligne 1346 |
+| 4 | **déclarer les gardes** : `-- forge:ddl-refuse` pour la publication sans signature, pour la réécriture de `published_at`, pour la modification du contenu d'une version signée | § 4.6 et § 4.8 |
+
+Le point 4 est celui qui compte. Il est le seul des quatre qui transforme une
+porte **écrite** en porte **vérifiée**, et il est le seul qui aurait attrapé le
+défaut de la ligne 1388 (`IF NEW.status = OLD.status THEN RETURN NEW`) : cette
+garde n'est atteinte que sur une transition de statut, donc un `UPDATE` qui écrit
+`published_at` en ne changeant pas le statut passe **au travers**. Elle est
+écrite, commentée, et inerte.
