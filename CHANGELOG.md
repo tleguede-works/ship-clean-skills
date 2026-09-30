@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.9.7] - 2026-09-30
+
 ### fix(forge) — `premises` ne lisait que `[BCE]` : six exigences non fonctionnelles déclarées « mortes »
 
 `N` est une catégorie d'exigence à part entière — un PRD qui refuse de porter
