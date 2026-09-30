@@ -26,7 +26,6 @@ refuse de bumper, et la CI échoue. Une release vide est pire qu'aucune release,
 parce qu'elle consomme un numéro.
 
 ## [Unreleased]
-
 ### feat(forge) — Les contrastes se mesurent, ils ne s'écrivent pas
 
 La checklist de gate du design system demande « contraste N:1 », et
