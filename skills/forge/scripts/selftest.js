@@ -52,7 +52,28 @@ function section(title) {
  * Harnais
  * ------------------------------------------------------------------ */
 
+/**
+ * Lance un script du skill.
+ *
+ * `register` est un cas particulier : la phase du projet est amenée à celle
+ * qui possède le livrable avant l'appel. `state.js register` refuse en effet
+ * d'enregistrer un artefact produit avant que sa phase soit atteinte, et la
+ * quasi-totalité des tests ci-dessous enregistrent `prd` ou une slice dans un
+ * projet fraîchement initialisé, donc en phase 0. Ils ne testaient pas
+ * l'ordre des phases — six ont cassé d'un coup, tous pour cette seule raison.
+ *
+ * Faire la mise en scène ici plutôt que dans chaque test évite cinquante
+ * répétitions, et ça ne peut rien masquer : `register` teste
+ * `outside_forge_dir` et `non_canonical_path` **avant** le refus d'ordre, donc
+ * les tests qui attendent ces deux erreurs les rencontrent toujours.
+ *
+ * `{ raw: true }` désactive cette mise en scène — c'est ce qu'utilisent les
+ * tests dont le sujet est précisément l'artefact en avance.
+ */
 function run(script, args, opts = {}) {
+  if (!opts.raw && script === 'state.js' && args[0] === 'register') {
+    enterOwnerPhase(path.resolve(args[1]), args[2], args[3]);
+  }
   try {
     const stdout = execFileSync('node', [path.join(SCRIPTS, script), ...args], {
       encoding: 'utf-8',
@@ -89,6 +110,25 @@ function writeDeliverable(project, relPath, { type = 'prd', status = 'draft', bo
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, `---\ntype: ${type}\nstatus: ${status}\n---\n\n# Titre\n\n${body}\n`);
   return abs;
+}
+
+/**
+ * Amène `current_phase` à la phase qui possède l'artefact qu'on s'apprête à
+ * enregistrer. Voir `run` pour pourquoi cette mise en scène est faite ici.
+ */
+function enterOwnerPhase(project, kind, key) {
+  const L = require(path.join(SCRIPTS, 'lib', 'forge-lib.js'));
+  const statePath = path.join(project, '.forge', 'state.json');
+  if (!fs.existsSync(statePath)) return;
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+  const idx = L.PHASE_KEYS.findIndex(pk => {
+    const spec = L.PHASE_ARTIFACT_OWNERS[pk] || {};
+    return spec[kind] === true || (Array.isArray(spec[kind]) && spec[kind].includes(key));
+  });
+  if (idx >= 0 && idx > parseInt(state.current_phase, 10)) {
+    state.current_phase = idx;
+    fs.writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n');
+  }
 }
 
 function frontMatterStatus(project, relPath) {
@@ -1128,6 +1168,145 @@ test('toute clé exigée par un contrat de phase est ENREGISTRABLE', () => {
   }
   assert(problems.length === 0,
     `clés de contrat inatteignables : ${JSON.stringify(problems)}`);
+});
+
+test('toute clé de PHASE_ARTIFACT_OWNERS est un kind ENREGISTRABLE', () => {
+  // La table possédait `deliverables`/`screens`/`slices`/`foundations` — les
+  // noms de seaux de `state.json` — alors que `isPrematureArtifact` reçoit les
+  // `kind` singuliers de `register`. Les deux vocabulaires coexistent et ne se
+  // distinguent que d'un `s` : le contrôle ne déclenchait alors que les plans,
+  // via leur cas particulier, et laissait passer l'architecture et tous les
+  // écrans sans un mot. Un tableau de propriétaires écrit dans le mauvais
+  // vocabulaire ne protège de rien, et semble protéger.
+  const L = require(path.join(SCRIPTS, 'lib', 'forge-lib.js'));
+  const kinds = ['deliverable', 'screen', 'slice', 'foundation', 'phase'];
+  const problems = [];
+  for (const [phaseKey, spec] of Object.entries(L.PHASE_ARTIFACT_OWNERS)) {
+    for (const [prop, value] of Object.entries(spec)) {
+      if (prop === 'plans') continue;
+      if (!kinds.includes(prop)) {
+        problems.push({ phase: phaseKey, key: prop, why: 'ce kind n\'existe pas — la règle ne peut rien voir' });
+      }
+      if (value !== true && !Array.isArray(value)) {
+        problems.push({ phase: phaseKey, key: prop, why: 'ni liste de clés ni `true` : la règle ne peut rien voir' });
+      }
+    }
+  }
+  assert(problems.length === 0, `propriétaires inopérants : ${JSON.stringify(problems)}`);
+});
+
+test('PHASE_ARTIFACT_OWNERS ne laisse aucun artefact de phase sans propriétaire', () => {
+  // Une phase dont le contrat exige un livrable mais qui n'en possède aucun
+  // rend la règle muette sur ce livrable : il est le plus facile à écrire en
+  // avance, donc le plus probable en avance.
+  const L = require(path.join(SCRIPTS, 'lib', 'forge-lib.js'));
+  const problems = [];
+  for (const [phaseKey, spec] of Object.entries(L.PHASE_REQUIREMENTS)) {
+    const owned = L.PHASE_ARTIFACT_OWNERS[phaseKey] || {};
+    for (const key of spec.required || []) {
+      if (!(Array.isArray(owned.deliverable) && owned.deliverable.includes(key))) {
+        problems.push({ phase: phaseKey, key, why: 'exigé par le contrat, possédé par personne' });
+      }
+    }
+  }
+  assert(problems.length === 0, `livrables sans propriétaire : ${JSON.stringify(problems)}`);
+});
+
+test('register REFUSE un artefact produit avant sa phase', () => {
+  // « Ne jamais entamer la phase suivante sans un approuvé clair » est la règle
+  // la plus importante du skill, et n'avait aucun moyen d'être appliquée : un
+  // `architecture.md` et quinze plans se sont écrits pendant que le design
+  // portait `draft`, et les douze contrôles passaient. Le refus au moment
+  // d'écrire est le seul endroit où la règle devient impossible à contourner.
+  const L = require(path.join(SCRIPTS, 'lib', 'forge-lib.js'));
+  const project = freshProject('artefact-en-avance');
+  fs.writeFileSync(path.join(project, '.forge', 'conventions.md'),
+    '---\nforge: true\nkind: deliverable\nkey: conventions\nstatus: draft\n---\n\n# Conventions\n');
+  const reg = run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  assert(reg.code === 0, `register a échoué : ${reg.stdout}${reg.stderr}`);
+  run('state.js', ['complete-phase', project, '0_bootstrap']);
+
+  // On est en phase 1. L'architecture appartient à la phase 4.
+  const state = readState(project);
+  assert(parseInt(state.current_phase, 10) === 1,
+    `current_phase attendu à 1, obtenu ${JSON.stringify(state.current_phase)}`);
+  fs.writeFileSync(path.join(project, '.forge', 'architecture.md'),
+    '---\nforge: true\nkind: deliverable\nkey: architecture\nstatus: draft\n---\n\n# Architecture\n');
+  const early = run('state.js', ['register', project, 'deliverable', 'architecture', '.forge/architecture.md'], { raw: true });
+  assert(early.code !== 0, 'register a accepté un artefact de la phase 4 depuis la phase 1');
+  assert(/premature_artifact/.test(early.stdout + early.stderr),
+    `le refus ne nomme pas premature_artifact : ${early.stdout}${early.stderr}`);
+
+  // Le seau doit être resté vide : un refus qui écrit quand même ne protège pas.
+  const after = readState(project);
+  assert(!after.deliverables || !after.deliverables.architecture,
+    'l\'artefact refusé a quand même été enregistré');
+});
+
+test('forge-guard constate un artefact en avance déjà écrit sur disque', () => {
+  // `register` refuse désormais d'écrire en avance, mais un état peut avoir
+  // été produit avant que la règle existe, ou par `sync --fix`. Le contrôle doit
+  // rattraper ce qui est déjà là, sinon la règle ne s'applique qu'à l'avenir.
+  const project = freshProject('avance-sur-disque');
+  fs.writeFileSync(path.join(project, '.forge', 'conventions.md'),
+    '---\nforge: true\nkind: deliverable\nkey: conventions\nstatus: draft\n---\n\n# Conventions\n');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['complete-phase', project, '0_bootstrap']);
+
+  fs.writeFileSync(path.join(project, '.forge', 'architecture.md'),
+    '---\nforge: true\nkind: deliverable\nkey: architecture\nstatus: draft\n---\n\n# Architecture\n');
+  // Enregistré en phase 4, comme le ferait un agent qui ignore la règle —
+  // puis on rebascule en phase 1 : l'artefact écrit avant l'existence du
+  // contrôle doit être rattrapé par le contrôle.
+  run('state.js', ['register', project, 'deliverable', 'architecture', '.forge/architecture.md']);
+  const state = readState(project);
+  state.current_phase = 1;
+  fs.writeFileSync(path.join(project, '.forge', 'state.json'), JSON.stringify(state, null, 2));
+
+  const guard = run('forge-guard.js', ['state', project]);
+  const out = JSON.parse(guard.stdout);
+  const check = out.checks.find(c => c.check === 'no_premature_artifacts');
+  assert(check, 'le contrôle no_premature_artifacts est absent du rapport');
+  assert(check.status === 'fail', 'un artefact en avance sur disque n\'a pas été constaté');
+  assert(check.offenders.some(o => o.key === 'architecture'),
+    'l\'architecture en avance n\'est pas nommée');
+});
+
+test('un artefact de la phase atteinte n\'est PAS signalé en avance', () => {
+  // Le piège du faux positif : `complete-phase` avance `current_phase` d'un
+  // cran en approuvant, donc la phase suivante est « courante » tout en étant
+  // `not_started`. Juger sur le statut refuserait d'enregistrer le tout premier
+  // livrable de chaque phase — un garde-fou qui bloque le travail légitime
+  // s'apprend à contourner, et la règle réelle cesse d'exister.
+  const project = freshProject('phase-atteinte');
+  fs.writeFileSync(path.join(project, '.forge', 'conventions.md'),
+    '---\nforge: true\nkind: deliverable\nkey: conventions\nstatus: draft\n---\n\n# Conventions\n');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['complete-phase', project, '0_bootstrap']);
+
+  fs.writeFileSync(path.join(project, '.forge', 'prd.md'),
+    '---\nforge: true\nkind: deliverable\nkey: prd\nstatus: draft\n---\n\n# PRD\n');
+  const reg = run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md'], { raw: true });
+  assert(reg.code === 0,
+    `le premier livrable de la phase atteinte a été refusé : ${reg.stdout}${reg.stderr}`);
+
+  const guard = run('forge-guard.js', ['state', project]);
+  const out = JSON.parse(guard.stdout);
+  const check = out.checks.find(c => c.check === 'no_premature_artifacts');
+  assert(check.status === 'pass', `un livrable légitime est signalé en avance : ${JSON.stringify(check.offenders)}`);
+});
+
+test('une slice sans plan n\'est pas signalée en avance, une slice avec plan si', () => {
+  // La slice appartient à la phase 4, son plan à la phase 5. Les confondre
+  // produirait deux erreurs opposées : interdire le découpage, ou laisser
+  // passer les plans écrits avant qu'ils ne soient leur tour.
+  const L = require(path.join(SCRIPTS, 'lib', 'forge-lib.js'));
+  const base = { current_phase: 4, slices: { a: { status: 'identified' }, b: { plan_path: '.forge/plans/b.md' } } };
+  assert(!L.isPrematureArtifact(base, 'slice', 'a'), 'une slice sans plan est signalée en avance');
+  assert(L.isPrematureArtifact(base, 'slice', 'b'), 'une slice déjà planifiée en phase 4 n\'est pas signalée');
+  assert(!L.isPrematureArtifact(base, 'slice', 'b') ||
+    L.isPrematureArtifact(base, 'slice', 'b').phase === '5_implementation_plan',
+    'le plan est attribué à la mauvaise phase');
 });
 
 test('une phase complète passe le contrat', () => {

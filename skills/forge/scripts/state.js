@@ -391,6 +391,29 @@ function cmdRegister(root, kind, key, relPath, type, opts) {
   const bucket = KIND_BUCKET[kind];
   if (!bucket) L.fail({ error: 'unknown_kind', kind, expected: STATUSABLE_KINDS });
 
+  // Garde-fou n°3 : on n'enregistre pas le travail d'une phase qu'on n'a pas
+  // atteinte. Sans lui, l'ordre des phases n'est qu'une consigne : un
+  // `architecture.md` et quinze plans se sont écrits pendant que le design
+  // portait `draft`, et les douze contrôles passaient — parce qu'aucun ne sait
+  // à quelle phase un artefact appartient. Ce refus est le seul endroit où la
+  // règle devient impossible à contourner sans laisser de trace.
+  const early = L.isPrematureArtifact(state, kind, key);
+  if (early) {
+    L.appendLog(root, { type: 'register_rejected', reason: 'premature_artifact', kind, key, phase: early.phase });
+    L.fail({
+      error: 'premature_artifact',
+      kind, key,
+      artifact_phase: early.phase,
+      current_phase: state.current_phase,
+      why: early.why,
+      rule: 'Un artefact appartient à une phase. On ne l\'enregistre pas avant d\'avoir atteint ' +
+            'cette phase : c\'est précisément ce qui donne un sens au mot « approuvé ». ' +
+            'Un livrable produit en avance repose sur une base qui n\'a pas été validée, ' +
+            'et aucun garde-fou ne peut le voir.',
+      fix: `node "$FORGE/scripts/state.js" set-phase ${root} ${early.phase} in_progress`
+    });
+  }
+
   const existing = bucket(state)[key];
   const fm = fs.existsSync(abs) ? L.readFrontMatter(abs) : null;
   const fileStatus = fm && fm.data.status ? fm.data.status : 'draft';

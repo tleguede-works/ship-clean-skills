@@ -27,6 +27,31 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — L'ordre des phases est appliqué, il n'est plus seulement énoncé
+
+« Ne jamais entamer la phase suivante sans un approuvé clair » est présenté
+comme la règle la plus importante du skill, et rien ne la vérifiait : il
+n'existait nulle part la notion de phase d'un artefact. Un `architecture.md` de
+1838 lignes et quinze plans se sont écrits pendant que le design portait encore
+`draft`, et les douze contrôles passaient au vert.
+
+`PHASE_ARTIFACT_OWNERS` déclare la phase qui possède chaque artefact (les
+clés y sont les `kind` singuliers de `register`, pas les noms de seaux de
+`state.json` — les deux vocabulaires ne se distinguent que d'un `s`). Sur cette
+base, `state.js register` **refuse** d'enregistrer un artefact produit avant sa
+phase : le refus au moment d'écrire est le seul endroit où la règle devient
+impossible à contourner. `forge-guard` constate en plus ce qui est déjà sur
+disque (`no_premature_artifacts`).
+
+La comparaison se fait sur `current_phase`, pas sur le statut de la phase
+propriétaire : `complete-phase` avance `current_phase` en approuvant, donc la
+phase suivante est « courante » tout en étant `not_started`. Juger sur le statut
+refuserait d'enregistrer le tout premier livrable de chaque phase — un garde-fou
+qui bloque le travail légitime s'apprend à contourner.
+
+Corrige aussi un texte corrompu dans `hashTargets`, publié tel quel dans
+v1.3.0 : deux caractères chinois au milieu d'une phrase française.
+
 ## [1.3.0] - 2026-09-30
 ### feat(forge) — Les contrastes se mesurent, ils ne s'écrivent pas
 

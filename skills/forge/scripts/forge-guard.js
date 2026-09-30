@@ -330,7 +330,7 @@ function checkPhaseRequirements(root) {
  *
  * Constaté sur un test grandeur nature : huit écrans réécrits après leur
  * enregistrement (ratios recalculés, règles d'usage levées), et
- * `content_hashes_current`始终 au vert. Le hash enregistré était périmé — donc
+ * `content_hashes_current` resté au vert. Le hash enregistré était périmé — donc
  * faux, et personne ne le savait.
  *
  * Un hash enregistré et jamais relu n'est pas une protection : c'est une
@@ -351,6 +351,47 @@ function hashTargets(state) {
     if (d.plan_path) targets.push({ kind: 'foundation', key, path: d.plan_path });
   }
   return targets;
+}
+
+/**
+ * Aucun artefact produit avant que sa phase ne soit atteinte.
+ *
+ * `state.js register` refuse désormais d'écrire en avance. Ce contrôle attrape
+ * ce qui est **déjà** sur disque — donc ce qui a été écrit avant que la règle
+ * existe, ou par une voie qui n'est pas `register` (`sync --fix`, édition
+ * manuelle de `state.json`, migration).
+ *
+ * Il est l'exact miroir de `current_phase_has_deliverables`, qui ne juge que la
+ * phase courante : ensemble, les deux ferment l'intervalle. Sans celui-ci,
+ * l'ordre des phases restait une consigne.
+ */
+function checkPrematureArtifacts(root) {
+  const state = loadStateOrFail(root);
+
+  // Même règle que `checkPhaseRequirements` : un contrôle qui ne peut pas
+  // s'exécuter doit ÉCHOER, pas rendre la main. Rendre la main produirait un
+  // rapport sans cette ligne, et l'absence se lirait comme « rien à signaler ».
+  if (typeof L.prematureArtifacts !== 'function' || !L.PHASE_KEYS || !L.PHASE_ARTIFACT_OWNERS) {
+    record('no_premature_artifacts', false, {
+      error: 'forge-lib n\'expose pas PHASE_KEYS / PHASE_ARTIFACT_OWNERS / prematureArtifacts',
+      rule: 'Un contrôle qui ne peut pas s\'exécuter doit échouer, pas rendre la main. ' +
+            'Sinon la règle la plus importante du skill disparaît en silence.'
+    });
+    return;
+  }
+
+  const offenders = L.prematureArtifacts(state);
+  record('no_premature_artifacts', offenders.length === 0, {
+    current_phase: state.current_phase,
+    current_phase_key: L.PHASE_KEYS[parseInt(state.current_phase, 10)],
+    offenders,
+    owners: L.PHASE_ARTIFACT_OWNERS,
+    fix: 'Avancer jusqu\'à la phase propriétaire (`state.js set-phase`), ou retirer ' +
+          'l\'artefact et le produire après son gate. Le laisser en place rend chaque ' +
+          '« approuvé » ultérieur faux par construction.',
+    rule: 'Un artefact appartient à une phase. Tant que cette phase n\'est pas atteinte, ' +
+          'l\'artefact repose sur une base non validée — et rien d\'autre ne le signale.'
+  });
 }
 
 function checkHashes(root) {
@@ -802,6 +843,7 @@ const CHECKS = {
     checkStatusVocab(root);
     checkPathsExist(root);
     checkPhaseRequirements(root);
+    checkPrematureArtifacts(root);
     checkHashes(root);
     checkProvenance(root);
     checkUndecidedSlots(root);
@@ -819,6 +861,7 @@ const CHECKS = {
     checkStatusVocab(root);
     checkPathsExist(root);
     checkPhaseRequirements(root);
+    checkPrematureArtifacts(root);
     checkHashes(root);
     checkProvenance(root);
     checkUndecidedSlots(root);
