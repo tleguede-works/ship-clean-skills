@@ -12,6 +12,50 @@ derived_from: .forge/prd.md
 
 ---
 
+## 0.0 Déclaration des classes de couleurs
+
+> **À remplir, et à remplir avant la section 1.** `design-check contrast` classe
+> chaque couleur pour lui appliquer le bon seuil : 4,5:1 pour du texte (WCAG
+> 1.4.3), 3:1 pour un composant d'interface (1.4.11), rien pour une teinte
+> décorative. Un contrôle qui devine la classe d'après le **nom** du token ne
+> fonctionne que dans la langue de ce nom — et tout ce que ce skill produit est en
+> français. Sans déclaration, un texte à 3,80:1 est classé composant, jugé à 3:1,
+> et **passe**.
+>
+> Un token absent des listes est signalé. L'engagement est écrit, donc l'omettre
+> est un choix, pas un oubli.
+
+<!-- forge:token-classes
+text     --color-texte-principal --color-texte-secondaire
+on       --color-texte-inverse = --color-accent-700
+surface  --color-background --color-surface --color-surface-raised --color-surface-sunken
+nontext  --color-bordure-champ --color-bordure-focus
+exempt   --color-teinte-survol = teinte décorative d'état, aucun texte n'y est posé
+exempt   --color-filet = filet décoratif, ne porte aucune information
+-->
+
+**Les cinq directives.**
+
+| Directive | Effet | Seuil |
+|---|---|---|
+| `text` | porte du texte | **4,5:1** contre chaque `surface`, et contre chaque fond de son `on:` |
+| `surface` | fond sur lequel du texte est posé | aucune exigence propre ; le texte posé dessus est mesuré |
+| `nontext` | composant d'interface : bordure, anneau de focus, fond de bouton | **3:1** contre `--color-background` |
+| `on` | fonds sur lesquels **ce** texte est réellement posé | — |
+| `exempt` | ni texte ni composant : teinte décorative, filet sans information | aucune — **la raison est obligatoire** |
+
+> **`on:` n'est pas un confort.** Sans lui, un texte inversé est mesuré contre
+> *toute* surface du document, donc contre le papier, où il n'est jamais posé : un
+> échec par palette, c'est-à-dire presque toutes. `on:` existe parce que la mesure
+> doit porter sur l'endroit où l'on lit.
+>
+> **Ne mets pas en `nontext` un fond de bouton pour que son libellé soit mesuré.**
+> Le libellé se déclare en `text` avec `on:` vers ce fond. Mesurer tout texte contre
+> tout composant retient le pire couple et produit un signalement que personne ne
+> peut fermer.
+
+---
+
 ## 0. Direction visuelle
 
 > À remplir **avant** toute spécification d'écran. Cf. `references/design-quality.md`.

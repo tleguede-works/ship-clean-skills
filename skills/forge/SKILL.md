@@ -441,9 +441,35 @@ node "$FORGE/scripts/state.js" set-nav <anchor> '{ "archetype": "...", "core_loo
 3. Définis les **patterns de navigation** : routing, breadcrumbs, sidebar, navbar, ordre des entrées (cf. 3.2).
 4. Applique les **interdits** de `references/design-quality.md` § 3 : pas de blanc pur non choisi, pas d'ombre comme séparateur par défaut, pas de palette par défaut, pas d'échelle typographique uniforme.
 5. Génère **`.forge/design/design-system.md`** depuis `templates/design-system.md.tmpl`.
-6. **Mesure les contrastes — ne les écris pas.** La checklist demande « contraste
-   N:1 », et rien ne la vérifiait : les ratios étaient donc *rédigés*, pas
-   *calculés*.
+6. **Déclare les classes de tes couleurs** dans le design system (§ 0.0 du
+   gabarit). Puis : **Mesure les contrastes — ne les écris pas.** La checklist
+   demande « contraste N:1 », et rien ne la vérifiait : les ratios étaient donc
+   *rédigés*, pas *calculés*.
+
+   La déclaration n'est pas une formalité. Un contrôle qui devine la classe d'une
+   couleur d'après son nom ne fonctionne que dans la langue de ce nom : les
+   signaux historiques sont des littéraux **anglais** (`--color-text-*`,
+   `--color-ink-50`, `*-subtle`), alors que tout ce que ce skill produit est en
+   français. Sur un vocabulaire français, **tout** tombait sur « composant non
+   textuel » et se jugeait à 3:1 — donc **un texte à 3,80:1 passait**. C'est le
+   défaut que le contrôle existe pour trouver, revenu dans le document qu'il
+   venait de mesurer.
+
+   ```html
+   <!-- forge:token-classes
+   text     --color-texte-principal --color-texte-secondaire
+   on       --color-texte-inverse = --color-encre-700
+   surface  --color-background --color-surface --color-surface-sunken
+   nontext  --color-bordure-champ
+   exempt   --color-encre-50 = teinte de survol, aucun texte n'y est posé
+   -->
+   ```
+
+   `on:` dit sur quels fonds un texte est **réellement** posé — sans quoi un texte
+   inversé, jamais posé que sur de l'encre, est mesuré contre le papier et échoue
+   par construction. `exempt:` porte une **raison** : une teinte décorative n'est
+   pas un composant d'interface. Un token de couleur absent des listes est
+   signalé : la déclaration est un engagement, donc l'omettre est un choix.
 
    ```bash
    node "$FORGE/scripts/design-check.js" contrast <anchor>

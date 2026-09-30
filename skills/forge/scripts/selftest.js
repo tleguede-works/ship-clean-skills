@@ -2626,6 +2626,175 @@ test('l\'anneau de focus n\'est PAS exempté de contraste', () => {
   assert(o.kind === 'non_text', `classe attendue : non_text, obtenu ${o.kind}`);
 });
 
+/* ------------------------------------------------------------------ *
+ * La déclaration des classes — un vocabulaire français, et un texte
+ * que les noms anglais ne savaient pas voir
+ * ------------------------------------------------------------------ */
+
+/** Un design system **français**, avec la déclaration de ses classes. */
+function designFR(label, { tokens = {}, decl = null } = {}) {
+  const project = freshProject(label);
+  const t = {
+    '--color-background': ['#F1EDE5', 'Papier de page'],
+    '--color-surface': ['#FBF8F2', 'Feuille produit'],
+    '--color-surface-sunken': ['#E7E2D7', 'Champ de saisie'],
+    '--color-encre-700': ['#1B2220', 'Bouton d\'action'],
+    '--color-texte-principal': ['#161A19', 'Texte courant'],
+    '--color-texte-secondaire': ['#5A544A', 'Légendes et dates'],
+    '--color-texte-inverse': ['#FBF8F2', 'Texte sur fond foncé'],
+    '--color-encre-50': ['#EEF1F0', 'Teinte de survol'],
+    '--color-secondaire': ['#D9D2C4', 'Filet décoratif, ne porte aucune information'],
+    ...tokens
+  };
+  const rows = Object.entries(t)
+    .map(([k, v]) => `| \`${k}\` | \`${v[0]}\` | ${v[1]} |`).join('\n');
+  const block = decl === null
+    ? 'text     --color-texte-principal --color-texte-secondaire\n' +
+      'on       --color-texte-inverse = --color-encre-700\n' +
+      'surface  --color-background --color-surface --color-surface-sunken\n' +
+      'nontext  --color-encre-700\n' +
+      'exempt   --color-encre-50 = teinte de survol, aucun texte posé\n' +
+      'exempt   --color-secondaire = filet décoratif\n'
+    : decl;
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design system\n\n<!-- forge:token-classes\n' + block + '-->\n\n' +
+      '## 1.1 Couleurs\n\n| Token | Valeur | Usage |\n|---|---|---|\n' + rows + '\n'
+  });
+  assert(run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']).code === 0,
+    'register design_system');
+  return project;
+}
+
+test('un design system FRANCAIS est classé par sa déclaration, pas par des noms anglais', () => {
+  // Le défaut trouvé sur Onduleur : `--color-texte-*` ne ressemble à rien que le
+  // contrôle connaissait, donc **tout** tombait sur `non_text` à 3:1.
+  const project = designFR('design-fr');
+  const res = run('design-check.js', ['contrast', project]);
+  const cls = res.json.classified;
+  const kind = k => (cls.find(c => c.token === k) || {}).kind;
+  assert(kind('--color-texte-principal') === 'text', `texte attendu : ${kind('--color-texte-principal')}`);
+  assert(kind('--color-texte-inverse') === 'text', `texte inversé attendu : ${kind('--color-texte-inverse')}`);
+  assert(kind('--color-encre-700') === 'non_text', `composant attendu : ${kind('--color-encre-700')}`);
+  assert(kind('--color-encre-50') === 'exempt', `teinte attendue en exempte : ${kind('--color-encre-50')}`);
+  assert(res.json.classification_source.indexOf('déclaration') === 0,
+    `la source du classement doit être dite : ${res.json.classification_source}`);
+});
+
+test('NEGATIF — un texte français à 3,80:1 doit échouer, et non passer pour un composant', () => {
+  // Le cas exact d'Onduleur. Classé `non_text` par défaut, il était jugé contre
+  // 3:1 donc conforme — le défaut que ce script existe pour trouver, reproduit
+  // dans le document qu'il venait de mesurer.
+  const project = designFR('design-fr-texte-faible', {
+    tokens: { '--color-texte-secondaire': ['#78705F', 'Texte désactivé'] }
+  });
+  const res = run('design-check.js', ['contrast', project]);
+  const o = res.json.offenders.find(x => x.token === '--color-texte-secondaire');
+  assert(o, `un texte à 3,80:1 sur une surface doit être signalé : ${JSON.stringify(res.json.offenders)}`);
+  assert(o.kind === 'text', `classe attendue : text, obtenu ${o.kind}`);
+  assert(o.required === 4.5, `seuil attendu : 4.5, obtenu ${o.required}`);
+  assert(res.json.surfaces.indexOf(o.against) !== -1,
+    `l'échec doit être attribué à une surface déclarée : ${o.against}`);
+});
+
+test('le texte inversé est mesuré sur les fonds qu\'il occupe, pas sur tous les fonds clairs', () => {
+  // Sans `on:`, un texte inversé est mesuré contre le fond clair, où il n'est
+  // jamais posé : un faux positif par palette, c'est-à-dire presque toutes.
+  const project = designFR('design-fr-inverse');
+  const res = run('design-check.js', ['contrast', project]);
+  const m = res.json.measured.find(x => x.token === '--color-texte-inverse');
+  assert(m, 'le texte inversé doit être mesuré');
+  assert(m.against === '--color-encre-700',
+    `il doit être mesuré sur l'encre : ${m.against} — sans cela il échoue contre le papier`);
+  assert(res.code === 0, `un témoin propre doit passer : ${JSON.stringify(res.json.offenders)}`);
+});
+
+test('un composant déclaré est jugé à 3:1, et n\'est PAS une surface pour le texte courant', () => {
+  // Un texte courant n'est pas posé sur le fond d'un bouton. Le mesurer quand même
+  // retient le pire couple et produit un signalement que personne ne peut fermer.
+  const project = designFR('design-fr-composant');
+  const res = run('design-check.js', ['contrast', project]);
+  const c = res.json.classified.find(x => x.token === '--color-encre-700');
+  const m = res.json.measured.find(x => x.token === '--color-encre-700');
+  assert(c.kind === 'non_text' && m.required === 3,
+    `un composant d'interface se juge à 3:1 : ${c.kind} / ${m && m.required}`);
+  assert(res.json.surfaces.indexOf('--color-encre-700') === -1,
+    `un composant n'est pas une surface du texte courant : ${JSON.stringify(res.json.surfaces)}`);
+  assert(res.code === 0, `témoin propre attendu : ${JSON.stringify(res.json.offenders)}`);
+});
+
+test('un token de couleur absent de la déclaration est signalé, pas classé en douce', () => {
+  const project = designFR('design-fr-oubli', { tokens: { '--color-alerte': ['#8A2B1F', 'Alerte'] } });
+  const res = run('design-check.js', ['contrast', project]);
+  const o = res.json.offenders.find(x => x.problem === 'undeclared_class');
+  assert(o && o.token === '--color-alerte',
+    `un token de couleur non déclaré doit être nommé : ${JSON.stringify(res.json.offenders)}`);
+});
+
+test('une liste de la déclaration peut se poursuivre sur la ligne suivante', () => {
+  // Une directiveparseuse qui perd sa continuation produit une déclaration qui
+  // PARAIT complète et ne l'est qu'à moitié : les tokens oubliés retombent sur le
+  // classement par défaut, donc sur 3:1. C'est le même défaut que ci-dessus, par
+  // une autre porte.
+  const project = designFR('design-fr-continuation', {
+    decl: 'text     --color-texte-principal --color-texte-secondaire\n' +
+      '          --color-lien\n' +
+      'on       --color-texte-inverse = --color-encre-700\n' +
+      'surface  --color-background\n' +
+      '          --color-surface --color-surface-sunken\n' +
+      'nontext  --color-encre-700\n' +
+      'exempt   --color-encre-50 = teinte de survol\n' +
+      'exempt   --color-secondaire = filet décoratif\n'
+  });
+  const res = run('design-check.js', ['contrast', project]);
+  assert(res.json.declared_classes.text.indexOf('--color-lien') !== -1,
+    `la continuation de \`text:\` doit être lue : ${JSON.stringify(res.json.declared_classes.text)}`);
+  assert(res.json.surfaces.length === 3,
+    `les trois surfaces doivent être déclarées : ${JSON.stringify(res.json.surfaces)}`);
+  assert(res.code === 0, `témoin propre attendu : ${JSON.stringify(res.json.offenders)}`);
+});
+
+test('NEGATIF — un texte de continuation omis retombe sur 3:1 et son echec est dit', () => {
+  // L'inverse du précédent : si la continuation est perdue, ce texte — déclaré
+  // dans l'intention, oublié dans les faits — est classé composant et passe.
+  const project = designFR('design-fr-continuation-faible', {
+    tokens: { '--color-texte-secondaire': ['#78705F', 'Texte faible'] },
+    decl: 'text     --color-texte-principal\n' +
+      'on       --color-texte-inverse = --color-encre-700\n' +
+      'surface  --color-background --color-surface --color-surface-sunken\n' +
+      'nontext  --color-encre-700\n' +
+      'exempt   --color-encre-50 = teinte de survol\n' +
+      'exempt   --color-secondaire = filet décoratif\n'
+  });
+  const res = run('design-check.js', ['contrast', project]);
+  const o = res.json.offenders.find(x => x.problem === 'undeclared_class' && x.token === '--color-texte-secondaire');
+  assert(o, `un token omis de la déclaration doit être signalé : ${JSON.stringify(res.json.offenders)}`);
+  const m = res.json.measured.find(x => x.token === '--color-texte-secondaire');
+  assert(m && m.required === 3,
+    `classé par défaut, donc à 3:1 : ${m && m.required} — c'est bien ce que le défaut fait`);
+});
+
+test('une déclaration sans token de texte est incomplète, et le dit', () => {
+  const project = designFR('design-fr-vide', {
+    decl: 'surface  --color-background --color-surface --color-surface-sunken\n'
+  });
+  const res = run('design-check.js', ['contrast', project]);
+  const o = res.json.offenders.find(x => x.problem === 'declaration_incomplete');
+  assert(o, `une déclaration sans texte doit échouer : ${JSON.stringify(res.json.offenders)}`);
+  assert(/texte/.test(o.why), `la raison doit nommer le texte : ${o.why}`);
+});
+
+test('une palette française SANS déclaration conserve le comportement historique', () => {
+  // Rétrocompatibilité : un design system déjà écrit, sans déclaration, doit être
+  // classé exactement comme avant.
+  const project = designProject('design-legacy');
+  const res = run('design-check.js', ['contrast', project]);
+  assert(res.code === 0, `Amberline doit continuer à passer : ${res.json.offenders}`);
+  assert(res.json.declared_classes === null, 'aucune déclaration ne doit être inventée');
+  assert(res.json.classification_source.indexOf('noms de tokens en anglais') === 0,
+    `l'absence de déclaration doit être dite : ${res.json.classification_source}`);
+});
+
 test('une exemption est nommée et visible dans la sortie', () => {
   const project = designProject('design-exempt');
   const res = run('design-check.js', ['contrast', project]);
