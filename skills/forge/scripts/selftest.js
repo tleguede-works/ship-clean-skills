@@ -2886,3 +2886,261 @@ test('ddl : sans moteur, le contrôle DIT qu\'il n\'a rien exécuté', () => {
          /devDependencies/.test(fs.readFileSync(path.join(SKILL_DIR, '..', '..', 'package.json'), 'utf8')),
     'le moteur doit être une dépendance de développement du dépôt, jamais du skill distribué');
 });
+
+/* ------------------------------------------------------------------ *
+ * Renvois de section — `citée → résolue`
+ * ------------------------------------------------------------------ */
+
+section('Renvois de section');
+
+/** Un projet dont un artefact porte un titre numéroté et des renvois. */
+function refProject(label, body) {
+  const project = freshProject(label);
+  writeDeliverable(project, '.forge/architecture.md', {
+    type: 'architecture',
+    body: '## 5.9 Soumettre\n\n## 5.10 Publier\n\n## 5.11 Partager\n\n' + body
+  });
+  return project;
+}
+
+test('references : un renvoi vers une section absente est un pointeur cassé', () => {
+  // La forme **explicite** : le renvoi nomme sa cible, à côté. Le contrôle sait
+  // alors exactement où regarder, et sa conclusion ne dépend d'aucune
+  // interprétation.
+  //
+  // C'est le défaut d'INC-011 : corriger l'architecture a *inséré* deux
+  // endpoints en § 5.9 et § 5.10, ce qui a décalé § 5.11 → § 5.13 … Dix-sept
+  // renvois dans huit plans pointent depuis vers la mauvaise section — et
+  // pointent vers *quelque chose*, ce qui les rend invisibles.
+  const project = refProject('refs-casse', '');
+  writeDeliverable(project, '.forge/plans/partage.md', {
+    type: 'plan',
+    body: '## 1. Contexte\n\nLe partage passe par `architecture.md` § 5.18 — voir aussi § 2.\n'
+  });
+  run('state.js', ['register', project, 'slice', 'partage', '.forge/plans/partage.md']);
+
+  const res = run('consistency-check.js', ['references', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'section_references');
+  assert(!c.status || c.status === 'fail',
+    `un renvoi casse doit faire échouer : ${JSON.stringify(c).slice(0, 250)}`);
+  assert(c.references_broken === 1,
+    `exactement un renvoi cassé, pas plus : ${JSON.stringify(c.broken)}`);
+  assert(c.broken[0].section === '5.18' && c.broken[0].target === 'architecture.md',
+    `le renvoi fautif doit être nommé : ${JSON.stringify(c.broken[0])}`);
+  assert(c.broken[0].what_exists.includes('5.11'),
+    `le contrôle doit dire ce qui existe à la place : ${JSON.stringify(c.broken[0].what_exists)}`);
+});
+
+test('references : un renvoi vers une section qui existe est résolu, et rien n\'est signalé', () => {
+  // Le témoin propre du précédent. Sans lui, on ne sait pas si le contrôle sait
+  // distinguer un renvoi cassé d'un renvoi valide — il échouerait dans les deux
+  // cas, et le vert serait une coïncidence.
+  const project = refProject('refs-ok', '');
+  writeDeliverable(project, '.forge/plans/partage.md', {
+    type: 'plan',
+    body: '## 1. Contexte\n\nLe partage passe par `architecture.md` § 5.11 — voir aussi § 1.\n'
+  });
+  run('state.js', ['register', project, 'slice', 'partage', '.forge/plans/partage.md']);
+
+  const res = run('consistency-check.js', ['references', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'section_references');
+  assert(c.status === 'pass', `un renvoi valide ne doit rien signaler : ${JSON.stringify(c.broken)}`);
+  assert(c.references_broken === 0 && c.references_to_unknown_file === 0,
+    `rien de casse, rien d'inconnu : ${JSON.stringify(c).slice(0, 250)}`);
+  assert(c.references_resolved >= 2,
+    `les renvois doivent être comptés comme résolus : ${c.references_resolved}`);
+});
+
+test('references : un renvoi nu se COMPTE, il ne fait pas échouer', () => {
+  // La classe la plus nombreuse du dossier : 276 renvois nus. Les faire échouer
+  // produirait un contrôle qu'on éteint au bout d'une semaine — ce qui est
+  // arrivé quatre fois ici. Ils se comptent, avec la voie de sortie écrite.
+  const project = refProject('refs-nus', '');
+  writeDeliverable(project, '.forge/plans/Partage.md', {
+    type: 'plan',
+    body: '## 1. Contexte\n\nVoir § 5.18 du dossier.\n'
+  });
+  run('state.js', ['register', project, 'slice', 'Partage', '.forge/plans/Partage.md']);
+
+  const res = run('consistency-check.js', ['references', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'section_references');
+  assert(c.status === 'pass', `un renvoi nu ne doit pas faire échouer : ${c.status}`);
+  assert(c.references_undeclared >= 1, `il doit être compté : ${JSON.stringify(c).slice(0, 200)}`);
+  assert(/Ecrire le nom du fichier|exit_route/.test(JSON.stringify(c)) || /exit_route/.test(Object.keys(c).join()),
+    `la voie de sortie doit être présente : ${Object.keys(c).join()}`);
+});
+
+test('references : les quatre formes de titre numéroté sont lues', () => {
+  // `## 5.11`, `## §5 —`, `## §5.11`, `## Étape 3 —`. Les quatre existent dans
+  // les documents livrés : la quatrième est celle de `references/design-quality.md`,
+  // qui écrit `## Étape 3 — Interdits` tout en appelant sa propre section « le §3 ».
+  //
+  // Un motif qui n'en lit qu'une produit dix-neuf faux positifs : c'est mesuré,
+  // pas supposé.
+  const src = fs.readFileSync(path.join(SCRIPTS, 'consistency-check.js'), 'utf-8');
+  const block = src.slice(src.indexOf('function headingMap'), src.indexOf('function referenceIndex'));
+  assert(/\(\?:§\[ \\t\]\*\)\?/.test(block), 'la forme `## §N` doit être lue');
+  assert(block.includes('tape'), 'la forme `## Étape N` doit être lue');
+  assert(/\\u00C9/.test(block),
+    '`Étape` commence par un É accentué dans le fichier réel : un motif ASCII le manque');
+});
+
+test('references : un fichier et un numéro trop éloignés ne sont PAS rapprochés', () => {
+  // La fenêtre d'adjacence. Un document nomme `design-system.md` une fois, puis
+  // cite `§ 2.3` quarante caractères plus loin, dans un autre paragraphe. Une
+  // fenêtre large attribue au premier nom trouvé tout ce qui suit : sur le
+  // projet de test, **539 renvois cassés**, tous faux.
+  //
+  // Le contrôle refuse donc de deviner au-delà de douze caractères, et compte le
+  // renvoi comme non déclaré.
+  const project = refProject('refs-lointain', '');
+  writeDeliverable(project, '.forge/plans/Partage.md', {
+    type: 'plan',
+    body: '## 1. Contexte\n\n`architecture.md` — le partage passe par § 5.18 du dossier.\n'
+  });
+  run('state.js', ['register', project, 'slice', 'Partage', '.forge/plans/Partage.md']);
+
+  const res = run('consistency-check.js', ['references', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'section_references');
+  assert(c.status === 'pass', `trop eloigne = non déclaré, pas cassé : ${JSON.stringify(c.broken)}`);
+  assert(c.references_broken === 0,
+    `aucun renvoi cassé ne doit être inventé à distance : ${JSON.stringify(c.broken)}`);
+  assert(c.references_undeclared >= 1, `il doit être compté comme non déclaré : ${JSON.stringify(c).slice(0, 200)}`);
+});
+
+/* ------------------------------------------------------------------ *
+ * Amendement — etendre, jamais renumeroter
+ * ------------------------------------------------------------------ */
+
+section('Amendement');
+
+/** Un artefact enregistre, approuve, avec N sections numerotees. */
+function amendProject(label, sections, status = 'approved') {
+  const project = freshProject(label);
+  const body = '# Architecture\n\n' + sections.map(s => `## ${s.n} ${s.t}\n`).join('\n');
+  writeDeliverable(project, '.forge/architecture.md', { type: 'architecture', status, body });
+  run('state.js', ['register', project, 'deliverable', 'architecture', '.forge/architecture.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'architecture', 'approved']);
+  return project;
+}
+
+/** Reecrire l'architecture avec un jeu de sections donne. */
+function rewrite(project, sections, status = 'approved') {
+  const body = '# Architecture\n\n' + sections.map(s => `## ${s.n} ${s.t}\n`).join('\n');
+  writeDeliverable(project, '.forge/architecture.md', { type: 'architecture', status, body });
+}
+
+const BASE = [
+  { n: '5.9', t: 'Soumettre' },
+  { n: '5.10', t: 'Publier' },
+  { n: '5.11', t: 'Partager' },
+  { n: '5.12', t: 'Journaliser' }
+];
+
+test('amend : insérer en plein milieu est REFUSÉ, et le refus nomme la dérive', () => {
+  // Le geste exact d'INC-011 : l'amendement des deux causes racines critiques a
+  // inséré deux endpoints en § 5.9 et § 5.10, ce qui a décalé toute la
+  // numérotation. Dix-sept renvois dans huit plans sont devenus faux, et
+  // **aucune ligne ne le signale** : ils pointent vers une section qui existe
+  // encore, donc vers la mauvaise.
+  const project = amendProject('amend-renumerotation', BASE);
+  rewrite(project, [
+    { n: '5.9', t: 'Soumettre' },
+    { n: '5.10', t: 'NOUVEAU inséré en plein milieu' },
+    { n: '5.11', t: 'Publier' },
+    { n: '5.12', t: 'Partager' },
+    { n: '5.13', t: 'Journaliser' }
+  ]);
+
+  const res = run('state.js', ['amend', project, 'architecture', '--reason', 'deux causes racines']);
+  assert(res.code !== 0, `un renumérotage doit être refusé : ${res.stdout}`);
+  const j = res.json;
+  assert(j.error === 'renumbering_refused', `le refus doit etre nomme : ${JSON.stringify(j).slice(0, 200)}`);
+  const reused = (j.reused || []).map(r => r.section);
+  assert(reused.join(',') === '5.10,5.11,5.12',
+    `le refus doit nommer LES TROIS numeros derives, dans l'ordre : ${reused}`);
+  assert(j.reused[0].was === 'Publier' && j.reused[0].now === 'NOUVEAU inséré en plein milieu',
+    `le refus doit dire ce que chaque numero est devenu : ${JSON.stringify(j.reused[0])}`);
+  assert(/etendre|etend/.test(JSON.stringify(j.how_to_continue)),
+    `le refus doit dire comment continuer sans risque : ${JSON.stringify(j.how_to_continue)}`);
+  // Et surtout : rien n'a ete ecrit. Le refus laisse l'artefact intact.
+  const after = run('state.js', ['status', project]);
+  assert(!/renumber/.test(after.stdout),
+    `un refus ne doit rien enregistrer : ${after.stdout.slice(0, 300)}`);
+});
+
+test('amend : étendre en fin de numérotation passe, et reste traçable', () => {
+  // Le témoin propre du précédent, et le **correctif sans risque** qu'INC-011
+  // aurait dû prendre : ajouter les sections nouvelles en fin, sans toucher à
+  // un numéro existant. Les renvois des autres artefacts restent exacts.
+  const project = amendProject('amend-extension', BASE);
+  rewrite(project, BASE.concat([{ n: '5.13', t: 'Revoquer' }]));
+
+  const res = run('state.js', ['amend', project, 'architecture', '--reason', 'endpoint ajouté en fin']);
+  assert(res.code === 0, `une extension sans risque doit passer : ${res.stdout}${res.stderr}`);
+  const j = res.json;
+  assert(j.renumbered === 0, `rien n'est renumerote : ${JSON.stringify(j)}`);
+  assert(j.sections_added === 1 && j.added[0].section === '5.13',
+    `la section ajoutee doit etre nommee : ${JSON.stringify(j.added)}`);
+  // Le statut redevient `stale` : un artefact amendé n'est plus celui qui a été
+  // approuvé. C'est le trajet que le skill décrit déjà pour un document vivant.
+  assert(j.status === 'stale' && j.previous_status === 'approved',
+    `le statut doit revenir a stale, en gardant l'ancien : ${j.status} / ${j.previous_status}`);
+  assert(j.amended_from, `l'empreinte precedente doit etre conservee : ${JSON.stringify(j)}`);
+});
+
+test('amend : autoriser un renumérotage exige une raison, qui reste écrite', () => {
+  // `--allow-renumber` n'est pas un interrupteur : c'est une décision écrite.
+  // Sans raison, il est refusé — sinon l'exception devient la règle en trois
+  // semaines, et la trace du renumérotage disparaît avec elle.
+  const project = amendProject('amend-ack', BASE);
+  rewrite(project, [
+    { n: '5.9', t: 'Soumettre' },
+    { n: '5.10', t: 'NOUVEAU' },
+    { n: '5.11', t: 'Publier' },
+    { n: '5.12', t: 'Partager' },
+    { n: '5.13', t: 'Journaliser' }
+  ]);
+
+  const sansRaison = run('state.js',
+    ['amend', project, 'architecture', '--reason', 'deux causes racines', '--allow-renumber']);
+  assert(sansRaison.code !== 0, `--allow-renumber sans raison doit echouer : ${sansRaison.stdout}`);
+  assert(sansRaison.json.error === 'renumber_without_reason',
+    `le refus doit etre nomme : ${JSON.stringify(sansRaison.json).slice(0, 200)}`);
+
+  const avecRaison = run('state.js', ['amend', project, 'architecture',
+    '--reason', 'deux causes racines critiques',
+    '--allow-renumber', '--renumber-reason', '17 renvois a reprendre en phase 5']);
+  assert(avecRaison.code === 0, `avec raison, l'amendement passe : ${avecRaison.stdout}${avecRaison.stderr}`);
+  assert(avecRaison.json.renumbering_acknowledged === true,
+    `l'acknowledgement doit etre enregistre : ${JSON.stringify(avecRaison.json)}`);
+
+  // La trace doit etre dans l'etat, pas seulement dans la sortie d'un ecran.
+  const st = JSON.parse(fs.readFileSync(path.join(project, '.forge', 'state.json'), 'utf-8'));
+  const a = st.deliverables.architecture.amendment;
+  assert(a.renumbered.acknowledged === true, 'le renumerotage doit rester trace');
+  assert(/17 renvois/.test(a.renumbered.reason),
+    `la raison du renumerotage doit rester lisible : ${JSON.stringify(a.renumbered)}`);
+  assert(a.renumbered.reused.length === 3, 'les trois numeros derives doivent rester traces');
+});
+
+test('amend : un amendement sans raison est une édition ordinaire', () => {
+  const project = amendProject('amend-sans-raison', BASE);
+  rewrite(project, BASE.concat([{ n: '5.13', t: 'Revoquer' }]));
+  const res = run('state.js', ['amend', project, 'architecture']);
+  assert(res.code !== 0, `un amendement sans raison doit echouer : ${res.stdout}`);
+  assert(res.json.error === 'amend_without_reason',
+    `le refus doit etre nomme : ${JSON.stringify(res.json).slice(0, 200)}`);
+});
+
+test('amend : la carte des titres est la référence, capturée à l\'approbation', () => {
+  // Sans cette carte, le PREMIER amendement d'un artefact pourrait renumeroter
+  // librement : rien ne saurait dire ce qui a change. C'est la même raison que
+  // `content_hash` — on mémorise la forme au moment où l'artefact entre.
+  const project = amendProject('amend-reference', BASE);
+  const st = JSON.parse(fs.readFileSync(path.join(project, '.forge', 'state.json'), 'utf-8'));
+  const h = st.deliverables.architecture.headings || {};
+  assert(Object.keys(h).join(',') === '5.9,5.10,5.11,5.12',
+    `la carte doit contenir les quatre sections : ${JSON.stringify(h)}`);
+  assert(h['5.10'] === 'Publier', `la carte doit porter le titre, pas seulement le numero : ${JSON.stringify(h)}`);
+});

@@ -1004,6 +1004,226 @@ function checkCitationAccuracy(root, state) {
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * Les renvois de section : `citee -> resolue`
+ * ------------------------------------------------------------------ */
+
+/**
+ * Les titres numerotes d'un fichier : `{ '5.15': 'DELETE /api/v1/…', … }`.
+ *
+ * **Quatre formes** sont acceptees, parce que les quatre existent dans les
+ * documents livres avec ce skill :
+ *
+ *   `## 5.15 Titre`      — gabarits du skill
+ *   `## §5 — Titre`      — `references/archetypes.md`
+ *   `## §5.15 Titre`     — melange des deux
+ *   `## Étape 3 — Titre` — `references/design-quality.md`, qui ecrit pourtant
+ *                           « le §3 (interdits) » dans sa propre prose
+ *
+ * Une premiere version n'acceptait que la premiere forme : elle declarait alors
+ * **dix-huit renvois casses** vers `archetypes.md § 4` et `§ 9`, qui existent, et
+ * **un renvoi casse** vers `design-quality.md § 3` — dont la section 3 est le
+ * titre `## Étape 3 — Interdits`. Dix-neuf faux positifs produits par un motif
+ * trop etroit. Un motif trop etroit est aussi un motif faux : il rend le compte
+ * « rien n'est casse » quand un tiers des renvois est intact, et il rend le
+ * compte « tout est casse » quand une seule forme change.
+ */
+function headingMap(md) {
+  const out = {};
+  const re = /^#{1,6}[ \t]+(?:§[ \t]*)?(?:[Ee\u00C9\u00E9]tape[ \t]+)?(\d+(?:\.\d+)*)\b[ \t.—–-]*(.*)$/gm;
+  let m;
+  while ((m = re.exec(md)) !== null) {
+    if (!(m[1] in out)) out[m[1]] = m[2].trim().slice(0, 90);
+  }
+  return out;
+}
+
+/** Tous les `.md` indexes, par nom de fichier. Projet d'abord, skill ensuite. */
+function referenceIndex(root, state) {
+  const byName = new Map();     // basename -> chemin
+  const headings = new Map();    // chemin -> { numero -> titre }
+  const add = (abs, rel) => {
+    const md = read(root, rel);
+    if (!md) return;
+    const h = headingMap(md);
+    headings.set(rel, h);
+    const base = path.basename(rel).toLowerCase();
+    // Un nom ne pointe que sur un fichier unique : deux homonymes sont
+    // ambigus, et un pointeur ambigu ne se resout pas.
+    if (!byName.has(base)) byName.set(base, []);
+    if (!byName.get(base).includes(rel)) byName.get(base).push(rel);
+  };
+
+  for (const d of Object.values(state.deliverables || {})) if (d.path) add(d.path, d.path);
+  for (const s2 of Object.values(state.screens || {})) if (s2.path) add(s2.path, s2.path);
+  for (const s2 of Object.values(state.slices || {})) if (s2.plan_path) add(s2.plan_path, s2.plan_path);
+  for (const s2 of Object.values(state.foundations || {})) if (s2.path) add(s2.path, s2.path);
+
+  const forgeDir = path.resolve(__dirname, '..');
+  for (const dir of [path.join(root, '.forge'), path.join(forgeDir, 'references'), forgeDir]) {
+    let files = [];
+    try { files = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+    for (const f of files) {
+      if (!f.isFile() || !f.name.endsWith('.md')) continue;
+      const abs = path.join(dir, f.name);
+      add(abs, path.relative(root, abs));
+    }
+  }
+  return { byName, headings };
+}
+
+/**
+ * Un renvoi de section dont la cible n'existe pas.
+ *
+ * Un renvoi `§ 5.15` est un **pointeur** — la forme que le skill sait deja
+ * traiter (`derived_from`, `content_hash`, la parite de surface). Aucun
+ * controle ne le resolvait : rien n'extractait les `§ X.Y` d'un artefact et ne
+ * verifiait que la cible existe.
+ *
+ * Constate sur le projet de test, INC-011 : corriger l'architecture **a insere**
+ * deux endpoints en § 5.9 et § 5.10, ce qui a decale toute la numerotation
+ * § 5.11 → § 5.13 … § 5.20 → § 5.22. **Dix-sept renvois** dans huit plans
+ * pointent desormais vers la mauvaise section, et aucune de ces lignes ne
+ * signale qu'elle est perimee. Ils pointent vers *quelque chose* : c'est ce qui
+ * les rend invisibles.
+ *
+ * ## Deux classes, deux verdicts — et pourquoi
+ *
+ *   - le renvoi **nomme** sa cible (`` `architecture.md` § 5.15 ``). Le controle
+ *     sait alors exactement ou regarder. Cible absente → **defaut**, sans
+ *     discussion : c'est un pointeur casse, comme `derived_from` vers un fichier
+ *     disparu ;
+ *   - le renvoi est **nu** (`§ 5.15`). Personne ne sait de quel document il
+ *     parle. Le controle ne pretend pas deviner : il constate que **le pointeur
+ *     ne nomme pas sa cible**, et il compte.
+ *
+ * La deuxieme classe ne fait pas echouer. Elle est comptee, avec sa voie de
+ * sortie ecrite dans la sortie : ecrire le nom du fichier, et le compte tombe.
+ * Un controle qu'on ne peut pas suivre sans un chantier de 288 renvois est un
+ * controle qu'eteint au bout d'une semaine — c'est arrive quatre fois dans ce
+ * dossier, et la lesson est la meme a chaque fois.
+ */
+/**
+ * Fenetre d'adjacence, en caracteres, entre un nom de fichier et le `§ N` qui
+ * pointe dans ce fichier. See la table mesuree dans `checkSectionReferences`.
+ */
+const ADJACENCY = 12;
+
+function checkSectionReferences(root, state) {
+  const check = 'section_references';
+  const index = referenceIndex(root, state);
+  if (index.headings.size < 3) { skip(check, 'trop peu de documents numerotes pour verifier des renvois'); return; }
+
+  const artefacts = [];
+  for (const [key, d] of Object.entries(state.deliverables || {})) if (d.path) artefacts.push({ key, rel: d.path });
+  for (const [key, s2] of Object.entries(state.screens || {})) if (s2.path) artefacts.push({ key, rel: s2.path });
+  for (const [key, s2] of Object.entries(state.slices || {})) if (s2.plan_path) artefacts.push({ key, rel: s2.plan_path });
+  for (const [key, s2] of Object.entries(state.foundations || {})) if (s2.path) artefacts.push({ key, rel: s2.path });
+  if (!artefacts.length) { skip(check, 'aucun artefact enregistre'); return; }
+
+  const broken = [];      // cible nommee, section absente  → ECHEC
+  const unknown = [];     // cible nommee, fichier absent    → ECHEC
+  const undeclared = [];  // renvoi nu                       → compte
+  let resolved = 0;
+
+  for (const a of artefacts) {
+    const md = read(root, a.rel);
+    if (!md) continue;
+    const own = index.headings.get(a.rel) || {};
+
+    // Les renvois explicites : un nom de fichier suivi, **a cote**, de son
+    // numero de section.
+    //
+    // La fenetre est de **douze caracteres**, et c'est une decision mesuree.
+    // Un nom de fichier et un numero de section ne sont pas voisins en prose :
+    // un document nomme `design-system.md` une fois, puis cite `§ 2.3` quarante
+    // caracteres plus loin — dans un tout autre paragraphe. Une fenetre large
+    // attribue au fichier le premier nom trouve dans le document entier : sur le
+    // projet de test elle produisait **539 renvois casses**, tous faux.
+    //
+    //     fenetre   casses   resolus
+    //        60 car.     13     1090
+    //        30 car.      5     1080
+    //        20 car.      3     1073
+    //        12 car.      1     1072   <-- retenue
+    //
+    // Au-dela de douze caracteres, le controle **refuse de deviner** et compte le
+    // renvoi comme non declare. C'est la meme regle que partout ailleurs dans ce
+    // dossier : un pointeur se resout ou il ne vaut rien.
+    const windows = [];
+    const nameRe = /([A-Za-z0-9_][A-Za-z0-9_./-]*\.md)/g;
+    let nm;
+    while ((nm = nameRe.exec(md)) !== null) {
+      windows.push({
+        from: nm.index + nm[0].length,
+        to: Math.min(md.length, nm.index + nm[0].length + ADJACENCY),
+        name: path.basename(nm[1]).toLowerCase(),
+        at: nm.index
+      });
+    }
+
+    const covered = [];
+    for (const w of windows) {
+      const body = md.slice(w.from, w.to);
+      if (!/§/.test(body)) continue;
+      const cands = index.byName.get(w.name);
+      for (const m of body.matchAll(/§+\s*(\d+(?:\.\d+)*)/g)) {
+        const num = m[1];
+        const line = md.slice(0, w.from + m.index).split('\n').length;
+        covered.push(w.from + m.index);
+        if (!cands) { unknown.push({ artifact: a.key, file: a.rel, line, section: num, target: w.name }); continue; }
+        if (cands.length > 1) {
+          undeclared.push({ artifact: a.key, file: a.rel, line, section: num,
+            why: 'deux fichiers portent ce nom : le pointeur est ambigu' });
+          continue;
+        }
+        const h = index.headings.get(cands[0]) || {};
+        if (num in h) { resolved++; continue; }
+        broken.push({ artifact: a.key, file: a.rel, line, section: num, target: w.name,
+          target_file: cands[0], what_exists: Object.keys(h).slice(0, 8) });
+      }
+    }
+
+    // Les renvois nus : rien ne dit de quel document ils parlent.
+    for (const m of md.matchAll(/§+\s*(\d+(?:\.\d+)*)/g)) {
+      if (covered.includes(m.index)) continue;
+      const num = m[1];
+      if (num in own) { resolved++; continue; }
+      undeclared.push({ artifact: a.key, file: a.rel,
+        line: md.slice(0, m.index).split('\n').length, section: num,
+        why: 'renvoi nu : aucun fichier nomme' });
+    }
+  }
+
+  const byFile = {};
+  for (const u of undeclared) byFile[u.file] = (byFile[u.file] || 0) + 1;
+
+  record(check, broken.length === 0 && unknown.length === 0, {
+    artifacts: artefacts.length,
+    files_indexed: index.headings.size,
+    references_resolved: resolved,
+    references_broken: broken.length,
+    references_to_unknown_file: unknown.length,
+    references_undeclared: undeclared.length,
+    broken,
+    unknown,
+    undeclared_by_file: byFile,
+    undeclared_sample: undeclared.slice(0, 12),
+    exit_route: undeclared.length === 0 ? null :
+      `Ecrire le nom du fichier devant chaque renvoi : \`architecture.md § 5.15\`. ` +
+      `${undeclared.length} renvois nus, dont les plus charges : ` +
+      Object.entries(byFile).sort((a, b) => b[1] - a[1]).slice(0, 3)
+        .map(([f, n]) => `${f} (${n})`).join(', ') +
+      `. Un renvoi nu ne fait pas echouer : il se compte. Mais un renvoi nu ne ` +
+      `resout jamais tout seul, et INC-011 est exactement ce cas — dix-sept ` +
+      `renvois qui pointent vers la mauvaise section sans qu'aucune ligne ne le dise.`,
+    rule: 'Un renvoi de section est un pointeur, et un pointeur se resout ou ne vaut rien. ' +
+          'Un renvoi qui pointe encore quelque chose apres une renumerotation est le pire : ' +
+          'il semble resolu. C\'est pour cela qu\'un amendement etend un document, ' +
+          'jamais il ne le renumerote.'
+  });
+}
+
 const CHECKS = {
   reality: (root, state) => checkSliceReality(root, state),
   ids: (root, state) => checkIdTraceability(root, state),
@@ -1014,6 +1234,7 @@ const CHECKS = {
   premises: (root, state) => checkPremises(root, state),
   citations: (root, state) => checkCitationAccuracy(root, state),
   'state-parity': (root, state) => checkStateParity(root, state),
+  references: (root, state) => checkSectionReferences(root, state),
 };
 
 function main() {

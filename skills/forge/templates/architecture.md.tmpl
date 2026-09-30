@@ -227,6 +227,38 @@ Vague N :
 
 ---
 
+## 9. Amendements
+
+**Ce document sera cité par numéro.** Un plan de la Phase 5 écrit « selon
+l'architecture § 5.15 » : ce numéro est un **contrat**.
+
+> **Étendre, jamais renuméroter.** Ajouter une section **en fin de numérotation**
+> ne casse rien. Insérer en plein milieu décale tous les numéros suivants — et
+> chaque renvoi pointe alors vers une section qui existe **encore**, donc vers la
+> **mauvaise**. Aucun contrôle ne voit une dérive qui résout.
+
+| # | Amendement | Raison | Sections ajoutées | Renumérotage |
+|---|---|---|---|---|
+| {{N}} | {{DATE}} | {{POURQUOI}} | {{NUMEROS AJOUTES, EN FIN}} | {{aucun /reconnu explicite}} |
+
+Un amendement ne s'édite pas dans le fichier : il s'enregistre, et la commande
+**refuse** le renumérotage en nommant la dérive.
+
+```bash
+node "$FORGE/scripts/state.js" amend <anchor> architecture \
+  --reason "<pourquoi cet amendement existe>" \
+  --changes <fichier-listant-ce-qui-change>
+```
+
+Renuméroter quand même : `--allow-renumber --renumber-reason "<texte>"`. Cette
+raison reste **dans l'état**, à côté des numéros cassés.
+
+**Nomme tes renvois.** `§ 5.15` seul ne dit pas de quel document il parle ;
+`` `architecture.md` § 5.15 `` le dit, et un contrôle peut le vérifier sans rien
+deviner.
+
+---
+
 ## Check list de gate
 
 - [ ] Chaque user story du PRD a une slice correspondante.
@@ -237,5 +269,7 @@ Vague N :
 - [ ] Le graphe de dépendances est sans cycle.
 - [ ] L'ordre d'implémentation est cohérent avec les dépendances.
 - [ ] Les décisions d'architecture non triviales sont documentées en ADR.
+- [ ] `ddl-exec all` passe : PostgreSQL accepte le DDL, et les gardes déclarées tiennent.
+- [ ] `consistency-check references` : **zéro** renvoi cassé. Les renvois nus se comptent — les nommer.
 
 **Statut** : `draft` → en attente de validation.
