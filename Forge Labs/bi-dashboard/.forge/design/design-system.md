@@ -1,6 +1,6 @@
 ---
 type: design-system
-status: approved
+status: draft
 generated_at: 2026-09-30
 derived_from: .forge/prd.md
 ---
@@ -230,7 +230,7 @@ elles, et c'est un choix, pas une omission.**
 > coupe pas. Une hauteur de tuile qui ne permet pas de tenir la ligne est un défaut
 > de la hauteur, pas une permission de perdre la date.
 
-**États** :
+**États** — rendus par l'union `IndicatorDisplayState`, sauf `hover`, `active`, `focus` (états d'interaction : aucun rendu piloté par la donnée, ils ne sont pas dans l'union), `out_of_band_alerting`, `out_of_band_alerted`, `threshold_latched`, `threshold_armed` (V1 — § 2.1, hors MVP) et `permission_denied` (E5 : la tuile n'est pas rendue) :
 
 | État | Déclencheur | Apparence |
 |---|---|---|
@@ -464,7 +464,7 @@ de `indicateur-detail.md`), il ne peut pas réordonner les rangs.
 | `drill` | Densité `sm`, tri par colonne de contribution, colonne « part » | Décomposition d'un indicateur (US-5) |
 | `reference` | Densité `md`, actions groupées, sélection multiple | Référentiel des définitions (US-1) |
 
-**États** : `loading` (skeleton ligne par ligne, hauteur conservée) · `filled` · `empty-never-visited` (CTA de création) · `empty-no-data` (« aucune donnée sur la période », E2) · `error` (message + `Réessayer`) · `filtered-to-zero` (« 0 ligne pour ces filtres », avec le bouton de remise à zéro — distinct de `empty-no-data`) · `offline` (dernier résultat affiché, daté).
+**États** — rendus par l'union `TableState` `loading` (skeleton ligne par ligne, hauteur conservée) · `filled` · `empty-never-visited` (CTA de création) · `empty-no-data` (« aucune donnée sur la période », E2) · `error` (message + `Réessayer`) · `filtered-to-zero` (« 0 ligne pour ces filtres », avec le bouton de remise à zéro — distinct de `empty-no-data`) · `offline` (dernier résultat affiché, daté).
 
 > `filtered-to-zero` et `empty-no-data` sont deux états, pas un. « Aucun résultat
 > pour vos filtres » et « aucune donnée sur la période » ne se réparent pas de la
@@ -572,7 +572,7 @@ personne ne répond de ce chiffre ».
 
 **Rôle** : présenter l'état de signature d'une version de définition et l'action de signer ou de refuser.
 
-**États** : `draft` · `in_review` (signataire désigné, en attente) · `signed` (horodatage, identité du signataire, version) · `refused` (motif obligatoire) · `revocable` (signé mais non publié → révocable par l'auteur, B26) · `locked` (signé et publié → non révocable).
+**États** — rendus par l'union `SignatureState` `draft` · `in_review` (signataire désigné, en attente) · `signed` (horodatage, identité du signataire, version) · `refused` (motif obligatoire) · `revocable` (signé mais non publié → révocable par l'auteur, B26) · `locked` (signé et publié → non révocable).
 
 > `revocable` et `locked` sont deux rendus du même composant. Les confondre
 > ferait croire qu'une signature publiée peut être reprise en un clic, ce que B26
@@ -589,7 +589,7 @@ personne ne répond de ce chiffre ».
 
 **Rôle** : déclencher un export et afficher son état.
 
-**États** : `idle` · `queued` (tâche de fond, avec identifiant) · `running` (progression) · `ready` (lien, expiration datée) · `failed` (aucun fichier partiel proposé, E13) · `forbidden_scope` (E6 — refuser, et nommer le périmètre qui serait autorisé).
+**États** — rendus par l'union `ExportState` `idle` · `queued` (tâche de fond, avec identifiant) · `running` (progression) · `ready` (lien, expiration datée) · `failed` (aucun fichier partiel proposé, E13) · `forbidden_scope` (E6 — refuser, et nommer le périmètre qui serait autorisé).
 
 ---
 

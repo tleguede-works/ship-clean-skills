@@ -124,14 +124,14 @@ amberline/
 | Standard `archetypes.md` § 4 | Adopté | Où |
 |---|---|---|
 | Sidebar, densité haute | oui | `design-system.md` § 3.2 ; 4 entrées dans `state.json → index.nav` |
-| Hiérarchie KPI → signal → détail | oui | `IndicatorTile` → `seuil-et-etat` → `drill-down` |
+| Hiérarchie KPI → signal → détail | oui | `seuil-et-etat` produit l'**état** → `consultation-indicateur` rend la `IndicatorTile` → `drill-down` rend la décomposition |
 | Le dashboard montre des anomalies, pas des métriques décoratives | oui | B11 : la couleur sémantique dérive de la comparaison à la cible, jamais d'un réglage d'apparence |
 | Chaque visuel est cliquable vers son détail | oui | Chaque tuile ouvre la décomposition (B15) |
 | Seuils et couleurs sémantiques | oui | B11 porte l'**état** ; B12 (alerte par passage) est V1 avec le canal mail |
 | Plages temporelles pilotables | oui | La période vit dans l'URL (`conventions.md`, « URL comme état ») |
 | Module « configuration » | écart assumé | `benchmarks.md` § 5 écart 2 : les seuils sont écrits avec la définition, pas dans un écran de réglages |
-| Module « alertes » | écart assumé | `roadmap.md` § 2.2 : l'état est dans le MVP, l'alerte mail part en V1 |
-| « alertes ignorées » (piège) | traité | Aucune alerte automatique au MVP : il n'y a pas de canal à ignorer. B12 arrive avec le canal, mesuré |
+| Module « alertes » | **partiellement au MVP — l'écart est le canal, pas l'alerte** | Ce qui est **présent au MVP**, c'est l'**état rendu** : la ligne de seuil obligatoire et non rognable (§ 2.3), la couleur sémantique et la mention « hors cible » (B11), et `semantic_state` dans § 5.2, § 5.3 et § 5.13. Ce qui manque — l'**alerte automatique** et son **canal** — part en V1 (`roadmap.md` § 2.2) |
+| « alertes ignorées » (piège) | traité | Aucun canal au MVP : il n'y a rien à ignorer, donc rien à prétendre mesurer. B12 (alerte une fois par passage, réarmement) arrive **avec** le canal, mesuré |
 
 > Conformité de la grille `benchmarks.md` § 3 : **PASS**. Les écarts 1 à 3 (pas de
 > composeur libre, seuils dans la définition, pas de valeurs de détail dans les vues)
@@ -148,11 +148,11 @@ amberline/
 |---|---|---|---|
 | `auth` | OIDC, session 8 h, résolution des droits **fail-closed** et rate limit par session | — | `definition-declarer`, `definition-signer`, `consultation-indicateur`, `restriction-lignes`, `partage-dashboard`, `journal-acces` |
 | `query-engine` | Accès **lecture seule** à l'entrepôt, `scope` injecté par un seul point d'entrée, `computed_at` lu dans la source | — | `consultation-indicateur`, `historique-indicateur`, `drill-down`, `restriction-lignes`, `export-provenance` |
-| `design-primitives` | Les six composants du design system, sans appel réseau | — | `definition-declarer`, `consultation-indicateur` |
+| `design-primitives` | Les six composants du design system, sans appel réseau | — | `definition-declarer`, `seuil-et-etat`, `consultation-indicateur` |
 | `access-log` | Journal append-only, purgé à un an, **filtré selon les droits du lecteur** (B25) | — | `historique-indicateur`, `journal-acces` |
 | `error-handling` | Enum fermée d'`error_code` partagée, correspondance code → statut HTTP, états distincts (vide ≠ erreur ≠ refus) | — | `consultation-indicateur` |
 
-> `export-provenance` consomme le worker (contrat `ExportJobPort` déclaré dans § 5.15)
+> `export-provenance` consomme le worker (contrat `ExportJobPort` déclaré dans § 5.17)
 > sans dépendre de la fondation `error-handling` : le job porte son propre statut
 > d'échec, il ne propage pas d'`error_code` HTTP.
 
@@ -337,12 +337,41 @@ export type IndicatorDisplayState =
   | 'default' | 'out_of_band' | 'unknown_freshness'
   | 'source_unavailable' | 'no_data' | 'computation_too_long' | 'loading';
 
+/**
+ * La ligne de seuil — B11. LA FORME EST FIXÉE ICI, UNE SEULE FOIS.
+ * § 5.2, § 5.3 et § 5.13 la renvoient telle quelle à l'identique ; § 5.4 l'écrit
+ * avec les mêmes noms de champs, sans `definedAt` parce que la base l'horodate à
+ * l'écriture (`now()`, § 4.7) et qu'un client n'a rien à y mettre.
+ *
+ * Les trois faits sont ceux de `definition_threshold` (§ 4.7) et ils sont tous
+ * obligatoires au MVP : la valeur, le SENS, et sa date. Une cible absente est
+ * `null`, jamais `0` — et un indicateur sans seuil n'est pas un indicateur
+ * tronqué : c'est `threshold: null` et rien ne s'affiche (E16 côté cible,
+ * `not_applicable` côté rendu, `design-system.md` § 2.1).
+ */
+export interface IndicatorThreshold {
+  readonly comparison: 'below' | 'above';   // le SENS : « en dessous de » / « au-dessus de »
+  readonly thresholdValue: number;          // la VALEUR de bascule
+  readonly label: string;                   // libellé non technique, 1..120 car.
+  readonly definedAt: string;               // la DATE — § 4.7 `defined_at`, la source
+}
+
+/**
+ * L'état sémantique, produit par la slice `seuil-et-etat` (§ 3.3) et **seulement**
+ * par elle : c'est elle qui implémente `resolveSemanticState()`, fonction testée
+ * sur ses deux côtés (§ 3.7). `consultation-indicateur` ne la calcule pas, elle ne
+ * fait que la transporter dans la réponse et la donner au composant.
+ */
+export type SemanticState = 'in_target' | 'out_of_band' | 'target_missing' | 'not_applicable';
+
 export interface IndicatorTileProps {
   readonly label: string;
   readonly displayState: IndicatorDisplayState;
   readonly value?: number;              // requis si displayState === 'default' | 'out_of_band'
   readonly unit?: string;
   readonly target?: { readonly value: number; readonly delta: number; readonly confirmed: boolean };
+  readonly semanticState?: SemanticState; // produit par `seuil-et-etat`, jamais recalculé ici
+  readonly threshold?: IndicatorThreshold; // absent ⇔ la version signée ne porte aucun seuil
   readonly computedAt: string | null;   // null → « fraîcheur inconnue » (B6)
   readonly sourceRef: string;
   readonly officiality: 'official' | 'provisional' | 'stale_owner' | 'target_missing';
@@ -370,6 +399,9 @@ export interface SignatureBarProps {
   readonly refusalReason?: string;
   readonly onSign?: () => Promise<void>;
   readonly onRefuse?: (reason: string) => Promise<void>;
+  readonly onSubmit?: () => Promise<void>;   // `submit` (in_review) puis `sign` : deux actes distincts
+  readonly onWithdraw?: () => Promise<void>;
+  readonly onPublish?: () => Promise<void>; // l'acte `publish` qui pose le verrou B26
 }
 
 // src/components/data-table.tsx
@@ -385,6 +417,39 @@ export type FormFieldVariant = 'text' | 'formula' | 'select' | 'owner_picker' | 
 export type ExportState = 'idle' | 'queued' | 'running' | 'ready' | 'failed' | 'forbidden_scope';
 export interface ExportPanelProps { readonly state: ExportState; readonly jobId?: string; /* … */ }
 ```
+
+> **Le slot `threshold` est obligatoire au MVP, et il ne se tronque pas.** Le design
+> system approuvé (`design-system.md` § 2, ligne « Tailles ») fait de la ligne de
+> seuil un contenu non négociable : **la valeur du seuil, son sens et sa date**, dont
+> **aucun** n'est optionnel. La règle est donc écrite **dans le contrat du composant**,
+> pas dans un écran — parce qu'un écran qui l'ampute serait un écran correct parmi
+> d'autres, et qu'un seul écran fautif suffit à rendre la règle fausse.
+>
+> Trois conséquences, toutes dans la fondation :
+> 1. `threshold` est `IndicatorThreshold | undefined`, et `undefined` ne veut dire
+>    qu'une chose : **aucun seuil n'est déclaré sur la version signée qui porte la
+>    valeur** (B11). Il n'y a pas de troisième cas « seuil présent mais incomplet ».
+> 2. **Aucune taille ne rogne la ligne de seuil** — pas `sm`, pas `md`, pas `lg`, pas
+>    le format le plus étroit. Quand la place manque, la ligne **se replie sur deux
+>    lignes** ; elle ne se coupe pas. Une hauteur de tuile qui ne tient pas la ligne
+>    est un défaut de la hauteur, pas une permission de perdre une date.
+> 3. `definedAt` vient de `definition_threshold.defined_at` — la source, donc l'acte
+>    d'écriture du seuil — et **jamais de l'heure du poste** (B5). Une date de
+>    seuil tronquée ou re-stampée serait une affirmation invérifiable devant un
+>    journal, ce qui est exactement la faute que B5 interdit pour `computed_at`.
+>
+> C'est pourquoi § 5.2, § 5.3 et § 5.13 — les trois réponses qui rendent une tuile —
+> renvoient `threshold` : une tuile sans ce champ ne peut pas rendre un slot
+> obligatoire, et le design system § 2 l'a rendu obligatoire au MVP précisément
+> parce que B12 est hors périmètre, donc qu'il ne reste que ces trois faits.
+
+> `SignatureBar` porte `draft` et `in_review` depuis le début, et recevait
+> `onSign` / `onRefuse` sans aucun moyen d'y arriver : `in_review` était donc un
+> état **non atteignable** par l'interface. Les trois callbacks d'acte
+> (`onSubmit`, `onWithdraw`, `onPublish`) ferment ce chemin, et ils sont dans le
+> contrat du composant pour la même raison que le slot `threshold` : une action sans
+> point d'entrée dans le composant est une action que l'écran réimplémentera
+> différemment.
 
 ### 2.4 `access-log`
 
@@ -453,7 +518,9 @@ export const ERROR_CODES = [
   'NOT_FOUND',
   'VALIDATION_FAILED', 'PLAN_INVALID',
   'OWNER_REQUIRED', 'SIGNER_IS_AUTHOR', 'SIGNER_UNKNOWN', 'SIGNED_VERSION_IMMUTABLE',
-  'DEFINITION_NOT_SIGNED', 'SLUG_TAKEN', 'CONCURRENT_MODIFICATION', 'OWNER_INACTIVE',
+  'DEFINITION_NOT_DRAFT', 'DEFINITION_NOT_IN_REVIEW', 'DEFINITION_NOT_SIGNED',
+  'ALREADY_SIGNED_BY_ACTOR', 'NO_ACTIVE_SIGNATURE',
+  'SLUG_TAKEN', 'CONCURRENT_MODIFICATION', 'OWNER_INACTIVE',
   'RATE_LIMITED',
   'SOURCE_UNREACHABLE', 'QUERY_TIMEOUT', 'COMPUTATION_TOO_LONG', 'SCHEMA_UNKNOWN',
   'INTERNAL_ERROR'
@@ -468,7 +535,14 @@ export const ERROR_HTTP_STATUS: Readonly<Record<ErrorCode, number>> = {
   NOT_FOUND: 404,
   VALIDATION_FAILED: 422, PLAN_INVALID: 422, SIGNER_UNKNOWN: 422,
   OWNER_REQUIRED: 409, SIGNER_IS_AUTHOR: 409, SIGNED_VERSION_IMMUTABLE: 409,
-  DEFINITION_NOT_SIGNED: 409, SLUG_TAKEN: 409, CONCURRENT_MODIFICATION: 409, OWNER_INACTIVE: 409,
+  DEFINITION_NOT_DRAFT: 409, DEFINITION_NOT_IN_REVIEW: 409, DEFINITION_NOT_SIGNED: 409,
+  ALREADY_SIGNED_BY_ACTOR: 409, NO_ACTIVE_SIGNATURE: 409,
+  // `OWNER_INACTIVE` est un code d'ÉCRITURE, et c'est deliberément le seul :
+  // une LECTURE ne le lève jamais. Un propriétaire inactif n'empêche pas de
+  // répondre — il change ce qu'on répond : `officiality: "stale_owner"` dans un
+  // `200` (§ 5.3, § 5.6, § 5.7, § 5.13). Il n'est levé que par un acte d'écriture
+  // sur une version de cet indicateur : soumission, publication, signature, refus.
+  SLUG_TAKEN: 409, CONCURRENT_MODIFICATION: 409, OWNER_INACTIVE: 409,
   RATE_LIMITED: 429,
   SOURCE_UNREACHABLE: 503, QUERY_TIMEOUT: 504, COMPUTATION_TOO_LONG: 503, SCHEMA_UNKNOWN: 503,
   INTERNAL_ERROR: 500
@@ -537,32 +611,72 @@ export type ListOutcome<T> =
 
 #### Slice : `consultation-indicateur`
 
-- **Phrase** : Afficher la valeur officielle d'un indicateur avec sa cible, sa date de
-  calcul **prise dans la source**, son identifiant de source et sa mention de statut
-  officiel, sans que le lecteur ait à rouvrir l'entrepôt.
+- **Phrase** : Afficher la valeur officielle d'un indicateur avec sa cible, son seuil,
+  sa date de calcul **prise dans la source**, son identifiant de source et sa mention
+  de statut officiel, sans que le lecteur ait à rouvrir l'entrepôt.
 - **User stories** : US-3
-- **Règles métier** : B4, B5, B6, B13, B17
-- **Dépend de** : `query-engine`, `auth`, `design-primitives`, `definition-declarer`, `error-handling`
-- **Dépendue par** : `seuil-et-etat`, `drill-down`, `export-provenance`
+- **Règles métier** : B4, B5, B6, B13, B17, **B11 (transport du seuil)**
+- **Dépend de** : `query-engine`, `auth`, `design-primitives`, `definition-declarer`,
+  `error-handling`, **`seuil-et-etat`**
+- **Dépendue par** : `drill-down`, `export-provenance`
 - **Écrans** : `indicateurs`, `indicateur-detail`
 - **Peut être parallélisée avec** : `definition-signer`, `partage-dashboard` (vague 2)
-- **Ce qu'elle ne fait pas** : elle ne colourie pas la valeur. La comparaison à la cible
-  est `seuil-et-etat` ; garder les deux séparées évite d'avoir la règle B11 écrite à deux
-  endroits.
+- **Ce qu'elle ne fait pas** : elle ne **calcule** pas la comparaison à la cible.
+  `semantic_state` vient de `seuil-et-etat` (§ 3.3, décision d'arbitrage) et
+  `threshold` vient de `definition_threshold` (§ 4.7) — elle ne fait que les
+  transporter dans la réponse et les donner à `IndicatorTile`. Garder les deux
+  séparées évite d'avoir la règle B11 écrite à deux endroits.
 
 #### Slice : `seuil-et-etat`
 
 - **Phrase** : Dériver l'état sémantique d'un indicateur (dans la cible / hors cible /
-  cible absente) de la comparaison entre sa valeur et la cible versionnée de sa définition.
+  cible absente) de la comparaison entre sa valeur et la cible versionnée de sa
+  définition, et le traduire dans l' état d'affichage de `IndicatorTile`.
 - **User stories** : US-4
 - **Règles métier** : B11
-- **Dépend de** : `consultation-indicateur`
-- **Dépendue par** : *aucune* (feuille du graphe)
+- **Dépend de** : `design-primitives` — **et c'est tout**
+- **Dépendue par** : `consultation-indicateur`
 - **Écrans** : `indicateur-detail`, `indicateurs`
-- **Peut être parallélisée avec** : `historique-indicateur`, `drill-down`, `export-provenance` (vague 3)
+- **Peut être parallélisée avec** : `definition-declarer`, `restriction-lignes`,
+  `journal-acces` (vague 1)
 - **Périmètre MVP** : l'**état** dérivé de la valeur, avec sa date de calcul. Pas de
   machine à états, pas de tâche de fond, pas d'alerte : B12 part en V1 avec le canal
   mail (`roadmap.md` § 2.2). Un seuil posé sur une définition non signée est refusé.
+
+> **Décision d'arbitrage : qui porte le calcul de la comparaison à la cible ?**
+> **`seuil-et-etat`, seule, sans exception.** Ce n'était pas écrit, et les deux
+> documents qui dépendaient de la réponse se contredisaient : § 5.3 et § 5.13
+> promettaient un `semantic_state` dans la réponse, donc une comparaison calculée
+> **par `consultation-indicateur`**, tandis que la slice porte précisément
+> « elle ne colourie pas la valeur […] la comparaison à la cible est `seuil-et-etat` »
+> — donc un calcul **par `seuil-et-etat`**. Les deux ne peuvent pas être vrais, et il
+> ne s'agit pas d'une nuance de rédaction : la réponse de § 5.3 est produite par
+> `consultation-indicateur`, donc la comparaison devait être calculée **avant** elle,
+> en vague 3 — ce qui est impossible.
+>
+> Trois raisons, dont une est un fait et deux sont des choix :
+> 1. **Un fait déjà posé.** `design-system.md` § 2.1 fait de la machine à états du
+>    franchissement l'objet de la slice `seuil-et-etat`, avec des états nommés
+>    (`threshold_armed`, `out_of_band_alerting`, …). Si la comparaison était
+>    ailleurs, la machine à états serait coupée en deux : quelqu'un déciderait
+>    `out_of_zone`, et quelqu'un d'autre déciderait que c'est « la première fois ».
+> 2. **Règle écrite à un seul endroit.** B11 (« la valeur du seuil, son sens et sa
+>    date ») est une règle de **définition**, pas de rendu : elle appartient à la
+>    slice qui connaît la définition, pas à celle qui la dessine.
+> 3. **Le calcul est une fonction pure, donc l'ordre des vagues n'a pas à la suivre.**
+>    `resolveSemanticState(value, target, threshold) → SemanticState` ne lit rien,
+>    n'écrit rien, ne fait aucun appel réseau. Elle n'a besoin que du type
+>    `IndicatorDisplayState` de `design-primitives` pour dire quel état de tuile en
+>    découle. Elle est donc constructible en **vague 1**, sans attendre que
+>    `consultation-indicateur` existe — et c'est ce qui supprime le cycle
+>    au lieu de le déplacer.
+>
+> **Conséquence sur le graphe, répercutée.** `consultation-indicateur` dépend
+> désormais de `seuil-et-etat`, et `seuil-et-etat` ne dépend plus de
+> `consultation-indicateur` : la flèche s'inverse. C'est la seule inversion du
+> document, et elle est dans § 6.1, § 6.2, § 6.4, § 2 et § 3.3. Elle ne crée
+> **aucun cycle** : `seuil-et-etat` ne lit rien de `consultation-indicateur`,
+> c'est l'appelant qui lui passe `(value, target, threshold)`.
 
 #### Slice : `historique-indicateur`
 
@@ -574,7 +688,7 @@ export type ListOutcome<T> =
 - **Dépend de** : `query-engine`, `definition-signer`, `access-log`
 - **Dépendue par** : *aucune*
 - **Écrans** : `indicateur-detail` (split screen, historique)
-- **Peut être parallélisée avec** : `seuil-et-etat`, `drill-down`, `export-provenance` (vague 3)
+- **Peut être parallélisée avec** : `drill-down`, `export-provenance` (vague 3)
 - **Journalisation** : la consultation de l'historique est elle-même journalisée comme
   une consultation (B24), via `access-log`. Ce n'est pas une vue d'administration.
 
@@ -587,7 +701,7 @@ export type ListOutcome<T> =
 - **Dépend de** : `query-engine`, `consultation-indicateur`
 - **Dépendue par** : *aucune*
 - **Écrans** : `decomposition`
-- **Peut être parallélisée avec** : `seuil-et-etat`, `historique-indicateur`, `export-provenance` (vague 3)
+- **Peut être parallélisée avec** : `historique-indicateur`, `export-provenance` (vague 3)
 
 ### 3.4 Module `tableau-de-bord` — rang 2, fréquence 4 (hebdomadaire)
 
@@ -614,9 +728,9 @@ export type ListOutcome<T> =
 - **Dépend de** : `query-engine`, `restriction-lignes`, `consultation-indicateur`
 - **Dépendue par** : *aucune*
 - **Écrans** : `tableau-de-bord`, `indicateur-detail`
-- **Peut être parallélisée avec** : `seuil-et-etat`, `historique-indicateur`, `drill-down` (vague 3)
+- **Peut être parallélisée avec** : `historique-indicateur`, `drill-down` (vague 3)
 - **Nota** : c'est la seule slice qui consomme le worker de fond. Elle consomme le
-  **contrat** `ExportJobPort` (§ 5.15), pas la fondation.
+  **contrat** `ExportJobPort` (§ 5.17), pas la fondation.
 
 ### 3.5 Module `definitions` — rang 3, fréquence 2 (mensuel)
 
@@ -637,16 +751,33 @@ export type ListOutcome<T> =
 
 #### Slice : `definition-signer`
 
-- **Phrase** : Signer, refuser avec motif, ou révoquer avant publication une version de
-  définition dont on n'est pas l'auteur, chaque acte étant journalisé.
-- **User stories** : US-2
-- **Règles métier** : B2, B26
+- **Phrase** : Porter le cycle de vie complet d'une version de définition — la soumettre
+  à signature, la retirer de la file, la signer ou la refuser avec motif, la publier,
+  la révoquer avant publication — chaque acte étant journalisé et aucun n'étant
+  déclenché par un tiers.
+- **User stories** : US-2 (et US-1 pour la soumission)
+- **Règles métier** : B2, B26, **B4 (la publication porte la valeur officielle)**,
+  **B17 (un propriétaire inactif bloque l'écriture)**
 - **Dépend de** : `auth`, `definition-declarer`
-- **Dépendue par** : `historique-indicateur`
+- **Dépendue par** : `historique-indicateur` — et **pas** `consultation-indicateur`,
+  pour une raison qui vaut d'être écrite : `consultation-indicateur` rend bien
+  `status` et `published_at` (§ 5.3, § 5.6), mais elle les lit dans le **schéma**
+  (§ 4.6), pas dans le code de cette slice. Déclarer la dépendance au seul motif que
+  « les données viennent de là » ferait passer `consultation-indicateur` en vague 3,
+  donc `drill-down` et `export-provenance` en vague 4, pour une dépendance de code
+  qui n'existe pas. Le cycle de vie est garanti autrement, et plus fortement : par la
+  porte SQL de § 4.20, où un `UPDATE` sans acte correspondant est refusé **en base**.
+  `historique-indicateur` est, lui, une vraie dépendance de code : il projette les
+  actes eux-mêmes (signataire, date, motif), pas seulement deux colonnes.
 - **Écrans** : `definition-signature`
 - **Peut être parallélisée avec** : `consultation-indicateur`, `partage-dashboard` (vague 2)
 - **Verrou structurel** : `signer_id ≠ author_id` est une contrainte d'intégrité en
   base, pas un garde d'interface (ADR-1).
+- **Écrivains du cycle de vie** : cette slice est le **seul** producteur des cinq
+  actes de `signature_event` (§ 4.8) et le seul à écrire `definition_version.status`
+  et `definition_version.published_at` (§ 4.6). Aucun endpoint ne les modifie, aucune
+  tâche de fond ne les modifie : la seule voie est `POST /definitions/:versionId/…`
+  (§ 5.8, § 5.9, § 5.10, § 5.11), et chaque route passe par la porte SQL de § 4.20.
 
 ### 3.6 Module `acces` — rang 4, fréquence 1 (occasionnel)
 
@@ -686,7 +817,7 @@ export type ListOutcome<T> =
 | Un fait, deux représentations | La valeur, la cible et le seuil vivent sur la **version de définition**, jamais recalculés | `definition_version` est `immutable` ; les colonnes `target_*` et la table `definition_threshold` sont écrites une fois |
 | Une absence présentée comme un zéro | `ReadOutcome` / `ListOutcome` sont des unions discriminées ; `[]` et « échec » sont deux membres distincts | Type : il n'existe pas de chemin produisant `{ value: 0 }` depuis une panne |
 | Fail-open sur une autorisation | `AccessDecision` n'a pas de cas « inconnu » ; le rôle SQL du journal n'a pas `UPDATE`/`DELETE` | Type + test d'intégration sur les droits SQL |
-| Un booléen qui tranche seul | `resolveSemanticState()` est une fonction nommée, testée sur ses deux côtés | Test unitaire sur la fonction, pas sur le rendu |
+| Un booléen qui tranche seul | `resolveSemanticState()` est une fonction nommée de `seuil-et-etat`, testée sur ses deux côtés, et elle est la **seule** à la porter (§ 3.3) | Test unitaire sur la fonction, pas sur le rendu |
 | Un calcul dupliqué | Le scope, le périmètre résolu et le format de la date de calcul ont **une** implémentation | `withScope()` est le seul point d'entrée ; ESLint interdit l'import direct du driver |
 | Une caractéristique instable | Le tri de la décomposition a un critère de départage total (`contribution` puis `key`) | Le plan de requête porte `ORDER BY contribution DESC, line_key ASC` |
 
@@ -795,15 +926,29 @@ vit sur les versions, jamais ici : les modifier ne doit pas réécrire l'histori
 
 ### 4.6 `definition_version` — version figée *(PostgreSQL)*
 
-Le dépôt (ADR-8). Chaque ligne est immuable : ni `UPDATE` ni `DELETE` ne sont accordés
-au rôle applicatif sur cette table.
+Le dépôt (ADR-8). **Le contenu d'une ligne est immuable** : ni `UPDATE` ni `DELETE` ne
+sont accordés au rôle applicatif sur les colonnes de définition.
+
+> **Deux colonnes font exception, et c'est une décision écrite, pas un oubli**
+> (ADR-8 révisé, § 7) : `status` et `published_at`. Elles portent le **cycle de vie**,
+> pas la définition, et elles ne peuvent pas faire autrement : le journal
+> `signature_event` (§ 4.8) est append-only, donc il ne peut pas réécrire la ligne
+> qu'il décrit. Sans ces deux colonnes, le cycle de vie n'existerait nulle part — et
+> alors `in_review`, `signed` et `published` seraient des états sans producteur, ce
+> qui rendrait `POST /definitions/:versionId/signature` (§ 5.8) incapable de jamais
+> produire une première signature. Le rôle applicatif ne reçoit donc `UPDATE`
+> **que** sur ce couple de
+> colonnes ; `DELETE` ne l'est jamais. La projection est **adossée à un acte** : un
+> `UPDATE` de `status` sans acte correspondant dans `signature_event` est refusé en
+> base (§ 4.20, SQL). `status` et `published_at` sont donc une **projection du
+> journal**, pas une deuxième vérité — et le journal garde la main.
 
 | Champ | Type | Nullable | Défaut | Contraintes | Description | Exemple |
 |---|---|---|---|---|---|---|
 | `definition_version_id` | `uuid` (PK) | non | `gen_random_uuid()` | — | Identifiant de version | `9b2e…` |
 | `indicator_id` | `uuid` (FK) | non | — | → `indicator.indicator_id`, `ON DELETE RESTRICT` | Indicateur concerné | `3f1c…` |
 | `version_no` | `integer` | non | — | ≥ 1 ; unique `(indicator_id, version_no)` | Rang de la version, croissant, jamais réattribué | `3` |
-| `status` | `text` | non | `'draft'` | `draft` \| `in_review` \| `signed` \| `refused` \| `published` \| `revoked` | Cycle de vie de la version | `signed` |
+| `status` | `text` | non | `'draft'` | `draft` \| `in_review` \| `signed` \| `refused` \| `published` \| `revoked` — **dérivé**, jamais écrit sans acte (§ 4.20) | Cycle de vie de la version ; **projection** de `signature_event` | `signed` |
 | `author_actor_id` | `text` (FK) | non | — | → `actor.actor_id` | Auteur de **cette** version | `00u91ab77c` |
 | `label` | `text` | non | — | 1..120 car. | Intitulé porté par la version | `CA par client` |
 | `formula` | `text` | non | — | 1..2000 car., SQL vérifié par `query-planner` | Formule, figée pour toujours | `sum(sales.net_amount)` |
@@ -815,7 +960,56 @@ au rôle applicatif sur cette table.
 | `target_confirmed_at` | `timestamptz` | **oui** | `NULL` | — | Date d'écriture de la cible sur **cette** version ; `NULL` ⇒ E16 « cible à reconfirmer » | `2026-09-20T14:00:00Z` |
 | `change_note` | `text` | non | — | 1..500 car. | Explication **en langue métier** de ce qui change (US-17) | `les lignes sous-traitées ne sont plus comptées` |
 | `created_at` | `timestamptz` | non | `now()` | — | Création de la version | `2026-09-24T10:12:00Z` |
-| `published_at` | `timestamptz` | **oui** | `NULL` | ≥ `created_at` | Première publication : rend la signature non révocable (B26) | `2026-09-26T08:30:00Z` |
+| `published_at` | `timestamptz` | **oui** | `NULL` | ≥ `created_at` ; écrit **une seule fois**, jamais réécrit | Première publication : rend la signature non révocable (B26). Valeur = `occurred_at` de l'acte `publish` (§ 4.8) | `2026-09-26T08:30:00Z` |
+
+> **`status` et `published_at` sont dérivés, au sens où `officiality` l'est (§ 4.5).**
+> Ce ne sont pas des colonnes de commodité de lecture : ce sont les **seules** deux
+> colonnes par lesquelles la projection du journal atterrit en base, parce que
+> l'immuabilité d'ADR-8 porte sur le **contenu** de la version et que la base ne sait
+> pas indexer une jointure sur un journal append-only aussi efficacement qu'une
+> colonne. Elles sont donc l'unique exception nommée à ADR-8, et l'exception est
+> **bornée, nommée et adossée à un acte** (§ 4.20). Le journal reste la source de
+> vérité : une ligne ne peut pas dire `signed` sans qu'un acte `sign` existe.
+
+#### 4.6.1 Le cycle de vie d'une version, et qui l'écrit
+
+Chaque flèche a **un acte nommé** dans `signature_event` et **un endpoint** dans § 5.
+Il n'existe aucun chemin qui change `status` autrement.
+
+| # | Transition | Acte (`signature_event.act`) | Qui | Écriture de `published_at` | Endpoint |
+|---|---|---|---|---|---|
+| 1 | `draft` → `in_review` | `submit` | l'**auteur de la version** ou le **propriétaire** de l'indicateur | — | § 5.9 |
+| 2 | `in_review` → `draft` (retrait de la soumission) | `revoke` référençant l'acte `submit` | l'auteur de la version ou le propriétaire | — | § 5.9 |
+| 3 | `in_review` → `signed` | `sign` | le **signataire désigné**, `≠` l'auteur (ADR-1) | — | § 5.8 |
+| 4 | `in_review` → `refused` | `refuse` | le signataire désigné, motif obligatoire | — | § 5.8 |
+| 5 | `signed` → `published` | `publish` | le **propriétaire** de l'indicateur | **oui** — `= occurred_at` de l'acte | § 5.10 |
+| 6 | `signed` → `revoked` | `revoke` référençant l'acte `sign` | l'auteur de la version ou le propriétaire | **non** — conservée telle quelle | § 5.11 |
+
+Trois règles, et elles sont toutes des conséquences, pas des choix :
+
+- **Aucun contenu n'est modifiable, à aucun statut.** Même en `draft`. Une correction
+  passe par une nouvelle version (B1, ADR-8). Le retour de `in_review` à `draft` ne
+  rend donc **pas** la version éditable : il la rend re-soumissible, ce qui est tout
+  autre chose.
+- **`refused` et `revoked` sont terminaux** pour cette version. On ne resigne pas une
+  version révoquée : on en crée une autre, sinon l'historique porterait deux signatures
+  contradictoires sur la même formule (B22).
+- **`published` est terminal et verrouille.** C'est là que B26 mord : tant que
+  `published_at IS NULL`, la signature reste révocable (§ 5.11) ; dès qu'il est écrit,
+  elle ne l'est plus et l'API le dit. La publication écrit aussi
+  `indicator.current_signed_version_id` (§ 4.5) — **dans la même transaction**, sinon
+  il existerait un instant où une version est publiée et ne porte pas la valeur (B4).
+
+> **Pourquoi la publication est un acte et non une dérivation.** On pourrait dériver
+> `published` de « il existe un acte `sign` et `indicator.current_signed_version_id`
+> pointe dessus ». Ce serait une erreur, et B26 la nomme : le verrou porte sur
+> `published_at`, donc sur un **horodatage**, et un horodatage ne peut pas être une
+> fonction du temps courant. Dérivé de `current_signed_version_id`, il changerait
+> **à chaque déplacement du pointeur** : révoquer une version, en publier une autre,
+> réécrirait rétroactivement la date de publication de la première et
+> **débloquerait** une signature que B26 veut verrouillée. Un acte a un auteur, une
+> date, et ne se réécrit pas : c'est le seul des deux candidats qui peut porter un
+> verrou.
 
 > `target_confirmed_at` est la clé du cas E16 : une cible **ne suit pas**
 > automatiquement la version. Si la version change sans cible réécrite, la comparaison
@@ -838,41 +1032,83 @@ déplacer plus tard serait changer une version signée.
 > La contrainte `UNIQUE(definition_version_id)` est ce qui interdit à une version signée
 > de voir son seuil changer : la modifier, c'est créer une version.
 
-### 4.8 `signature_event` — actes de signature *(PostgreSQL, append-only)*
+### 4.8 `signature_event` — le journal du cycle de vie *(PostgreSQL, append-only)*
 
-Un seul journal pour signer, refuser et révoquer. `revoke` **référence** l'acte qu'il
-annule au lieu de le modifier : la trace reste complète (B26).
+Le nom de la table dit `signature` parce que c'est **la signature** qui est
+l'enjeu ; le contenu, lui, couvre tout le cycle de vie, parce qu'un seul journal
+append-only est la seule façon de garder `status` et `published_at` (§ 4.6) adossés
+à un acte, et donc contestables. `revoke` **référence** l'acte qu'il annule au lieu
+de le modifier : la trace reste complète (B26).
+
+Cinq actes, et **chacun a un producteur nommé** — c'est la table qui ferme le trou
+« un état sans écrivain » :
+
+| Acte | Porté par | Pourquoi il existe | Écrit `published_at` |
+|---|---|---|---|
+| `submit` | l'auteur de la version ou le propriétaire | sans lui, `in_review` n'a pas de producteur et § 5.8 répond `409` pour toujours | non |
+| `sign` | le signataire désigné | la signature (B2, ADR-1) | non |
+| `refuse` | le signataire désigné | le refus motivé est une trace, pas un silence | non |
+| `revoke` | l'auteur ou le propriétaire | retire **un `submit`** (retour à `draft`) ou **un `sign`** (`signed → revoked`) | non — et **jamais** réécrire un `published_at` déjà posé |
+| `publish` | le propriétaire de l'indicateur | pose `published_at`, donc **pose le verrou B26** | **oui** |
+
+> **`revoke` a deux cibles, pas deux verbes.** Retirer une soumission et révoquer
+> une signature sont le même geste — « on retire ce qui avait été accordé » — et
+> servent la même mécanique : un acte append-only qui référence l'acte annulé. Un
+> cinquième verbe (`withdraw`) aurait ajouté une colonne (`withdraws_event_id`),
+> un deuxième chemin de retraction, et une deuxième arête dans le graphe des
+> contradictions possibles. Un seul verbe, deux cibles autorisées, une seule
+> contrainte : l'acte visé est `sign` ou `submit`, **jamais** `refuse`, **jamais**
+> `publish`, **jamais** un autre `revoke`.
 
 | Champ | Type | Nullable | Défaut | Contraintes | Description | Exemple |
 |---|---|---|---|---|---|---|
 | `signature_event_id` | `uuid` (PK) | non | `gen_random_uuid()` | — | Identifiant de l'acte | `4a11…` |
 | `definition_version_id` | `uuid` (FK) | non | — | → `definition_version`, `ON DELETE RESTRICT` | Version visée | `9b2e…` |
 | `actor_id` | `text` (FK) | non | — | → `actor.actor_id` | Acteur | `00u77cd1fe` |
-| `act` | `text` | non | — | `sign` \| `refuse` \| `revoke` | Nature de l'acte | `sign` |
-| `revokes_event_id` | `uuid` (FK) | **oui** | `NULL` | → `signature_event` ; requis si `act = 'revoke'` | Acte révoqué | `4a10…` |
-| `reason` | `text` | **oui** | `NULL` | requis si `act = 'refuse'` ; 1..500 car. | Motif du refus ou de la révocation | `périmètre à préciser` |
-| `occurred_at` | `timestamptz` | non | `now()` | — | Horodatage de l'acte (B2 « signature horodatée ») | `2026-09-26T08:12:44Z` |
+| `act` | `text` | non | — | `submit` \| `sign` \| `refuse` \| `revoke` \| `publish` | Nature de l'acte | `sign` |
+| `revokes_event_id` | `uuid` (FK) | **oui** | `NULL` | → `signature_event` ; requis si et seulement si `act = 'revoke'` ; la cible est `sign` ou `submit` | Acte retiré | `4a10…` |
+| `reason` | `text` | **oui** | `NULL` | requis si `act ∈ {refuse, revoke}` ; 1..500 car. | Motif du refus, du retrait ou de la révocation | `périmètre à préciser` |
+| `occurred_at` | `timestamptz` | non | `now()` | — | Horodatage de l'acte (B2 « signature horodatée ») ; **source** de `published_at` pour `publish` | `2026-09-26T08:12:44Z` |
 
 **Contraintes d'intégrité, en base et non en application** (ADR-1) :
 
 ```sql
 -- 1. L'auto-signature est impossible, y compris en cas de bug d'interface.
+--    La règle porte sur les actes d'ATTESTATION (sign, refuse) : c'est là que
+--    l'auteur ne peut pas se mettre en face de lui-même. Elle ne porte pas sur
+--    `submit` ni sur `publish`, que l'auteur et le propriétaire font par nature
+--    (B2 : l'auteur ne signe pas, il ne soumet ni ne publie).
 ALTER TABLE signature_event ADD CONSTRAINT signer_is_not_author CHECK (
-  actor_id <> (SELECT author_actor_id FROM definition_version
-               WHERE definition_version_id = signature_event.definition_version_id)
+  act NOT IN ('sign','refuse') OR actor_id <> (
+    SELECT author_actor_id FROM definition_version
+     WHERE definition_version_id = signature_event.definition_version_id)
 );
--- 2. Le motif est obligatoire pour un refus.
+-- 2. Le motif est obligatoire pour un refus, et pour un retrait.
 ALTER TABLE signature_event ADD CONSTRAINT refusal_has_reason CHECK (
-  act <> 'refuse' OR (reason IS NOT NULL AND length(btrim(reason)) > 0)
+  act NOT IN ('refuse','revoke') OR (reason IS NOT NULL AND length(btrim(reason)) > 0)
 );
--- 3. Un revoke référence un sign, pas un refuse.
-ALTER TABLE signature_event ADD CONSTRAINT revoke_targets_signature CHECK (
-  act <> 'revoke' OR revokes_event_id IS NOT NULL
-);
+-- 3. Un `revoke` référence un `sign` ou un `submit` — jamais un refus, jamais
+--    une publication, jamais un autre `revoke`. C'est ce qui rend le cycle
+--    de vie de § 4.6.1 non cyclable en base, pas seulement dans le code.
+CREATE FUNCTION revoke_targets_a_legal_act() RETURNS trigger AS $$
+DECLARE target text;
+BEGIN
+  SELECT act INTO target FROM signature_event WHERE signature_event_id = NEW.revokes_event_id;
+  IF target IS DISTINCT FROM 'sign' AND target IS DISTINCT FROM 'submit' THEN
+    RAISE EXCEPTION 'revoke ne peut viser que sign ou submit, pas %', coalesce(target,'<inconnu>');
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE CONSTRAINT TRIGGER revoke_target_is_legal
+  AFTER INSERT ON signature_event DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION revoke_targets_a_legal_act();
 -- 4. Au plus une signature active par version et par signataire.
 CREATE UNIQUE INDEX one_active_signature_per_signer
   ON signature_event (definition_version_id, actor_id)
-  WHERE act = 'sign' AND revokes_event_id IS NULL;
+  WHERE act = 'sign';
+-- 5. Une version ne peut être publiée qu'une fois : c'est B26 sous forme de contrainte.
+CREATE UNIQUE INDEX one_publish_per_version
+  ON signature_event (definition_version_id) WHERE act = 'publish';
 ```
 
 ### 4.9 `dashboard` — tableau de bord *(PostgreSQL)*
@@ -1090,6 +1326,8 @@ attendue disparaît.
 -- Un indicateur a exactement une version publiée qui porte la valeur affichée (B4).
 -- `current_signed_version_id` pointe toujours vers une version `signed`/`published`
 -- de CET indicateur : invariant vérifié par un test, pas par une cascade.
+-- C'est l'acte `publish` de § 4.8 qui déplace ce pointeur, dans la MÊME transaction
+-- que l'écriture de `published_at` : jamais l'un sans l'autre.
 
 -- Un dashboard ne référence que des indicateurs officiels au moment du partage.
 -- Vérifié à l'écriture ET à la lecture (E17) : un indicateur qui perd son statut
@@ -1101,11 +1339,95 @@ attendue disparaît.
 -- l'auteur ne peut pas se désigner lui-même comme signataire.
 ```
 
+**ADR-8 révisé — l'exception, bornée et contrôlée.** C'est le SQL qui rend la
+décision du § 4.6 et de l'ADR-8 une propriété vérifiable, pas une intention. Trois
+portes, et une seule porte qui s'ouvre :
+
+```sql
+-- PORTE 1 — les droits accordés au rôle applicatif.
+--   INSERT sur la version (elle est créée), et UPDATE sur DEUX colonnes.
+--   Jamais DELETE, jamais UPDATE sur le contenu.GRANT INSERT                        ON definition_version TO amberline_app;
+GRANT UPDATE (status, published_at) ON definition_version TO amberline_app;
+REVOKE DELETE                       ON definition_version FROM amberline_app;
+GRANT INSERT                        ON signature_event   TO amberline_app;  -- append-only
+REVOKE UPDATE, DELETE               ON signature_event   FROM amberline_app;
+
+-- PORTE 2 — un UPDATE qui déborde le couple de cycle de vie est refusé en base.
+--   La porte 1 rend l'accès étroite ; celle-ci rend la dérive impossible, y
+--   compris par un script de reprise ou un `SET ROLE` bien intentionné.
+CREATE FUNCTION definition_content_is_frozen() RETURNS trigger AS $$
+BEGIN
+  IF NEW.formula             IS DISTINCT FROM OLD.formula
+  OR NEW.scope_expr          IS DISTINCT FROM OLD.scope_expr
+  OR NEW.label               IS DISTINCT FROM OLD.label
+  OR NEW.grain               IS DISTINCT FROM OLD.grain
+  OR NEW.unit                IS DISTINCT FROM OLD.unit
+  OR NEW.target_value        IS DISTINCT FROM OLD.target_value
+  OR NEW.target_unit         IS DISTINCT FROM OLD.target_unit
+  OR NEW.target_confirmed_at IS DISTINCT FROM OLD.target_confirmed_at
+  OR NEW.change_note         IS DISTINCT FROM OLD.change_note
+  OR NEW.author_actor_id     IS DISTINCT FROM OLD.author_actor_id
+  OR NEW.indicator_id        IS DISTINCT FROM OLD.indicator_id
+  OR NEW.version_no          IS DISTINCT FROM OLD.version_no
+  OR NEW.created_at          IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'definition_version est un dépôt (ADR-8) : le contenu est immuable';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER definition_version_content_frozen
+  BEFORE UPDATE ON definition_version
+  FOR EACH ROW EXECUTE FUNCTION definition_content_is_frozen();
+
+-- PORTE 3 — le cycle de vie n'existe que s'il est adossé à un acte.
+--   `status` et `published_at` ne sont donc PAS une deuxième vérité : ils sont
+--   la projection de `signature_event`, et cette projection est refusée
+--   dès qu'aucun acte ne la justifie.
+CREATE FUNCTION lifecycle_needs_an_act() RETURNS trigger AS $$
+DECLARE required_act text;
+BEGIN
+  IF NEW.status = OLD.status THEN
+    RETURN NEW;                                   -- pas de transition : rien à justifier
+  END IF;
+  required_act := CASE NEW.status
+    WHEN 'in_review' THEN 'submit'  WHEN 'signed'   THEN 'sign'
+    WHEN 'refused'    THEN 'refuse'  WHEN 'revoked'  THEN 'revoke'
+    WHEN 'published'  THEN 'publish' WHEN 'draft'    THEN 'revoke'  -- retrait de soumission
+  END;                                             -- 'draft' n'a pas d'acte : la
+                                                    -- porte 2 l'interdit de toute façon
+  IF NOT EXISTS (SELECT 1 FROM signature_event
+                  WHERE definition_version_id = NEW.definition_version_id
+                    AND act = required_act) THEN
+    RAISE EXCEPTION '% -> % sans acte % dans signature_event',
+      OLD.status, NEW.status, coalesce(required_act, '<inconnu>');
+  END IF;
+  -- `published_at` vient de l'acte, jamais d'une horloge de service : c'est lui
+  -- qui verrouille la révocation (B26), donc il ne peut pas être une valeur
+  -- libre, et il ne s'écrit qu'une fois.
+  IF NEW.status = 'published' THEN
+    IF NEW.published_at IS DISTINCT FROM (
+         SELECT occurred_at FROM signature_event
+          WHERE definition_version_id = NEW.definition_version_id AND act = 'publish') THEN
+      RAISE EXCEPTION 'published_at doit être l''occurred_at de l''acte publish';
+    END IF;
+  ELSIF NEW.published_at IS DISTINCT FROM OLD.published_at THEN
+    RAISE EXCEPTION 'published_at ne se réécrit pas : B26 verrouille à la première publication';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER definition_version_lifecycle_needs_an_act
+  BEFORE UPDATE OF status, published_at ON definition_version
+  FOR EACH ROW EXECUTE FUNCTION lifecycle_needs_an_act();
+
+ALTER TABLE definition_version ADD CONSTRAINT definition_status_domain CHECK (
+  status IN ('draft','in_review','signed','refused','published','revoked')
+);
+```
+
 ---
 
 ## 5. Contrats API
 
-**Conventions transverses, valables pour les 19 endpoints** :
+**Conventions transverses, valables pour les 21 endpoints** :
 
 - **Auth** : cookie de session `amberline_session` (HttpOnly, Secure, SameSite=Lax).
   Aucun jeton dans l'URL, aucun jeton dans un corps de requête : B18 est retiré, une
@@ -1120,9 +1442,42 @@ attendue disparaît.
   l'appelant (même réponse dans les deux cas) ; `403` quand le refus est **connu**, avec
   la liste des équipes manquantes. Le refus reste journalisé côté serveur dans les deux cas.
 - **Idempotence** : `Idempotency-Key` requis sur `POST /indicators`, `/versions`,
-  `/signature`, `/exports`, `/dashboards`.
+  `/submission`, `/publication`, `/signature`, `/exports`, `/dashboards`.
 - **Journaux** : toute lecture de valeur journalise une entrée `access_log`, y compris
   quand la réponse est `403`, `404` ou `empty` (B10).
+
+### 5.0 Le cycle de vie d'une version, en un coup d'œil
+
+`status` et `published_at` (§ 4.6) ne sont écrits par aucun endpoint implicitement :
+**chaque transition a un acte nommé et un endpoint nommé**. C'est la table qui rend
+le cycle complet ; les sections la détaillent. Sans elle, `in_review` serait un état
+sans producteur et § 5.8 ne pourrait jamais produire une première signature.
+
+```
+   § 5.5            § 5.9                § 5.8                 § 5.10
+  draft ──────submit──────▶ in_review ───sign/refuse─────▶ signed ──publish──▶ published
+    ▲                          │                                              │
+    └────── revoke (sur submit)┘            (terminal : locked, B26)          │ B26 : verrou
+                                        revoke (sur sign)                      │ de révocation
+                                               ▼                               │
+                                            revoked                          revoked / signed
+                                          (terminal)
+```
+
+| Transition | Acte journalisé | Endpoint | Qui |
+|---|---|---|---|
+| `draft` → `in_review` | `submit` | § 5.9 | auteur de la version **ou** propriétaire |
+| `in_review` → `draft` | `revoke` sur le `submit` | § 5.9 | auteur **ou** propriétaire |
+| `in_review` → `signed` | `sign` | § 5.8 | signataire désigné, `≠` auteur (ADR-1) |
+| `in_review` → `refused` | `refuse` | § 5.8 | signataire désigné, motif obligatoire |
+| `signed` → `published` | `publish` | § 5.10 | propriétaire de l'indicateur |
+| `signed` → `revoked` | `revoke` sur le `sign` | § 5.11 | auteur **ou** propriétaire |
+
+> **409 est réservé à ce qui empêche réellement de répondre.** Un propriétaire inactif
+> (B17, E17) ne l'est pas : c'est un **état rendu** dans un `200`, avec
+> `officiality: "stale_owner"`, sur § 5.3, § 5.6, § 5.7 et § 5.13. Il reste `409` sur
+> les **actes d'écriture** — § 5.8, § 5.9, § 5.10 — parce qu'y écrire serait
+> faire hériter un nouveau dossier d'un propriétaire qui n'existe plus. Voir § 5.22.
 
 ### 5.1 `GET /api/v1/me` — identité et droits résolus
 
@@ -1177,12 +1532,24 @@ attendue disparaît.
     { "slug": "ca-par-client", "label": "CA par client", "officiality": "official",
       "value": 1184320.55, "unit": "EUR",
       "target": { "value": 1250000, "delta": -65679.45, "confirmed": true },
+      "semantic_state": "in_target",
+      "threshold": { "comparison": "below", "threshold_value": 1250000,
+                     "label": "CA par client hors cible", "defined_at": "2026-09-24T10:13:00Z" },
       "computed_at": "2026-09-29T05:00:00Z", "source_ref": "marts_sales_v42",
       "version_label": "v3" }
   ],
   "excluded": []
 }
 ```
+
+| Champ de `items[]` | Type | Nullable | Origine | Description |
+|---|---|---|---|---|
+| `officiality` | `official` \| `provisional` \| `stale_owner` \| `target_missing` | non | **dérivé** à la lecture (§ 4.5) | `stale_owner` si le propriétaire est inactif (B17) — c'est un `200`, pas un refus |
+| `target` | `{ value, delta, confirmed }` | oui | `definition_version.target_*` | `null` ⇒ E16 « cible à reconfirmer » |
+| `semantic_state` | `SemanticState` (§ 2.3) | non | **calculé par `seuil-et-etat`** (§ 3.3) | `in_target` \| `out_of_band` \| `target_missing` \| `not_applicable` |
+| `threshold` | `IndicatorThreshold` (§ 2.3) | **oui** | `definition_threshold` de la **version signée** qui porte la valeur | `null` ⇔ cette version ne porte aucun seuil. Jamais un objet partiel (B11) |
+| `computed_at` | ISO 8601 | **oui** | `warehouse_indicator_value.computed_at` | `null` ⇒ « fraîcheur inconnue » (B6) — jamais l'heure de la requête |
+| `source_ref` | `string` | non | `warehouse_indicator_value.source_ref` | Identifiant de la matérialisation, imprimé tel quel |
 
 | Code | Condition | Message |
 |---|---|---|
@@ -1222,11 +1589,20 @@ attendue disparaît.
   "value": 1184320.55, "unit": "EUR",
   "target": { "value": 1250000, "delta": -65679.45, "confirmed": true },
   "semantic_state": "in_target",
+  "threshold": { "comparison": "below", "threshold_value": 1250000,
+                 "label": "CA par client hors cible", "defined_at": "2026-09-24T10:13:00Z" },
   "computed_at": "2026-09-29T05:00:00Z",
   "source_ref": "marts_sales_v42",
   "resolved_scope": { "teams": ["COMMERCIAL"], "period": { "from": "2026-09-01", "to": "2026-09-30", "grain": "month" }, "segment": {} }
 }
 ```
+
+`threshold` est ici la forme `IndicatorThreshold` de § 2.3, à l'identique de § 5.2 et
+§ 5.13 : **la valeur, le sens, la date**. `null` quand la version visée ne porte aucun
+seuil — et `null` veut dire *« cette version ne déclare pas de seuil »*, pas *« le
+seuil est inconnu »*. La ligne `threshold` du design system est obligatoire au MVP et
+**interdite à la troncature** : c'est la raison d'être du champ. `defined_at` vient de
+la source (§ 4.7), **jamais** de l'heure du poste (B5).
 
 | Code | Condition | Message |
 |---|---|---|
@@ -1234,7 +1610,7 @@ attendue disparaît.
 | 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
 | 403 | Indicateur connu mais hors périmètre : refus **connu** | `"Vous n'avez pas accès à l'équipe {missing}. Demandez l'accès à un responsable."` |
 | 404 | Slug inexistant **ou** indicateur non officiel d'un tiers (B13 : invisible pour les autres) | `"Indicateur introuvable."` |
-| 409 | Propriétaire inactif : l'indicateur perd son statut officiel (B17) | `"Le propriétaire de cet indicateur est inactif : le chiffre n'est plus officiel tant qu'un propriétaire n'est pas nommé."` |
+| 409 | — | *sans objet : un propriétaire inactif est un **état rendu**, pas un refus — voir la note ci-dessous. `409` reste réservé à ce qui empêche de répondre* |
 | 422 | `version` inconnu pour cet indicateur, ou `teams` invalide | `"Version inconnue pour cet indicateur."` |
 | 429 | Quota dépassé | `"Trop de consultations. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. Réessayez ; si le problème persiste, contactez l'administrateur."` |
@@ -1243,6 +1619,17 @@ attendue disparaît.
 
 > `computed_at: null` → l'interface affiche « fraîcheur inconnue » (B6). Le champ
 > n'est **jamais** remplacé par l'heure de la requête.
+
+> **B17 est un `200`, pas un `409`.** Un propriétaire qui a quitté l'entreprise
+> n'empêche pas de **répondre** : il change ce qu'on répond. La réponse est donc
+> `200`, avec `"officiality": "stale_owner"` et la valeur, sa date de calcul et son
+> seuil comme si de rien n'était. Un `409` ici dirait au lecteur « ce que tu
+> regardais n'existe pas », alors que le design system exige précisément le
+> contraire : la tuile porte `stale_owner` et la mention « propriétaire inactif »
+> (E17, `design-system.md` § 2). Le mot **consultable** est donc la spécification,
+> pas une excuse dans un message d'erreur. `OWNER_INACTIVE` reste un `409` — et
+> garde ce statut dans `ERROR_HTTP_STATUS` — mais **uniquement** sur les actes
+> d'écriture des § 5.8, § 5.9 et § 5.10 (§ 5.22).
 
 ### 5.4 `POST /api/v1/indicators` — déclarer un indicateur (US-1, US-11)
 
@@ -1311,9 +1698,15 @@ l'indicateur), plus :
 
 **Réponse (succès)** :
 ```json
-{ "status": "created", "definition_version_id": "9b2e…", "version_no": 4, "status": "draft",
-  "created_at": "2026-09-30T08:00:00Z" }
+{ "state": "created", "definition_version_id": "9b2e…", "version_no": 4,
+  "status": "draft", "created_at": "2026-09-30T08:00:00Z" }
 ```
+
+> `status: "draft"` est l'état **initial**, et ce § 5.5 est son **unique** producteur :
+> une version naît en `draft` et nulle part ailleurs. Créer une version n'est pas la
+> soumettre — la soumission est un acte distinct, avec son auteur, sa date et son
+> endpoint (§ 5.9). Sans cette séparation, un contrôleur créerait un brouillon et le
+> signataire le verrait apparaître sans qu'aucun des deux ait décidé de l'exposer.
 
 | Code | Condition | Message |
 |---|---|---|
@@ -1327,8 +1720,9 @@ l'indicateur), plus :
 | 429 | Quota dépassé | `"Trop de déclarations. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. La version n'a pas été créée ; réessayez."` |
 
-> La version précédente reste consultable intacte : aucune clause `UPDATE` ne porte sur
-> une version signée ou publiée (ADR-8, B22).
+> La version précédente reste consultable intacte : le contenu d'une version n'est
+> jamais réécrit, à aucun statut (ADR-8 révisé, § 4.20). Une correction passe par une
+> nouvelle version (B1, B22), y compris sur une version en `draft`.
 
 ### 5.6 `GET /api/v1/indicators/:slug/history` — historique signé (US-17)
 
@@ -1342,13 +1736,19 @@ l'indicateur), plus :
 ```json
 {
   "status": "ok",
+  "officiality": "official",
   "versions": [
-    { "version_label": "v3", "version_id": "9b2e…", "signed_at": "2026-09-26T08:12:44Z",
+    { "version_label": "v3", "version_id": "9b2e…", "status": "published",
+      "signed_at": "2026-09-26T08:12:44Z", "published_at": "2026-09-26T08:30:00Z",
       "signer": "Marc Delaunay", "value": 1184320.55, "unit": "EUR",
+      "threshold": { "comparison": "below", "threshold_value": 1250000,
+                     "label": "CA par client hors cible", "defined_at": "2026-09-24T10:13:00Z" },
       "computed_at": "2026-09-29T05:00:00Z", "source_ref": "marts_sales_v42",
       "change_note": "les lignes sous-traitées ne sont plus comptées" },
-    { "version_label": "v2", "version_id": "7c11…", "signed_at": "2026-08-14T09:02:00Z",
+    { "version_label": "v2", "version_id": "7c11…", "status": "revoked",
+      "signed_at": "2026-08-14T09:02:00Z", "published_at": null,
       "signer": "Marc Delaunay", "value": 1204510.00, "unit": "EUR",
+      "threshold": null,
       "computed_at": "2026-09-29T05:00:00Z", "source_ref": "marts_sales_v42",
       "change_note": "périmètre élargi à l'Europe" }
   ],
@@ -1357,13 +1757,20 @@ l'indicateur), plus :
 }
 ```
 
+| Champ | Type | Nullable | Origine | Description |
+|---|---|---|---|---|
+| `officiality` | `official` \| `provisional` \| `stale_owner` \| `target_missing` | non | **dérivé** à la lecture (§ 4.5) | `stale_owner` si le propriétaire est inactif (B17) — c'est un `200` |
+| `versions[].status` | domaine `definition_version.status` | non | § 4.6 | `published` \| `revoked` \| `signed` : ce que l'historique **montre** de la version, pas ce qu'il en pense (B22) |
+| `versions[].published_at` | ISO 8601 | **oui** | `definition_version.published_at` | `null` ⇒ la signature était **révocable** à l'époque ; renseigné ⇒ verrou B26. C'est la seule chose qui distingue une signature révoquée d'une signature jamais publiée |
+| `versions[].threshold` | `IndicatorThreshold` (§ 2.3) | **oui** | `definition_threshold` **de cette version** | Chaque version signée porte **son** seuil (B11) ; `null` si cette version n'en déclare pas |
+
 | Code | Condition | Message |
 |---|---|---|
 | 400 | Période incohérente | `"Période incohérente : `from` doit précéder `to`."` |
 | 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
 | 403 | Lecteur autorisé sur la valeur courante mais pas sur l'historique demandé | `"L'historique demandé excède votre périmètre."` |
 | 404 | Slug inconnu ou non signé | `"Historique introuvable."` |
-| 409 | Propriétaire inactif (B17) | `"Le propriétaire est inactif : l'historique reste consultable, l'indicateur n'est plus officiel."` |
+| 409 | — | *sans objet : propriétaire inactif = `200` avec `officiality: "stale_owner"` (B17, E17). L'historique d'une signature **révoquée** reste intégralement lisible, pour la même raison* |
 | 422 | `teams` invalide | `"Liste d'équipes invalide : 1 à 50 codes connus du référentiel sont attendus."` |
 | 429 | Quota dépassé | `"Trop de consultations. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. Réessayez ; si le problème persiste, contactez l'administrateur."` |
@@ -1375,6 +1782,12 @@ l'indicateur), plus :
 > journalisée comme une consultation (B24), jamais comme une administration.
 > Si la valeur n'a pas bougé alors que la définition ou le périmètre ont bougé, la
 > réponse porte `diff.unchanged_reason` (E19).
+>
+> **B17 est un état rendu ici aussi**, et il est d'autant moins discutable sur cet
+> écran que sur les autres : un historique de signatures dont on refuse l'affichage
+> parce que le propriétaire est parti serait la négation de B10 et de B22. `200`,
+> `officiality: "stale_owner"`, et toutes les versions — signées, révoquées, refusées —
+> restent là, avec leur signataire et leur date.
 
 ### 5.7 `GET /api/v1/indicators/:slug/decomposition` — drill-down (US-5)
 
@@ -1395,6 +1808,7 @@ l'indicateur), plus :
 ```json
 {
   "status": "lines",
+  "officiality": "official",
   "computed_at": "2026-09-29T05:00:00Z",
   "source_ref": "marts_sales_v42",
   "path": [{ "key": "NUE-0001", "label": "Nuance" }, { "key": "LIG-0004821", "label": "Ligne 4821" }],
@@ -1409,7 +1823,7 @@ l'indicateur), plus :
 | 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
 | 403 | Ligne parente hors périmètre (E10) | `"Cette ligne n'appartient pas à votre périmètre."` |
 | 404 | Slug inconnu ou ligne parente inexistante | `"Décomposition introuvable."` |
-| 409 | Propriétaire inactif | `"Le propriétaire est inactif : la décomposition reste consultable, l'indicateur n'est plus officiel."` |
+| 409 | — | *sans objet : propriétaire inactif = `200` avec `officiality: "stale_owner"` (B17). B15 exige que le drill-down serve le **même** périmètre et les mêmes droits que l'écran d'origine : il ne peut pas être plus restrictif* |
 | 422 | `parent` mal formé, ou `teams` invalide | `"Paramètres de décomposition invalides."` |
 | 429 | Quota `decomposition` dépassé | `"Trop de décompositions. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. Réessayez ; si le problème persiste, contactez l'administrateur."` |
@@ -1420,6 +1834,11 @@ l'indicateur), plus :
 > injecté dans la requête, il n'existe pas de total qui compterait plus de lignes que
 > le lecteur n'a le droit d'en voir. Le total affiché reste cohérent avec ce qui est
 > visible (E10).
+>
+> `officiality` est là pour que le drill-down **n'invente pas** son propre statut
+> officiel : il transporte celui que § 5.3 a dérivé. Le drill-down ne recolorie
+> rien (B15 rend les lignes, pas un état) — mais il doit pouvoir dire « ce que tu
+> descends n'est plus officiel », sinon B17 s'arrêterait à l'écran précédent.
 
 ### 5.8 `POST /api/v1/definitions/:versionId/signature` — signer, refuser (US-2)
 
@@ -1430,14 +1849,33 @@ l'indicateur), plus :
 
 | Paramètre | Type | Requis | Description |
 |---|---|---|---|
-| `act` | `sign` \| `refuse` | oui | Nature de l'acte |
+| `act` | `sign` \| `refuse` | oui | Nature de l'acte. Les deux exigent une version **`in_review`** : c'est la seule façon d'entrer |
 | `reason` | `string` | si `act = refuse` | 1..500 car. — obligatoire, sinon `422` |
+
+**Précondition, et elle est désormais vérifiable** : la version doit être en `in_review`.
+Ce statut est produit **exclusivement** par `POST /definitions/:versionId/submission`
+(§ 5.9, acte `submit`) et n'a aucun autre producteur. Sans § 5.9, ce `409` serait la
+seule réponse possible de ce endpoint, et le MVP ne produirait jamais sa première
+signature — donc ni US-2, ni B2, ni ADR-1, ni B26, ni le jalon `T_première signature`
+de `roadmap.md` § 1.1 (les trois jalons du MVP).
 
 **Réponse (succès)** :
 ```json
 { "signature_event_id": "4a11…", "act": "sign", "definition_version_id": "9b2e…",
-  "signed_at": "2026-09-26T08:12:44Z", "officiality": "official", "state": "locked" }
+  "signed_at": "2026-09-26T08:12:44Z", "status": "signed", "published_at": null,
+  "officiality": "provisional", "state": "revocable" }
 ```
+
+> `state: "revocable"` et non `"locked"` au moment de la signature : la version vient
+> d'être signée, `published_at` est `null`, donc B26 **laisse encore** la signature
+> reprenable (§ 5.11). Elle ne devient `locked` qu'à la publication (§ 5.10). Un `sign`
+> qui renvoyait `locked` affirmerait un verrou que la base n'a pas posé, et
+> `SignatureBar` (`design-primitives`, § 2.3) rend `revocable` et `locked` comme deux
+> états distincts précisément pour cela.
+>
+> `officiality: "provisional"` juste après la signature : `indicator.current_signed_version_id`
+> n'est encore déplacé par personne (§ 5.10). La signature a existé, la valeur publiée
+> pas encore. Les deux faits sont distincts et B4 ne permet pas de les confondre.
 
 | Code | Condition | Message |
 |---|---|---|
@@ -1445,28 +1883,160 @@ l'indicateur), plus :
 | 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
 | 403 | L'appelant n'est pas le signataire désigné | `"Seul le signataire désigné peut signer cette version."` |
 | 404 | `versionId` inconnu ou invisible | `"Version de définition introuvable."` |
-| 409 | L'appelant est l'auteur de la version (B2) | `"Vous êtes l'auteur de cette version : l'auto-signature est interdite (règle B2). La version revient en projet."` |
-| 409 | La version porte déjà une signature active de cet acteur | `"Cette version est déjà signée par vous."` |
-| 409 | La version n'est pas en `in_review` (signée, refusée ou révoquée) | `"Cette version n'est pas en attente de signature."` |
-| 409 | Propriétaire inactif : la version ne peut plus être signée (B17) | `"Le propriétaire est inactif : nommez un propriétaire avant toute nouvelle signature."` |
-| 422 | `act` absent, `reason` manquant sur un refus, ou identifiant mal formé | `"Acte invalide : `reason` est obligatoire pour un refus."` |
+| 409 `SIGNER_IS_AUTHOR` | L'appelant est l'auteur de la version (B2) | `"Vous êtes l'auteur de cette version : l'auto-signature est interdite (règle B2). La version revient en projet."` |
+| 409 `ALREADY_SIGNED_BY_ACTOR` | La version porte déjà une signature active de cet acteur | `"Cette version est déjà signée par vous."` |
+| 409 `DEFINITION_NOT_IN_REVIEW` | La version n'est pas en `in_review` : elle est `draft` (jamais soumise, ou soumission retirée), `signed`, `refused`, `revoked` ou `published` | `"Cette version n'est pas en attente de signature."` |
+| 409 `OWNER_INACTIVE` | Propriétaire inactif : la version ne peut plus être signée (B17). **Acte d'écriture** — ici le `409` est justifié | `"Le propriétaire est inactif : nommez un propriétaire avant toute nouvelle signature."` |
+| 422 | `act` absent ou inconnu, `reason` manquant sur un refus, ou identifiant mal formé | `"Acte invalide : `reason` est obligatoire pour un refus."` |
 | 429 | Quota dépassé | `"Trop de tentatives de signature. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. L'acte n'a pas été enregistré ; réessayez."` |
 
 > Le refus d'auto-signature est renvoyé en `409 SIGNER_IS_AUTHOR` avec un message
 > explicite : l'action n'est pas seulement désactivée dans l'interface, elle est
-> refusée et **expliquée** (US-2).
+> refusée et **expliquée** (US-2). Chaque `409` porte son `error_code` : sans lui, deux
+> refus de nature opposée — « tu es l'auteur » et « ce n'est pas à signer » —produiraient
+> le même statut et le même écran d'erreur, et l'appelant ne pourrait pas distinguer
+> un bug d'une règle.
 
-### 5.9 `POST /api/v1/definitions/:versionId/signature/revocation` — révocation (B26)
+### 5.9 `POST /api/v1/definitions/:versionId/submission` — soumettre, retirer (US-1, US-2)
+
+- **Méthode** : POST · **Path** : `/api/v1/definitions/:versionId/submission` · **Auth** : session
+- **Rate limit** : 20 req/min par session · **Idempotence** : `Idempotency-Key` requise
+
+C'est l'endpoint qui donne un producteur à `in_review` (acte `submit`, § 4.8), et donc
+à § 5.8. Sans lui, le cycle de vie a un état sans écrivain et le MVP ne peut pas
+signer.
+
+**Requête** — path param `versionId` (`uuid`) ; body :
+
+| Paramètre | Type | Requis | Description |
+|---|---|---|---|
+| `act` | `submit` \| `withdraw` | oui | `submit` porte `draft → in_review`. `withdraw` retire la soumission et ramène à `draft` |
+| `reason` | `string` | si `act = withdraw` | 1..500 car. — obligatoire, sinon `422` : un retrait est une trace, pas un silence |
+
+**Qui peut soumettre.** L'**auteur de la version** (`definition_version.author_actor_id`)
+ou le **propriétaire** de l'indicateur (`indicator.owner_actor_id`) — exactement le
+même cercle que la création d'une version (§ 5.5) et que sa révocation (§ 5.11). Ni le
+signataire, ni un tiers : soumettre, c'est exposer une définition à un jugement, et
+c'est le rôle de celui qui la porte. Le rôle `controleur` est requis, comme sur § 5.4
+et § 5.5, parce que ces trois personnes en ont un.
+
+**La soumission est révocable, et c'est écrit ici pourquoi.** Tant que la version est
+`in_review`, **rien n'est attesté** : aucun signataire n'a apposé sa signature, aucun
+support d'export ne s'y rattache, aucun tableau de bord ne l'épingle. Une soumission
+qu'on ne pourrait pas retirer laisserait un signataire face à une offre qu'il n'a
+aucun moyen de décliner, et l'auteur devant l'unique issue de créer une nouvelle
+version — donc un doublon permanent dans l'historique pour une faute de frappe. Le
+retrait écrit un acte `revoke` qui **référence** l'acte `submit` (§ 4.8) : la trace
+montre qu'une soumission a eu lieu puis a été retirée, ce qui est exact, et ce qui
+interdit qu'un tiers passe par une autre voie. `draft` est l'unique retour possible, et
+c'est le bon : c'est le seul état depuis lequel on peut soumettre à nouveau.
+
+> Le retrait **ne rend pas la version modifiable.** Le contenu reste figé (ADR-8
+> révisé, § 4.20) : une correction, à n'importe quel statut, passe par une nouvelle
+> version (B1). Revenir en `draft` rend la version **re-soumissible**, ce qui est
+> exactement ce qu'un retrait doit faire, et rien de plus.
+
+**Réponse (succès)** :
+```json
+{ "signature_event_id": "4a05…", "act": "submit", "definition_version_id": "9b2e…",
+  "status": "in_review", "submitted_at": "2026-09-26T07:55:10Z",
+  "submitted_by": "Camille Roux", "state": "in_review" }
+```
+
+| Code | Condition | Message |
+|---|---|---|
+| 400 | Corps illisible | `"Corps de requête illisible : JSON attendu."` |
+| 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
+| 403 | Rôle `controleur` absent, **ou** l'appelant n'est ni l'auteur de la version ni le propriétaire de l'indicateur | `"Seul l'auteur de la version ou son propriétaire peut la soumettre ou retirer sa soumission."` |
+| 404 | `versionId` inconnu ou invisible | `"Version de définition introuvable."` |
+| 409 `DEFINITION_NOT_DRAFT` | `act: submit` et la version n'est pas en `draft` — déjà `in_review`, `signed`, `refused`, `published` ou `revoked` | `"Cette version n'est pas en projet : elle ne peut pas être soumise une seconde fois. Créez une nouvelle version."` |
+| 409 `DEFINITION_NOT_IN_REVIEW` | `act: withdraw` et la version n'est pas en `in_review` | `"Cette version n'est pas en attente de signature : il n'y a rien à retirer."` |
+| 409 `SIGNED_VERSION_IMMUTABLE` | Retrait demandé alors que la version est déjà `signed` — le refus de signer (§ 5.8) est un acte, pas un retrait de soumission | `"Cette version est signée : une signature se révoque (§ 5.11), elle ne se retire pas."` |
+| 409 `OWNER_INACTIVE` | Propriétaire inactif (B17). **Acte d'écriture** : soumettre reviendrait à demander un jugement sur un dossier sans propriétaire vivant | `"Le propriétaire est inactif : nommez un propriétaire avant de soumettre cette version."` |
+| 422 | `act` absent ou inconnu, `reason` manquant sur un retrait, ou identifiant mal formé | `"Acte invalide : `reason` est obligatoire pour un retrait de soumission."` |
+| 429 | Quota dépassé | `"Trop de soumissions. Réessayez dans un instant."` |
+| 500 | Panne interne | `"Erreur interne. L'acte n'a pas été enregistré ; réessayez."` |
+
+> Un `withdraw` sur une version `signed` est **refusé**, pas traité comme une
+> révocation : ce sont deux traces de natures différentes. Une révocation dit « la
+> signature a été annulée » et reste consultable comme telle (B26, § 5.11) ; un
+> retrait dit « personne n'avait encore apposé de signature ». Confondre les deux
+> ferait apparaître une signature annulée dans un historique où il n'y en a jamais
+> eu.
+
+### 5.10 `POST /api/v1/definitions/:versionId/publication` — publier (B4, B16, B26)
+
+- **Méthode** : POST · **Path** : `/api/v1/definitions/:versionId/publication` · **Auth** : session
+- **Rate limit** : 20 req/min par session · **Idempotence** : `Idempotency-Key` requise
+
+C'est l'endpoint qui donne un producteur à `published` et à `published_at` (acte
+`publish`, § 4.8), donc à la cible déterministe de § 5.11 et au verrou B26.
+
+**Qui publie.** Le **propriétaire** de l'indicateur (`indicator.owner_actor_id`), pas
+l'auteur de la version et pas le signataire. Publier, c'est décider quelle version
+porte la valeur officielle affichée (B4) et laquelle reste épinglée dans les tableaux
+de bord déjà partagés (B16) : c'est une décision de **portée produit**, et elle
+appartient à la personne nommée qui en répond (B3). Le signataire a attesté la
+définition ; il n'a pas à choisir laquelle devient celle que le comité regarde.
+
+**Requête** — path param `versionId` (`uuid`) ; body : **vide**. Une publication ne
+porte ni motif ni périmètre : elle est un acte nu, horodaté, et rien d'autre. Le
+`Idempotency-Key` protège le double-clic.
+
+**Réponse (succès)** :
+```json
+{ "signature_event_id": "4a30…", "act": "publish", "definition_version_id": "9b2e…",
+  "status": "published", "published_at": "2026-09-26T08:30:00Z",
+  "published_by": "Camille Roux", "officiality": "official",
+  "current_signed_version_id": "9b2e…", "state": "locked" }
+```
+
+| Code | Condition | Message |
+|---|---|---|
+| 400 | Corps illisible, ou corps non vide alors qu'aucun champ n'est attendu | `"Corps de requête illisible : JSON attendu, corps vide pour une publication."` |
+| 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
+| 403 | L'appelant n'est pas le propriétaire de l'indicateur | `"Seul le propriétaire de l'indicateur peut publier une version comme valeur officielle."` |
+| 404 | `versionId` inconnu ou invisible | `"Version de définition introuvable."` |
+| 409 `DEFINITION_NOT_SIGNED` | La version n'est pas `signed` : elle est `draft`, `in_review`, `refused`, `revoked` ou déjà `published` | `"Seule une version signée peut être publiée. Faites-la signer d'abord."` |
+| 409 `SIGNED_VERSION_IMMUTABLE` | La version est déjà publiée : `published_at` ne se réécrit pas (B26), et `CREATE UNIQUE INDEX one_publish_per_version` (§ 4.8) refuse un second acte `publish` | `"Cette version est déjà publiée."` |
+| 409 `OWNER_INACTIVE` | Propriétaire inactif (B17) — ici, l'appelant **est** le propriétaire, donc le cas est celui d'une désactivation survenue depuis l'ouverture de la session. **Acte d'écriture** | `"Le propriétaire est inactif : nommez un propriétaire actif avant toute publication."` |
+| 422 | `versionId` mal formé | `"Identifiant de version invalide."` |
+| 429 | Quota dépassé | `"Trop de publications. Réessayez dans un instant."` |
+| 500 | Panne interne | `"Erreur interne. L'acte n'a pas été enregistré ; réessayez."` |
+
+> **Une transaction, deux écritures.** L'acte `publish`, l'écriture de
+> `definition_version.published_at` et le déplacement de
+> `indicator.current_signed_version_id` sont **atomiques** (§ 4.20, porte 3). Dans
+> l'autre sens, il existerait un instant — vérifiable par une lecture concurrente —
+> où une version serait `published` sans porter la valeur (B4), ou porterait la valeur
+> sans être `published` (donc révocable, § 5.11). Les deux sont interdits, et c'est
+> pourquoi `published_at` ne peut pas être une valeur dérivée : seul un acte
+> horodaté permet d'y accrocher le pointeur dans le même instant.
+
+### 5.11 `POST /api/v1/definitions/:versionId/signature/revocation` — révocation (B26)
 
 - **Méthode** : POST · **Path** : `/api/v1/definitions/:versionId/signature/revocation` · **Auth** : session
 - **Rate limit** : 20 req/min par session · **Idempotence** : `Idempotency-Key` requise
 
 **Requête** — path param `versionId` ; body `{ "reason": "périmètre à préciser" }`.
 
+**La cible est déterministe, et elle l'est maintenant par construction.** L'acte
+révoqué est identifié sans que l'appelant ait à le choisir : c'est **l'unique acte
+`sign` non déjà révoqué** de cette version — garanti unique par l'index
+`one_active_signature_per_signer` (§ 4.8). Avant que `sign` et `revoke` existent
+dans le journal (§ 4.8), cette cible n'était qu'une convention : rien n'interdisait
+qu'une version ait deux signatures actives, ni qu'un appelant en révoque une autre
+que celle qu'il croit viser. Le contrat est donc explicite : `revokes_event_id` est
+**résolu par le serveur**, jamais fourni par le client, et il est echoed dans la
+réponse pour que la trace soit vérifiable. Une version qui n'est pas `signed` n'a
+rien à révoquer : c'est `409 NO_ACTIVE_SIGNATURE`, et le retrait d'une soumission
+relève de § 5.9, pas d'ici.
+
 **Réponse (succès)** :
 ```json
 { "signature_event_id": "4a20…", "act": "revoke", "revokes_event_id": "4a11…",
+  "definition_version_id": "9b2e…", "status": "revoked",
   "occurred_at": "2026-09-27T09:00:00Z", "state": "revocable" }
 ```
 
@@ -1474,15 +2044,21 @@ l'indicateur), plus :
 |---|---|---|
 | 400 | Corps illisible | `"Corps de requête illisible : JSON attendu."` |
 | 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
-| 403 | L'appelant n'est ni l'auteur ni le propriétaire | `"Seul l'auteur de la version peut demander la révocation de sa signature."` |
+| 403 | L'appelant n'est ni l'auteur ni le propriétaire | `"Seul l'auteur de la version ou son propriétaire peut demander la révocation de sa signature."` |
 | 404 | `versionId` inconnu ou invisible | `"Version de définition introuvable."` |
-| 409 | La version est déjà publiée : la signature ne se reprend plus | `"Cette version est publiée : sa signature n'est plus révocable. Créez une nouvelle version puis faites-la signer."` |
-| 409 | Aucune signature active à révoquer | `"Cette version n'a pas de signature active."` |
+| 409 `SIGNED_VERSION_IMMUTABLE` | La version est `published` : `published_at` est écrit, donc B26 verrouille. Le message **nomme** la sortie | `"Cette version est publiée : sa signature n'est plus révocable. Créez une nouvelle version puis faites-la signer."` |
+| 409 `NO_ACTIVE_SIGNATURE` | Aucune signature active à révoquer : la version est `draft`, `in_review`, `refused`, `revoked`, ou sa signature a déjà été révoquée | `"Cette version n'a pas de signature active à révoquer."` |
 | 422 | `reason` absent ou trop long | `"Motif de révocation obligatoire (1 à 500 caractères)."` |
 | 429 | Quota dépassé | `"Trop de tentatives. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. La révocation n'a pas été enregistrée ; réessayez."` |
 
-### 5.10 `GET /api/v1/dashboards` — tableaux de bord accessibles
+> `published_at` n'est **jamais** réécrit par cet endpoint, ni par aucun autre
+> (§ 4.20, porte 3) : c'est le seul moyen de garantir que le verrou B26 ne se
+> relâche pas. Une version révoquée reste **consultable** dans l'historique (§ 5.6),
+> avec son signataire, sa date et son motif : « on a annulé » est un fait de
+> gouvernance à conserver, pas une ligne à effacer (B10, B22).
+
+### 5.12 `GET /api/v1/dashboards` — tableaux de bord accessibles
 
 - **Méthode** : GET · **Path** : `/api/v1/dashboards` · **Auth** : session
 - **Rate limit** : 60 req/min par session
@@ -1505,7 +2081,7 @@ l'indicateur), plus :
 | 429 | Quota dépassé | `"Trop de requêtes. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. Réessayez ; si le problème persiste, contactez l'administrateur."` |
 
-### 5.11 `GET /api/v1/dashboards/:slug` — tableau de bord partagé (US-6)
+### 5.13 `GET /api/v1/dashboards/:slug` — tableau de bord partagé (US-6)
 
 - **Méthode** : GET · **Path** : `/api/v1/dashboards/:slug` · **Auth** : session **+ partage existant**
 - **Rate limit** : 120 req/min par session (`indicator_read`)
@@ -1523,12 +2099,37 @@ l'indicateur), plus :
       "state": "value", "value": 1184320.55, "unit": "EUR",
       "target": { "value": 1250000, "delta": -65679.45, "confirmed": true },
       "semantic_state": "in_target",
+      "threshold": { "comparison": "below", "threshold_value": 1250000,
+                     "label": "CA par client hors cible", "defined_at": "2026-09-24T10:13:00Z" },
+      "computed_at": "2026-09-29T05:00:00Z", "source_ref": "marts_sales_v42" },
+    { "position": 1, "slug": "ca-marge-brute", "version_label": "v2", "officiality": "stale_owner",
+      "state": "value", "value": 214300.00, "unit": "EUR",
+      "target": null, "semantic_state": "target_missing",
+      "threshold": null,
       "computed_at": "2026-09-29T05:00:00Z", "source_ref": "marts_sales_v42" }
   ],
-  "excluded": [ { "slug": "ca-marge-brute", "reason": "SCOPE_DENIED", "missing_team_codes": ["FINANCE"] } ],
+  "excluded": [ { "slug": "ca-marge-nette", "reason": "SCOPE_DENIED", "missing_team_codes": ["FINANCE"] } ],
   "computed_at": "2026-09-29T05:00:00Z"
 }
 ```
+
+| Champ de `tiles[]` | Type | Nullable | Origine | Description |
+|---|---|---|---|---|
+| `version_label` | `string` | non | `dashboard_indicator.pinned_version_id` | La version **épinglée** (B16) : tant que la version suivante n'est pas publiée, c'est celle-ci qui est rendue, pas la dernière |
+| `officiality` | `official` \| `provisional` \| `stale_owner` \| `target_missing` | non | **dérivé** à la lecture (§ 4.5) | `stale_owner` si le propriétaire est inactif (B17) — la tuile est rendue, pas retirée (E17) |
+| `target` | `{ value, delta, confirmed }` | **oui** | `definition_version.target_*` de la version épinglée | `null` ⇒ E16 « cible à reconfirmer », rendu par `semantic_state: "target_missing"` |
+| `semantic_state` | `SemanticState` (§ 2.3) | non | **calculé par `seuil-et-etat`** (§ 3.3) | Transporté, jamais recalculé ici |
+| `threshold` | `IndicatorThreshold` (§ 2.3) | **oui** | `definition_threshold` de la **version épinglée** | `null` ⇔ cette version ne déclare aucun seuil. Jamais un objet partiel (B11) |
+
+> **Chaque tuile porte son seuil, et c'est non négociable.** Le design system approuvé
+> (`design-system.md` § 2) fait de la ligne de seuil un contenu **obligatoire au MVP**
+> dont **aucun** fait n'est rognable, et interdit qu'elle dépende du format d'écran.
+> Une tuile sans `threshold` ne peut donc pas rendre ce slot : elle ne peut rendre
+> qu'un `out_of_band` **sans** ligne de seuil, c'est-à-dire le cas `not_applicable`
+> du § 2.1 — qui est un état nommé, pas une tuile amputée. C'est pourquoi § 5.2,
+> § 5.3 et § 5.13 renvoient tous les trois le champ, avec la même forme, et que la
+> forme est fixée **une seule fois**, en § 2.3. `defined_at` vient de la source
+> (§ 4.7), **jamais** de l'heure du poste (B5).
 
 | Code | Condition | Message |
 |---|---|---|
@@ -1536,7 +2137,7 @@ l'indicateur), plus :
 | 401 | Session absente ou expirée | `"Session absente ou expirée. Reconnectez-vous via le fournisseur d'identité."` |
 | 403 | L'appelant figure dans la liste de partage mais son périmètre est vide après application du scope | `"Aucune des équipes demandées ne vous est accessible sur ce tableau."` |
 | 404 | Slug inexistant **ou** tableau non partagé avec l'appelant (même réponse) | `"Tableau de bord introuvable."` |
-| 409 | Au moins un indicateur a perdu son statut officiel (B17, E17) — le tableau reste consultable | `"Ce tableau n'est plus officiel : un de ses indicateurs n'a plus de propriétaire actif."` |
+| 409 | — | *sans objet : E17 est un **état rendu**, pas un refus. Un ou plusieurs indicateurs `stale_owner` donnent un `200` avec `dashboard.is_official: false`, la liste des `tiles` **inchangée**, et la mention par tuile. Le tableau ne se retire pas* |
 | 422 | `teams` invalide | `"Liste d'équipes invalide : 1 à 50 codes connus du référentiel sont attendus."` |
 | 429 | Quota dépassé | `"Trop de consultations. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. Réessayez ; si le problème persiste, contactez l'administrateur."` |
@@ -1548,7 +2149,7 @@ l'indicateur), plus :
 > l'identité et la ressource visée. Le design system est cohérent : la tuile
 > `permission_denied` **n'est pas rendue** (pas de placeholder « accès refusé »).
 
-### 5.12 `POST /api/v1/dashboards` — composer un tableau de bord
+### 5.14 `POST /api/v1/dashboards` — composer un tableau de bord
 
 - **Méthode** : POST · **Path** : `/api/v1/dashboards` · **Auth** : session + rôle `controleur`
 - **Rate limit** : 20 req/min par session · **Idempotence** : `Idempotency-Key` requise
@@ -1582,7 +2183,7 @@ l'indicateur), plus :
 | 429 | Quota dépassé | `"Trop de créations. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. Le tableau n'a pas été créé ; réessayez."` |
 
-### 5.13 `POST /api/v1/dashboards/:slug/grants` — partager (B9)
+### 5.15 `POST /api/v1/dashboards/:slug/grants` — partager (B9)
 
 - **Méthode** : POST · **Path** : `/api/v1/dashboards/:slug/grants` · **Auth** : session + rôle `controleur`
 - **Rate limit** : 20 req/min par session · **Idempotence** : `Idempotency-Key` requise
@@ -1613,7 +2214,7 @@ l'indicateur), plus :
 > a pas de `token`, pas de `public: true`, et l'adresse du tableau restitue un état,
 > jamais un droit (B9).
 
-### 5.14 `DELETE /api/v1/dashboards/:slug/grants/:grantId` — retirer un partage
+### 5.16 `DELETE /api/v1/dashboards/:slug/grants/:grantId` — retirer un partage
 
 - **Méthode** : DELETE · **Path** : `/api/v1/dashboards/:slug/grants/:grantId` · **Auth** : session + rôle `controleur`
 - **Rate limit** : 20 req/min par session · **Idempotence** : naturally idempotent
@@ -1633,7 +2234,7 @@ l'indicateur), plus :
 | 429 | Quota dépassé | `"Trop de requêtes. Réessayez dans un instant."` |
 | 500 | Panne interne | `"Erreur interne. Réessayez ; si le problème persiste, contactez l'administrateur."` |
 
-### 5.15 `POST /api/v1/exports` — demander un export (US-9)
+### 5.17 `POST /api/v1/exports` — demander un export (US-9)
 
 - **Méthode** : POST · **Path** : `/api/v1/exports` · **Auth** : session
 - **Rate limit** : 5 req/min par acteur (`export_create`) · **Idempotence** : `Idempotency-Key` requise
@@ -1676,7 +2277,7 @@ l'indicateur), plus :
 > commande pour le demander explicitement. E13 : un échec ne produit aucun fichier
 > partiel — `state: failed` avec `error_code`, sans `export_artifact`.
 
-### 5.16 `GET /api/v1/exports/:exportId` — état d'un export
+### 5.18 `GET /api/v1/exports/:exportId` — état d'un export
 
 - **Méthode** : GET · **Path** : `/api/v1/exports/:exportId` · **Auth** : session + auteur du job
 - **Rate limit** : 60 req/min par session
@@ -1707,7 +2308,7 @@ l'indicateur), plus :
 > état du job, pas une panne HTTP. E13 : `artifact` est alors `null` — jamais un
 > fichier partiel proposé.
 
-### 5.17 `GET /api/v1/exports/:exportId/artifact` — télécharger le support
+### 5.19 `GET /api/v1/exports/:exportId/artifact` — télécharger le support
 
 - **Méthode** : GET · **Path** : `/api/v1/exports/:exportId/artifact` · **Auth** : session + auteur du job
 - **Rate limit** : 20 req/min par session
@@ -1736,7 +2337,7 @@ d'export (B27).
 > plus récente** (B22, B27) : `export_artifact.definition_version_id` est figé et le
 > support le porte.
 
-### 5.18 `GET /api/v1/access-log` — journal filtré (US-8, B25)
+### 5.20 `GET /api/v1/access-log` — journal filtré (US-8, B25)
 
 - **Méthode** : GET · **Path** : `/api/v1/access-log` · **Auth** : session + habilitation `auditeur` (personne nommée, B23)
 - **Rate limit** : 30 req/min par session (`journal_read`)
@@ -1777,14 +2378,14 @@ d'export (B27).
 > silencieusement amputé que l'utilisateur prendrait pour un journal complet. Le refus
 > journalise la ressource visée, jamais le détail des lignes.
 
-### 5.19 `POST /api/v1/access-log/exports` — exporter le journal (US-8)
+### 5.21 `POST /api/v1/access-log/exports` — exporter le journal (US-8)
 
 - **Méthode** : POST · **Path** : `/api/v1/access-log/exports` · **Auth** : session + habilitation `auditeur`
 - **Rate limit** : 2 req/min par acteur · **Idempotence** : `Idempotency-Key` requise
 
 **Requête** (body) : `{ "from": "2026-09-01", "to": "2026-09-30", "format": "csv" }`.
 
-**Réponse (succès)** — `202 Accepted`, comme § 5.15 (même file de jobs) :
+**Réponse (succès)** — `202 Accepted`, comme § 5.17 (même file de jobs) :
 ```json
 { "export_job_id": "f02a…", "state": "queued", "requested_at": "2026-09-29T08:00:00Z" }
 ```
@@ -1803,13 +2404,13 @@ d'export (B27).
 > L'export du journal est lui-même journalisé (B23) et passe par le **même** filtre que
 > la lecture à l'écran : un export ne peut pas devenir le chemin qui contourne B25.
 
-### 5.20 Correspondance `error_code` → statut HTTP
+### 5.22 Correspondance `error_code` → statut HTTP
 
 | `error_code` | Statut | Retenu quand | État d'UI |
 |---|---|---|---|
 | `UNAUTHENTICATED` | 401 | Aucun cookie / cookie invalide | Redirection vers l'IdP |
 | `SESSION_EXPIRED` | 401 | Session dépassée ou révoquée (E14) | Idem, avec message explicite |
-| `FORBIDDEN` | 403 | Rôle insuffisant | Bandeau « accès refusé » |
+| `FORBIDDEN` | 403 | Rôle insuffisant, ou l'appelant n'est ni auteur ni propriétaire de la version | Bandeau « accès refusé » |
 | `SCOPE_DENIED` | 403 | Périmètre calculé et connu | Tuile **non rendue** (E5) + journalisation |
 | `EXPORT_SCOPE_DENIED` | 403 | Élargissement de périmètre (E6) | `ExportPanel: forbidden_scope` |
 | `JOURNAL_FORBIDDEN` | 403 | Non habilité au journal (B23) | Panneau d'explication |
@@ -1818,12 +2419,16 @@ d'export (B27).
 | `PLAN_INVALID` | 422 | Plan de requête invalide (vient du client) | Erreur au champ |
 | `SIGNER_UNKNOWN` | 422 | Signataire hors annuaire | Erreur au champ |
 | `OWNER_REQUIRED` | 409 | Enregistrement sans propriétaire nommé (B3) | Erreur au champ |
-| `SIGNER_IS_AUTHOR` | 409 | Auto-signature (B2) | Message explicite, action expliquée |
-| `SIGNED_VERSION_IMMUTABLE` | 409 | Modification d'une version publiée (B1) | Message expliquant de créer une version |
-| `DEFINITION_NOT_SIGNED` | 409 | Seuil posé sur une version non signée (B11) | Erreur au champ |
+| `SIGNER_IS_AUTHOR` | 409 | Auto-signature (B2) — actes `sign` / `refuse` seulement | Message explicite, action expliquée |
+| `SIGNED_VERSION_IMMUTABLE` | 409 | Modification d'une version `published` (B1), **retrait de soumission sur une version `signed`** (§ 5.9), **seconde publication** (§ 5.10), **révocation d'une version publiée** (§ 5.11, B26) | Message expliquant de créer une version, ou que le verrou B26 est posé |
+| `DEFINITION_NOT_DRAFT` | 409 | Soumission d'une version qui n'est pas en `draft` (§ 5.9) | Message expliquant l'état courant, action : créer une version |
+| `DEFINITION_NOT_IN_REVIEW` | 409 | `sign` / `refuse` sur une version qui n'est pas `in_review` (§ 5.8) ; retrait d'une soumission absente (§ 5.9) | Message expliquant l'état courant |
+| `DEFINITION_NOT_SIGNED` | 409 | Seuil posé sur une version non signée (B11) ; **publication d'une version qui n'est pas `signed`** (§ 5.10) | Erreur au champ, ou message « faites-la signer d'abord » |
+| `ALREADY_SIGNED_BY_ACTOR` | 409 | Cet acteur a déjà une signature active sur cette version (§ 5.8) | Message « déjà signée par vous » |
+| `NO_ACTIVE_SIGNATURE` | 409 | Révocation demandée alors qu'aucune signature n'est active (§ 5.11) | Message « rien à révoquer », action : retirer la soumission (§ 5.9) |
 | `SLUG_TAKEN` | 409 | Collision d'identifiant d'URL | Erreur au champ |
 | `CONCURRENT_MODIFICATION` | 409 | `expected_version_no` dépassé | Rechargement de la définition |
-| `OWNER_INACTIVE` | 409 | Propriétaire inactif (B17) | Tuile `stale_owner` |
+| `OWNER_INACTIVE` | 409 | **Acte d'écriture seulement** : soumission (§ 5.9), publication (§ 5.10), signature ou refus (§ 5.8). **Jamais sur une lecture** | Sur un acte d'écriture : message bloquant nommant le propriétaire à nommer. **Sur une lecture : aucun état d'erreur** — c'est `officiality: "stale_owner"` dans un `200` (§ 5.3, § 5.6, § 5.7, § 5.13) |
 | `RATE_LIMITED` | 429 | Quota de session dépassé | Message transitoire |
 | `SOURCE_UNREACHABLE` | 503 | Entrepôt injoignable (E1) | Tuile `source_unavailable` + dernière date connue |
 | `COMPUTATION_TOO_LONG` | 503 | Calcul au-delà du délai (E11) | Tuile `computation_too_long`, jamais de partiel |
@@ -1835,15 +2440,46 @@ d'export (B27).
 > message et contact admin sur le `code`, jamais sur une chaîne libre : sinon chaque
 > endpoint invente son libellé et l'interface ne sait plus quoi proposer.
 
+> **`OWNER_INACTIVE` : un `409`, et pourtant jamais sur une lecture.** C'est le
+> point où cette table et le catalogue de § 2.5 se contredisaient : la colonne
+> « État d'UI » disait « Tuile `stale_owner` », ce qui est un **rendu** — donc un
+> `200` — alors que la colonne « Statut » disait `409`. Les deux ne peuvent pas être vrais, et
+> l'erreur n'est pas cosmétique : un `409` sur § 5.3, § 5.6, § 5.7 ou § 5.13
+> empêcherait de rendre un indicateur que le lecteur a le droit de voir, ce que
+> E17 et E5 interdisent l'un comme l'autre.
+>
+> La règle tient en une phrase, et elle est appliquée aux **quatre** lectures :
+> **un `409` signifie « je ne peux pas répondre », jamais « la réponse que vous
+> attendez a changé ».** Un propriétaire inactif ne nous empêche pas de répondre —
+> il change la réponse. Le `409` reste donc dans `ERROR_HTTP_STATUS`, où il a sa
+> place, et il est **levé** uniquement par un acte d'écriture : écrire une nouvelle
+> signature, une nouvelle soumission ou une nouvelle publication sous un
+> propriétaire qui n'existe plus, c'est faire hériter un dossier d'un absent.
+> `stale_owner` reste dans le design system, au même rang de précédence que les autres
+> états rendus (`design-system.md` § 2), et il est **atteint** par le `200`.
+
 ---
 
 ## 6. Graphe de dépendances
 
-Graphe déclaré avec `state.js dep` (15 nœuds, 24 arêtes) puis recalculé par
+Graphe déclaré avec `state.js dep` (15 nœuds) puis recalculé par
 `dependency-check.js check . --write`, qui persiste `depends_on`, `depended_on_by` et
 `impl_wave`. Le plan ci-dessous **est** le résultat du calcul : aucune séquence
 d'ordonnancement plus fine n'est annoncée, donc aucun `impl_waves` n'est déclaré dans
 le front matter — il n'y a pas d'écart à justifier.
+
+> **Deux arêtes ont changé depuis le dernier `--write`, et le graphe est passé de 24 à
+> 25 arêtes.** `seuil-et-etat → consultation-indicateur` n'existe plus ;
+> `consultation-indicateur → seuil-et-etat` a été ajoutée (§ 3.3, décision d'arbitrage) ;
+> et `seuil-et-etat → design-primitives` a été ajoutée pour que la fonction pure ait
+> une dépendance réelle. Ce n'est donc pas une inversion 1:1, c'est **une arête
+> retargetée plus une arête ajoutée** : d'où 25 et non 24. Ce qui **ne change pas**,
+> et c'est le point, c'est le nombre de nœuds (15) et le nombre de vagues (4).
+> `state.json → index.impl_waves`, `depends_on` et `depended_on_by` portent encore
+> l'ancien graphe : ils doivent être régénérés par `dependency-check check . --write`
+> à la reprise de la Phase 4. **Ce n'est pas une divergence de conception, c'est un
+> `state.json` à rejouer** — et c'est le seul artefact, hors de ce document, qui soit
+> désormais en retard sur lui.
 
 ### 6.1 Ordre d'implémentation topologique
 
@@ -1851,7 +2487,8 @@ le front matter — il n'y a pas d'écart à justifier.
 Vague 0 (fondations, aucune ne dépend d'une autre) :
   ├── auth                 (session 8 h, droits fail-closed, rate limit)
   ├── query-engine         (withScope(), computed_at de la source, ReadOutcome)
-  ├── design-primitives    (IndicatorTile, DataTable, FormField, SignatureBar,
+  ├── design-primitives    (IndicatorTile + slot threshold et sa règle de
+  │                         non-troncature, DataTable, FormField, SignatureBar,
   │                         ProvenanceStrip, ExportPanel)
   ├── access-log           (append-only, filtre B25, purge 1 an)
   └── error-handling       (enum fermée error_code, ListOutcome/ReadOutcome)
@@ -1859,34 +2496,40 @@ Vague 0 (fondations, aucune ne dépend d'une autre) :
 Vague 1 (dépend uniquement de fondations) :
   ├── definition-declarer  (auth, design-primitives)
   ├── restriction-lignes   (auth, query-engine)
-  └── journal-acces        (auth, access-log)
+  ├── journal-acces        (auth, access-log)
+  └── seuil-et-etat        (design-primitives) — fonction pure, elle ne lit rien,
+                            donc elle n'attend personne
 
 Vague 2 (dépend de la vague 1) :
   ├── definition-signer    (auth, definition-declarer)
   ├── consultation-indicateur (query-engine, auth, design-primitives,
-  │                          definition-declarer, error-handling)
+  │                          definition-declarer, error-handling, seuil-et-etat)
   └── partage-dashboard    (auth, definition-declarer)
 
 Vague 3 (dépend de la vague 2) :
-  ├── seuil-et-etat        (consultation-indicateur)
   ├── historique-indicateur (query-engine, definition-signer, access-log)
   ├── drill-down           (query-engine, consultation-indicateur)
   └── export-provenance    (query-engine, restriction-lignes, consultation-indicateur)
 ```
 
-**4 vagues** (V0 → V3). `state.json → index.impl_waves` porte le même découpage.
+**4 vagues** (V0 → V3), toujours — l'inversion de l'arête n'a pas ajouté de vague,
+elle a **déplacé `seuil-et-etat` de la vague 3 à la vague 1** et **libéré la place**
+d'un côté et supprimé un nœud orphelin de l'autre. C'est le résultat recherché : la
+fonction pure est désormais là où elle peut être, et non là où l'on pourrait l'attendre.
+`state.json → index.impl_waves` doit porter le même découpage après
+`dependency-check --write` (voir la note ci-dessus).
 
 ### 6.2 Parallélisme possible
 
 | Vague | Slices parallélisables | Ce qui peut être construit en même temps sans collision |
 |---|---|---|
 | 0 | les 5 fondations | `auth` touche la session, `query-engine` touche le SQL : aucun fichier commun |
-| 1 | `definition-declarer`, `restriction-lignes`, `journal-acces` | `restriction-lignes` ne fait que résoudre un scope déjà résolu par `auth` ; `journal-acces` n'écrit que dans `access_log` |
-| 2 | `definition-signer`, `consultation-indicateur`, `partage-dashboard` | `partage-dashboard` ne fait qu'écrire des FK vers `indicator` ; `consultation-indicateur` les lit |
-| 3 | `seuil-et-etat`, `historique-indicateur`, `drill-down`, `export-provenance` | `seuil-et-etat` est une fonction pure testée seule ; `export-provenance` écrit dans `export_job`, jamais dans les tables des autres |
+| 1 | `definition-declarer`, `restriction-lignes`, `journal-acces`, `seuil-et-etat` | `restriction-lignes` ne fait que résoudre un scope déjà résolu par `auth` ; `journal-acces` n'écrit que dans `access_log` ; **`seuil-et-etat` n'écrit rien du tout** — c'est une fonction pure, le seul fichier qu'elle touche est son test unitaire |
+| 2 | `definition-signer`, `consultation-indicateur`, `partage-dashboard` | `partage-dashboard` ne fait qu'écrire des FK vers `indicator` ; `consultation-indicateur` les lit et appelle `resolveSemanticState()`, déjà en vague 1 |
+| 3 | `historique-indicateur`, `drill-down`, `export-provenance` | `export-provenance` écrit dans `export_job`, jamais dans les tables des autres ; `historique-indicateur` est le seul lecteur de `signature_event` |
 
-> Un seul resserrement mérite d'être signalé : la vague 2 concentre trois slices, et
-> `consultation-indicateur` est celle qui lit le plus de surface. Ce n'est pas un
+> Un seul resserrement mérite d'être signalé : `consultation-indicateur` est la slice
+> la plus couplée du graphe — six dépendances, dont `seuil-et-etat` désormais. Ce n'est pas un
 > défaut de graphe — c'est le point où le projet a le plus de chances de glisser, et il
 > est visible dans le plan sans avoir besoin d'un plan de vagues plus fin.
 
@@ -1897,6 +2540,15 @@ inexistante, l'auto-référence et toute dépendance qui fermerait un cycle ; le
 complet a été déclaré sous ces trois refus, puis vérifié par `dependency-check`
 (`cycles: []`, `missing_dependencies: []`, `orphans: []`).
 
+> **L'inversion de l'arête de § 3.3 ne referme pas un cycle, et c'est vérifiable.**
+> `seuil-et-etat` ne dépend plus que de `design-primitives`, et
+> `design-primitives` ne dépend de rien : le chemin `seuil-et-etat` →
+> `consultation-indicateur` → … → `seuil-et-etat` est donc coupé à sa racine, pas
+> seulement déplacé. Si l'inversion s'était contentée d'échanger deux dépendances
+> mutuelles, `state.js dep` l'aurait refusée ; le fait qu'elle passe est le contrôle.
+> Aucun nœud n'est devenu orphelin : `seuil-et-etat` a un dépendant
+> (`consultation-indicateur`), donc `orphans: []` reste vrai.
+
 ### 6.4 Points de contention et couplage
 
 | Nœud | Dépend de | Dépendu par | Lecture |
@@ -1904,10 +2556,12 @@ complet a été déclaré sous ces trois refus, puis vérifié par `dependency-c
 | `auth` | 0 | **6** | Point de contention maximal : toute slice non foundations passe par la session. C'est voulu — une seule implémentation du fail-closed vaut mieux que six. |
 | `query-engine` | 0 | **5** | Idem pour l'accès à l'entrepôt. Le coût est compensé par l'absence d'alternative : deux moteurs de requête produiraient deux définitions de la fraîcheur. |
 | `definition-declarer` | 2 | **3** | Le seul slice métier dont dépendent trois autres. C'est la conséquence directe de B1 : sans version figée, il n'y a pas de valeur publiée. |
-| `consultation-indicateur` | **5** | **3** | Slice la plus couplée du graphe. Elle justifie à elle seule que `error-handling` soit une fondation et non une slice : sans enum fermée, elle inventerait ses propres libellés d'erreur. |
-| `design-primitives` | 0 | 2 | Utilisé par peu de slices parce que le design system n'a que six composants, tous déjà spécifiés en Phase 3. |
+| `definition-signer` | 2 | **1** | Écrivain unique des cinq actes de `signature_event` et des deux colonnes de cycle de vie (§ 4.6, § 4.8). Seul `historique-indicateur` en dépend, en tant que dépendance de **code** : `consultation-indicateur` lit les mêmes colonnes mais dans le **schéma**, donc aucune arête — et c'est délibéré, voir § 3.5. |
+| `consultation-indicateur` | **6** | **2** | Slice la plus couplée du graphe. Elle justifie à elle seule que `error-handling` soit une fondation et non une slice : sans enum fermée, elle inventerait ses propres libellés d'erreur. |
+| `design-primitives` | 0 | 3 | Utilisé par peu de slices parce que le design system n'a que six composants, tous déjà spécifiés en Phase 3. Le slot `threshold` et sa règle de non-troncature (§ 2.3) en font le contrat que `seuil-et-etat` consomme en vague 1. |
 | `access-log` | 0 | 2 | Isolé : `restriction-lignes` et `historique-indicateur` écrivent dans le journal mais n'en dépendent pas pour fonctionner. |
-| Feuilles (`seuil-et-etat`, `historique-indicateur`, `drill-down`, `partage-dashboard`, `export-provenance`, `journal-acces`) | 1 à 3 | 0 | Aucune de ces slices ne peut faire échouer une autre par son API. |
+| `seuil-et-etat` | 1 | 1 | Nœud le moins couplé du graphe : une dépendance, un dépendant. C'est la mesure de la décision d'arbitrage de § 3.3 — une fonction pure n'a pas besoin d'un graphe autour d'elle. |
+| Feuilles (`historique-indicateur`, `drill-down`, `partage-dashboard`, `export-provenance`, `journal-acces`) | 1 à 3 | 0 | Aucune de ces slices ne peut faire échouer une autre par son API. `seuil-et-etat` n'y est plus : elle a désormais `consultation-indicateur` pour dépendant. |
 
 **Signalement de risque** : `definition-declarer` et `consultation-indicateur` sont sur
 le chemin critique de **toutes** les slices du MVP. Un retard sur l'une décale la vague 3
@@ -1928,7 +2582,9 @@ fait la vague 1, où elle est seule à dépendre de `design-primitives`.
 | ADR-5 | L'export est un **job de fond** dans une table PostgreSQL, pas une requête HTTP | 7.1 : « un export est produit en tâche de fond » ; plusieurs millions de lignes dépassent tout délai HTTP, et un export interrompu par la navigation perd le travail | (a) requête HTTP synchrone avec streaming ; (b) job en base + worker Node ; (c) service asynchrone séparé (file externe) | **(b)** | La file doit être **durable** : si le worker tombe, le job reprend. Une file externe serait une dépendance de plus à héberger pour un besoin à trois indicateurs. `conventions.md` a tranché en Phase 0 | Un service de plus à héberger et à surveiller. En contrepartie : aucun fichier partiel (E13), reprise possible, et l'export reste rattaché à sa version (B22, ADR-8) |
 | ADR-6 | Le journal des accès est **filtré selon les droits de son lecteur** (B25), et le filtre est une propriété de la fondation `access-log` | Le journal nomme qui a consulté quel indicateur : il reproduit la restriction de visibilité sous une **autre forme**. C'est le seul endroit du système où cette restriction pourrait être contournée | (a) journal non filtré, accès réservé à quelques personnes ; (b) filtrage par ressource, dans la couche service ; (c) filtrage dans `access-log`, avec `redacted_count` rendu visible | **(c)** | (a) n'est pas une protection : un journal complet dit précisément **quels** indicateurs existent, ce que l'écran nie. (b) laisse la règle dans chaque slice appelante, donc oubliable. (c) en fait une porte unique, testable, et rend l'omission visible au lieu de silencieuse | Une entrée de refus journalise la ressource visée et **jamais** le détail des lignes : le journal ne peut pas devenir un canal de fuite de périmètre. `redacted_count` dit à l'utilisateur que le journal est filtré |
 | ADR-7 | PostgreSQL ne porte **que** des métadonnées, le journal et la file d'export ; l'entrepôt n'est jamais écrit et son schéma n'est pas possédé | C1 (l'entrepôt est la source, jamais écrit) ; C4 et C10 imposent chiffrement, isolation par ligne, PITR et rétention sur des données personnelles | (a) calculer les indicateurs dans PostgreSQL ; (b) tout garder dans l'entrepôt, journal compris ; (c) séparation stricte, avec un **contrat de lecture** testé | **(c)** | (a) contredit C1 et B5 : la valeur affichée serait la nôtre, pas celle de l'entreprise. (b) rend C4 et C10 dépendants des plans de purge et de RLS de l'équipe data. (c) rend le périmètre du journal indépendant | L'entrepôt devient une **dépendance contractuelle** : un test d'intégration échoue si une colonne attendue est renommée. Le prix est explicite — renommer une colonne devient un travail conjoint, pas un correctif interne |
-| ADR-8 | Une version de définition est un **dépôt**, pas une branche : append-only, signature en événements append-only | B1 (une modification crée une version, ne réécrit pas les précédentes), B22, B26 (révocable jusqu'à la publication) | (a) tableau de versions avec `UPDATE` du statut ; (b) append-only + `signature_event` qui référence l'acte qu'il révoque ; (c) table d'historique de diffs séparée | **(b)** | (a) permet de réécrire le passé : la réécriture d'un statut est exactement ce que la réécriture d'une définition ferait. (b) garde une trace complète — y compris une signature annulée, qui doit rester visible. (c) scinde la vérité en deux endroits | Aucune mise à jour n'est possible sur `definition_version` et `signature_event` : une correction passe par une nouvelle version et une nouvelle signature. Le refus et la révocation restent consultables, ce qui est une obligation de traçabilité, pas une commodité |
+| ADR-8 | Le **contenu** d'une version de définition est un **dépôt**, pas une branche. L'immuabilité est levée sur **deux colonnes nommées**, `status` et `published_at`, et sur aucune autre | B1 (une modification crée une version), B22, B26. Contradiction à trancher : ADR-8 interdisait tout `UPDATE` alors que `status` et `published_at` y vivent — donc soit la règle est fausse, soit ces deux colonnes n'ont pas de producteur | (a) `UPDATE` libre du statut, immuabilité déclarative seulement ; (b) contenu figé + `UPDATE` **restreint à deux colonnes** par les droits SQL, un trigger de rejet du reste, et un trigger qui exige un acte correspondant ; (c) `status` et `published_at` purement dérivés, lus par **vue**, sans colonne | **(b)** | (a) rend l'immuabilité une promesse : un `UPDATE` du `change_note` passe aussi par la même porte, et rien ne l'interdit. (c) est cohérent mais coûte cher : la publication doit ensuite agréger un journal pour chaque lecture du cycle de vie, et — decisive — B26 compare `published_at` à une décision. Une **vue** ne peut pas être la source d'un verrou de façon fiable ; il faut un instant **écrit**. (b) garde la règle forte là où elle compte, et la rend **bornée** là où elle doit céder | Le rôle applicatif reçoit `INSERT` sur la version et `UPDATE` **uniquement** sur `(status, published_at)` ; jamais `DELETE`, jamais `UPDATE` sur le contenu (§ 4.20, portes 1 à 3). Un `status` sans acte correspondant, ou un `published_at` qui diffère de l'`occurred_at` de l'acte `publish`, sont refusés **en base**. Le journal reste la source de vérité ; les deux colonnes en sont la projection indexable. Une correction de définition, à n'importe quel statut, passe par une nouvelle version |
+| ADR-9 | Le cycle de vie d'une version est un **journal d'actes** (`submit`, `sign`, `refuse`, `revoke`, `publish`), pas des `UPDATE` de statut | Sans producteur nommé, `in_review` n'existait pas et `POST /definitions/:versionId/signature` répondait `409` pour toujours : US-2, B2, ADR-1, B4, B22, B26 et le jalon `T_première signature` devenaient inatteignables | (a) l'immuabilité stricte, sans aucun état intermédiaire ; (b) `UPDATE` de `status` par la couche service ; (c) cinq actes append-only, `status` et `published_at` en étant la projection | **(c)** | (a) supprime le problème en supprimant ce qui est demandé : sans `in_review`, il n'y a ni file d'attente, ni retrait possible, ni séparation entre « écrit » et « à signer ». (b) reproduit la réécriture d'historique qu'ADR-8 refuse. (c) garde une trace **nominative** : chaque flèche a un auteur, une date et un endpoint, donc un état sans état précédent est impossible à produire | `signature_event.act` passe de 3 à 5 valeurs. `revoke` a deux cibles (`submit`, `sign`) au lieu d'un cinquième verbe. `status` devient dérivable : `UPDATE` de cycle de vie refusé sans acte (§ 4.20). Coût assumé : deux endpoints de plus (§ 5.9, § 5.10) et quatre `error_code` nommés pour des refus qui étaient des `409` sans code |
+| ADR-10 | **Qui porte le calcul de la comparaison à la cible** : `seuil-et-etat`, seule, et `consultation-indicateur` en dépend | `consultation-indicateur` est en vague 2 et renvoie `semantic_state` (§ 5.2, § 5.3, § 5.13) ; `seuil-et-etat` était en vague 3. L'état dont la réponse a besoin était donc produit **après** elle — une dépendance non déclarée, et le § 3.3 affirmait déjà que la comparaison était à `seuil-et-etat` | (a) `consultation-indicateur` calcule la comparaison ; (b) `seuil-et-etat` calcule et `consultation-indicateur` en dépend ; (c) les deux calculent, avec un test d'égalité | **(b)** | (a) respecte les vagues mais réécrit la règle B11 dans la slice qui **rend**, ce qui est la pire des deux places : la règle de définition finirait dans la couche de présentation, et `design-system.md` § 2.1 (machine à états du franchissement, dans la slice `seuil-et-etat`) aurait un propriétaire différent de l'exécutant. (c) est le pire des deux mondes : deux implémentations d'une comparaison numérique sont divergentes par construction. (b) est la seule qui tienne : **la règle vit dans la slice de la règle**, et comme le calcul est une fonction **pure**, la slice n'a besoin de rien d'autre que des types de `design-primitives` | `consultation-indicateur` gagne une dépendance (`seuil-et-etat`, vague 1) ; `seuil-et-etat` perd la sienne et gagne une dépendance sur `design-primitives`, ce qui la rend constructible dès la vague 1. Résultat : **15 nœuds, 25 arêtes, 4 vagues, `cycles: []`** — une arête de plus qu'avant, et **pas une vague de plus**. Le calcul est testable seul, sur ses deux côtés (§ 3.7) |
 
 ### 7.1 Détail des décisions
 
@@ -1957,6 +2613,109 @@ délégation**, et c'est délibéré.
   `indicator.designated_signer_actor_id` est non nul, donc aucun indicateur ne peut
   être créé. C'est le comportement voulu — un indicateur sans signataire désigné
   n'est pas signable, donc pas officiel, donc pas publiable.
+
+**ADR-8 révisé — l'immuabilité est levée où elle doit l'être, et seulement là.**
+
+La version d'origine d'ADR-8 disait : *« aucune mise à jour n'est possible sur
+`definition_version` et `signature_event` »*. C'était faux, et pas légèrement : la même
+version déclarait `status` et `published_at` sur `definition_version`, donc une
+`UPDATE` que la règle interdisait. Deux issues, et une seule paresse.
+
+**L'immuabilité porte sur le CONTENU.** Une version de définition est un dépôt de
+**définition** — formule, périmètre, cible, grain, unité, `change_note`, auteur, rang,
+`created_at`. Aucun de ces champs ne bouge, à **aucun** statut, y compris en `draft` :
+une correction passe par une nouvelle version (B1). C'est ce que la règle protégeait
+réellement, et c'est ce qu'elle protégeait bien.
+
+**L'exception est deux colonnes, nommées, et elle est contrôlée trois fois** (§ 4.20) :
+
+| Question | Réponse |
+|---|---|
+| Quelles colonnes ? | `status` et `published_at`. Pas une troisième. `definition_threshold` reste `INSERT`-seul (un seuil se pose une fois, B11) et `signature_event` reste `INSERT`-seul |
+| Qui les écrit ? | `definition-signer` **seule** (§ 3.5), via `POST /definitions/:versionId/submission` (§ 5.9), `/signature` (§ 5.8), `/publication` (§ 5.10), `/signature/revocation` (§ 5.11). Ni tâche de fond, ni script de reprise, ni endpoint d'administration |
+| Qu'est-ce qui l'autorise en base ? | Trois portes : `GRANT UPDATE (status, published_at)` et rien d'autre ; un trigger qui **rejette** tout `UPDATE` débordant sur le contenu, y compris par un `SET ROLE` ; un trigger qui **exige** un acte `signature_event` correspondant, et qui refuse un `published_at` différent de l'`occurred_at` de l'acte `publish` |
+
+`status` et `published_at` sont donc **dérivés**, dans le sens exact où § 4.5 dit que
+`officiality` en est un : une commodité de requête, jamais la source de vérité. La
+source de vérité, c'est `signature_event`. Une lecture concurrente ne peut donc pas
+voir `status = 'signed'` sans qu'un acte `sign` existe dans la même transaction — et
+c'est vérifiable par un test d'intégration, pas seulement par une intention.
+
+**Ce que l'exception ne fait pas.** Elle n'ouvre pas la voie à une correction
+silencieuse : un `UPDATE` de `status` sans acte est **refusé en base**, donc un
+développeur qui contournerait l'API ne pourrait pas non plus réécrire le passé, il
+obtiendrait une exception. C'est la différence entre une exception à une règle et
+l'abandon de la règle.
+
+**ADR-9 — pourquoi `submit` et `publish` sont des actes, et pas des champs calculés.**
+
+Le défaut que ces deux actes corrigent n'est pas élégance de modèle : sans eux,
+`in_review` n'a **aucun producteur**, et `POST /definitions/:versionId/signature`
+répond `409 DEFINITION_NOT_IN_REVIEW` pour toute version existent. Le MVP ne produirait
+donc jamais sa première signature, et avec elle tombent US-2, B2, ADR-1, B4, B22, B26
+et le jalon `T_première signature` de `roadmap.md` § 1.1 (les trois jalons du MVP). Un état sans écrivain n'est
+pas un état : c'est un `409` permanent.
+
+- **`submit` (`draft → in_review`)** distingue « j'ai écrit une version » de « je la
+  soumets à un jugement ». Les confondre, c'est exposer au signataire un brouillon sans
+  que personne n'ait décidé de l'exposer. C'est aussi ce qui rend le **retrait**
+  possible (§ 5.9) : sans acte de soumission, il n'y a rien à retirer, et l'unique issue
+  pour l'auteur deviendrait de créer une seconde version — donc un doublon éternel dans
+  l'historique pour une faute de frappe.
+- **`publish` (`signed → published`)** est le seul événement qui peut poser un
+  **verrou**. B26 dit qu'une signature est révoquable *jusqu'à la première publication* :
+  la règle porte donc sur un instant, et un instant ne peut pas être une fonction du
+  temps courant. Dérivé de `indicator.current_signed_version_id`, `published_at`
+  changerait à chaque déplacement du pointeur — donc publier v3 **débloquerait** la
+  signature de v2 que B26 veut verrouiller. Un acte horodaté ne se réécrit pas : c'est
+  le seul des deux candidats qui tient.
+- **La publication est un acte du propriétaire, pas du signataire.** Le signataire a
+  attesté la définition ; choisir laquelle devient la valeur que le comité regarde est
+  une décision de portée produit, et elle appartient à la personne nommée qui en répond
+  (B3). C'est aussi ce qui rend la règle B17-actionnable : un propriétaire inactif ne
+  peut ni publier, ni soumettre, ni signer (§ 5.8, § 5.9, § 5.10) — même si, sur une
+  **lecture**, son absence ne fait que changer le rendu (§ 5.22).
+- **`revoke` a deux cibles plutôt qu'un cinquième verbe.** Retirer une soumission et
+  révoquer une signature sont le même geste, servent la même mécanique append-only, et
+  un verbe de plus aurait apporté une colonne (`withdraws_event_id`), un second chemin
+  de retraction, et une seconde arête dans le graphe des contradictions possibles. La
+  contrainte qui compte est donc une seule, et elle est en base : un `revoke` ne peut
+  viser qu'un `sign` ou un `submit` (§ 4.8).
+
+**ADR-10 — pourquoi l'inversion d'arête ne coûte pas une vague.**
+
+Le problème : `consultation-indicateur` (vague 2) renvoie `semantic_state`, mais la
+slice qui sait le calculer était déclarée en vague 3. Deux corrections possibles, et
+elles ne se valent pas.
+
+- Faire calculer la comparaison par `consultation-indicateur` respecte les vagues, mais
+  écrit la règle B11 dans la couche qui **rend**. Or `design-system.md` § 2.1 place la
+  machine à états du franchissement dans la slice `seuil-et-etat`, avec des états
+  nommés : on aurait alors un propriétaire pour l'état et un autre pour l'exécutant, ce
+  qui est la forme exacte du « un fait, deux représentations » que § 3.7 prétend traiter.
+- Faire calculer par `seuil-et-etat` **et** lui retirer sa dépendance à
+  `consultation-indicateur` est la seule option qui tienne, et l'observation qui la
+  rend possible est simple : `resolveSemanticState(value, target, threshold)` est une
+  **fonction pure**. Elle ne lit rien de `consultation-indicateur` ; c'est
+  l'appelant qui lui passe les trois entrées. Sa seule dépendance est le **type**
+  `IndicatorDisplayState` de `design-primitives`, pour dire quel état de tuile en
+  découle — donc elle est constructible dès la vague 1.
+
+D'où le résultat : `seuil-et-etat` passe de la vague 3 à la vague 1, et
+`consultation-indicateur` gagne une dépendance. Le graphe compte **15 nœuds, 25
+arêtes, 4 vagues** : une arête de plus qu'avant (24) et **pas une vague de plus**,
+parce que le nœud qui libère une place en vague 3 en prend une en vague 1. Le cycle
+qui aurait été créé en échangeant les deux dépendances n'existe pas : la flèche est
+coupée à sa racine, `design-primitives` ne dépendant de rien.
+
+Ce que cela coûte, et c'est à dire : `seuil-et-etat` devient un **prérequis** de la
+vague 2, donc un retard sur elle décale `consultation-indicateur` — donc `drill-down` et
+`export-provenance`. Le risque était déjà entièrement porté par
+`consultation-indicateur`, qui reste le nœud le plus couplé du graphe (§ 6.4) ; on n'a
+pas ajouté un chemin critique, on a rendu le existant honnête. Le plan de
+`seuil-et-etat` (Phase 5) et sa ligne « calculé par `seuil-et-etat` » dans le plan de
+`consultation-indicateur` disent déjà la même chose : **c'est l'architecture qui était
+en retard, pas les plans.**
 
 **ADR-2 — pourquoi une restriction d'interface ne tient pas.**
 
@@ -1993,7 +2752,7 @@ défensives, toutes dans la fondation :
 - le filtre est dans `access-log`, pas dans la slice appelante ;
 - `redacted_count` est retourné : l'interface dit qu'elle filtre, au lieu de laisser
   l'utilisateur croire à un journal complet ;
-- l'export du journal passe par le **même** filtre que la lecture à l'écran (§ 5.19) ;
+- l'export du journal passe par le **même** filtre que la lecture à l'écran (§ 5.21) ;
   un export ne peut pas être le chemin qui contourne ce que la lecture applique.
 
 **ADR-4 — ce que « assemblage fixe » interdit exactement.**
@@ -2032,7 +2791,7 @@ pas corriger seul, mais on ne peut plus être surpris.
 | La course entre deux lecteurs autour d'un rafraîchissement (E7) | MEDIUM | MEDIUM | Les deux réponses portent leur `computed_at` de source ; le cache est indexé sur `(query_hash, actor_scope_hash, computed_at_source)` et sert la valeur la plus fraîche connue. La différence entre deux lectures est donc annotée, jamais ambiguë |
 | Un export de plusieurs millions de lignes sature l'entrepôt pendant une séance | MEDIUM | MEDIUM | Le worker est séquentiel par source et s'exécute **hors** du chemin de lecture interactive ; les lectures de l'écran ne partagent pas la même file. Le `scope_snapshot` figé évite un recalcul de périmètre au moment de la production, qui doublerait la charge |
 | Le `change_note` en langue devient une formule que personne ne relit (US-17) | MEDIUM | MEDIUM | `change_note` est obligatoire (1..500 car.) et alimente directement l'historique. Un test de revue exige qu'il ne soit pas un diff de formule : c'est une contrainte de contenu, pas de schéma, donc elle est portée par la checklist de revue de la slice `definition-declarer` |
-| 15 nœuds pour trois indicateurs : le coût d'architecture dépasse le produit | LOW | MEDIUM | Les 5 fondations sont transverses et réutilisables ; 4 des 10 slices (seuil, historique, drill-down, export) sont des extensions directes de `consultation-indicateur`. Le surcoût réel est la fondation `access-log`, et il est justifié par C4, qui est une contrainte légale et non un souhait |
+| 15 nœuds pour trois indicateurs : le coût d'architecture dépasse le produit | LOW | MEDIUM | Les 5 fondations sont transverses et réutilisables ; 3 des 10 slices (historique, drill-down, export) sont des extensions directes de `consultation-indicateur`, et `seuil-et-etat` en est un **prérequis** de vague 1 — une fonction pure, pas un nœud de plus (ADR-10). Le surcoût réel est la fondation `access-log`, et il est justifié par C4, qui est une contrainte légale et non un souhait |
 
 ---
 
@@ -2047,15 +2806,32 @@ pas corriger seul, mais on ne peut plus être surpris.
 - [x] Les modules portent un rang, un score de fréquence et une justification (§ 3.1).
 - [x] Tous les modèles de données sont définis champ par champ — 17 entités, § 4.2 à § 4.18.
 - [x] La frontière PostgreSQL / entrepôt est explicite et justifiée par C1 et B5 (§ 4.1).
-- [x] Tous les endpoints API listent leurs codes d'erreur de manière exhaustive — 19
-      endpoints, § 5.1 à § 5.19, avec la table de correspondance § 5.20.
+- [x] Tous les endpoints API listent leurs codes d'erreur de manière exhaustive — 21
+      endpoints, § 5.1 à § 5.21, avec la table de correspondance § 5.22.
+- [x] **Chaque état du cycle de vie d'une version a un producteur nommé** — `draft`
+      (§ 5.5), `in_review` (§ 5.9, acte `submit`), `signed` / `refused` (§ 5.8),
+      `published` + `published_at` (§ 5.10, acte `publish`), `revoked` (§ 5.11). Aucun
+      des 21 endpoints n'écrit `status` ou `published_at` par un autre chemin (§ 4.6.1,
+      § 5.0, ADR-9).
+- [x] **Chaque réponse qui rend une tuile rend son seuil** — `threshold` est présent
+      dans § 5.2, § 5.3 et § 5.13, dans la forme fixée une seule fois en § 2.3, avec
+      `defined_at` comme unique horodatage (B5) et sans objet partiel possible. La
+      règle « aucune date de seuil n'est rognée » est dans le **contrat du composant**
+      (§ 2.3), pas dans un écran.
 - [x] Le graphe de dépendances est sans cycle — `dependency-check` : `cycles: []`.
 - [x] L'ordre d'implémentation est cohérent avec les dépendances — 4 vagues, persistées
-      par `dependency-check --write` dans `state.json → index.impl_waves`.
-- [x] Les décisions d'architecture non triviales sont documentées en ADR — 8 décisions,
+      par `dependency-check --write` dans `state.json → index.impl_waves`. **Une arête
+      a été inversée depuis le dernier `--write`** (§ 6, ADR-10) : `state.json` doit être
+      rejoué, le document est à jour.
+- [x] Les décisions d'architecture non triviales sont documentées en ADR — 10 décisions,
       § 7 (table) et § 7.1 (détail), dont les six imposées par le cadrage : `signer_id ≠ author_id`
       et sa non-délégabilité, la restriction appliquée dans la requête, `computed_at` de la source,
       l'assemblage fixe, l'export en tâche de fond, et le journal filtré selon les droits du lecteur.
+- [x] **Aucun `error_code` n'est levé sur une lecture** — B17 / E17 sont des **états
+      rendus** : `OWNER_INACTIVE` reste `409` dans `ERROR_HTTP_STATUS` et dans § 5.22,
+      mais n'est levé que par un acte d'écriture. Les quatre lectures (§ 5.3, § 5.6,
+      § 5.7, § 5.13) répondent `200` avec `officiality: "stale_owner"`, et la colonne
+      « État d'UI » de § 5.22 ne présente plus un rendu comme le résultat d'un `409`.
 - [x] La structure de dossiers cible est définie (§ 1.2).
 - [x] La conformité aux standards de `.forge/benchmarks.md` est vérifiée (§ 1.3).
 - [x] Les pathologies de `archetypes.md` § 9 sont traitées avec leur porte mécanique (§ 3.7).
