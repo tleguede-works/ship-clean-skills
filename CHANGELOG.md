@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.9.4] - 2026-09-30
+
 ### fix(forge-guard) — le premier artefact du projet ne peut pas avoir de source
 
 `derived_from` vide est refusé par `derived_from_non_empty`, et c'est juste : un
