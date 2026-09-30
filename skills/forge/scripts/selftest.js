@@ -1547,17 +1547,19 @@ section('Prémisses — déclaration et citations');
 /** Un PRD minimal avec une exigence retirée, et un livrable qui la cite. */
 function retiredPremiseProject(label, { citeId = false, declares = null } = {}) {
   const project = freshProject(label);
+  // B3 n'est définie QUE dans le § 9 : elle est retirée sans jamais avoir été
+  // vivante dans le § 4, donc sans collision.
   writeDeliverable(project, '.forge/prd.md', {
     body: [
       '## 4. Règles métier',
       '| ID | Règle |',
       '|---|---|',
       '| B1 | Une règle vivante |',
-      '| B2 | Partage par lien public, sans liste nominative |',
+      '| B2 | Une deuxième règle vivante |',
       '',
       '## 9. Hors scope (explicitement)',
       '',
-      '- **B2** — Partage par lien public — raison : incompatible avec le journal des accès',
+      '- **B3** — Partage par lien public — raison : incompatible avec le journal des accès',
       ''
     ].join('\n')
   });
@@ -1565,7 +1567,7 @@ function retiredPremiseProject(label, { citeId = false, declares = null } = {}) 
   assert(run('state.js', ['set-status', project, 'deliverable', 'prd', 'approved']).code === 0, 'approve prd');
 
   const body = citeId
-    ? "Un dashboard partagé.\n\nLa session ne passe jamais par un jeton dans l'URL (B2).\n"
+    ? "Un dashboard partagé.\n\nLa session ne passe jamais par un jeton dans l'URL (B3).\n"
     : "Un dashboard partagé.\n\nLa session ne passe jamais par un jeton dans l'URL.\n";
   writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body });
   assert(run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']).code === 0, 'register conv');
@@ -1586,7 +1588,7 @@ test('une exigence retirée citée dans un livrable approuvé est signalée', ()
   assert(Array.isArray(c.retired_cited_in_body) && c.retired_cited_in_body.length === 1,
     `la citation d'un ID retiré doit être remontée : ${res.stdout.slice(0, 300)}`);
   const hit = c.retired_cited_in_body[0];
-  assert(hit.deliverable === 'conventions' && hit.premise === 'B2',
+  assert(hit.deliverable === 'conventions' && hit.premise === 'B3',
     `mauvaise cible : ${JSON.stringify(hit)}`);
   assert(hit.acknowledged_only === false,
     'une citation qui n\'annonce pas le retrait ne doit pas compter comme acquittée');
@@ -1597,19 +1599,19 @@ test('une citation qui annonce explicitement le retrait est acquittée', () => {
   writeDeliverable(project, '.forge/prd.md', {
     body: [
       '## 4. Règles métier', '| ID | Règle |', '|---|---|', '| B1 | Une règle vivante |',
-      '| B2 | Partage par lien public |', '',
+      '| B2 | Une deuxième règle vivante |', '',
       '## 9. Hors scope (explicitement)', '',
-      '- **B2** — Partage par lien public — raison : incompatible avec le journal des accès', ''
+      '- **B3** — Partage par lien public — raison : incompatible avec le journal des accès', ''
     ].join('\n')
   });
   run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
   run('state.js', ['set-status', project, 'deliverable', 'prd', 'approved']);
   writeDeliverable(project, '.forge/conventions.md', {
     type: 'conventions',
-    body: "Session serveur. Le partage par lien est retiré (B2) : l'accès est une liste nominative (B9).\n"
+    body: "Session serveur. Le partage par lien est retiré (B3) : l'accès est une liste nominative (B1).\n"
   });
   run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
-  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=B1,B9']);
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=B1,B2']);
   run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
 
   const res = run('consistency-check.js', ['premises', project]);
@@ -1618,6 +1620,55 @@ test('une citation qui annonce explicitement le retrait est acquittée', () => {
   assert(hit, 'la citation doit toujours être remontée, même acquittée');
   assert(hit.acknowledged_only === true,
     `une mention explicite du retrait doit acquitter la citation : ${JSON.stringify(hit)}`);
+});
+
+test('une citation acquittée en fin de ligne reste acquittée', () => {
+  // Le défaut trouvé en conditions réelles : l'acquittement se lisait sur un
+  // extrait tronqué à 120 caractères. Une mention « (B18 retiré) » placée en fin
+  // de ligne tombait hors de la fenêtre, et une citation explicitement
+  // acquittée était signalée comme un défaut. Un contrôle qui signale un
+  // défaut inexistant apprend à être ignoré — c'est le pire sens possible.
+  const project = freshProject('premises-extrait');
+  writeDeliverable(project, '.forge/prd.md', {
+    body: [
+      '## 4. Règles métier', '| ID | Règle |', '|---|---|', '| B1 | Vivante |',
+      '| B2 | Une deuxième règle vivante |', '',
+      '## 9. Hors scope (explicitement)', '',
+      '- **B3** — Partage par lien public — raison : incompatible avec le journal', ''
+    ].join('\n')
+  });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'prd', 'approved']);
+
+  const padding = 'x'.repeat(160);
+  writeDeliverable(project, '.forge/conventions.md', {
+    type: 'conventions',
+    body: `Une ligne très longue qui repousse la mention hors de la fenêtre : ${padding} (B3 retiré).\n`
+  });
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=B1']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks.find(x => x.check === 'premises');
+  const hit = (c.retired_cited_in_body || [])[0];
+  assert(hit, 'la citation doit être remontée');
+  assert(hit.acknowledged === true || hit.acknowledged_only === true,
+    `une mention placed hors de la fenêtre de 120 caractères doit rester acquittée : ${JSON.stringify(hit)}`);
+  assert((c.retired_cited_without_acknowledgement || []).length === 0,
+    'une citation acquittée ne doit pas rester dans la liste des défauts');
+  assert(c.status !== 'warn',
+    `une citation acquittée ne doit pas produire un avertissement : ${c.status}`);
+});
+
+test('une citation d\'exigence retirée qui n\'annonce pas le retrait déclenche un avertissement', () => {
+  const project = retiredPremiseProject('premises-non-acquittee', { citeId: true, declares: 'B1' });
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks.find(x => x.check === 'premises');
+  assert(c.status === 'warn',
+    `une citation non acquittée doit avertir : ${c.status}`);
+  assert((c.retired_cited_without_acknowledgement || []).length === 1,
+    `la liste des défauts doit contenir la citation : ${JSON.stringify(c.retired_cited_without_acknowledgement)}`);
 });
 
 test('state.js start liste les livrables approuvés sans prémisse déclarée', () => {

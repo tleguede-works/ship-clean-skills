@@ -27,6 +27,36 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — Un acquittement de retrait se lisait sur un extrait tronqué
+
+`retired_cited_in_body`, ajouté dans la série précédente, lisait la mention de
+retrait sur un extrait de ligne **tronqué à 120 caractères**. Une mention
+« (B18 retiré) » placée en fin de ligne tombait hors de la fenêtre, et une
+citation explicitement acquittée était remontée comme un défaut.
+
+Attrapé sur le projet de test, à la première exécution : les trois citations de
+`B18` dans `conventions.md` — qui annoncent toutes explicitement le retrait —
+étaient signalées comme non acquittées. Un contrôle qui signale un défaut
+inexistant apprend à être ignoré : c'est le pire sens possible, et le seul qui
+puisse faire retirer le contrôle.
+
+L'acquittement se lit maintenant sur la **ligne entière**, et seules les citations
+non acquittées produisent un avertissement — une citation qui annonce le retrait
+est légitime, et même attendue.
+
+Dans le même passage, le contrôle a détecté **deux vraies erreurs de citation**
+dans la roadmap du projet : `B18` y était cité pour « les valeurs restent
+rattachées à la version qui les a produites », alors que `B18` est le partage par
+lien public, retiré en Phase 1. Le même défaut que la gate avait trouvé à la main
+sur `E16`, attrapé cette fois mécaniquement, sur un document écrit à l'instant.
+
+### test(forge) — 8 tests ajoutés (104 → 112)
+
+Citation d'un ID retiré dans un livrable approuvé, acquittement d'une citation qui
+annonce le retrait, acquittement en fin de ligne, citation non acquittée,
+remontée des prémisses non déclarées dans `state.js start`, transition de phase,
+phase commencée sans livrable, règle d'attribution des ID.
+
 ## [1.1.8] - 2026-09-30
 
 ### fix(forge) — Le garde-fou hurlait sur chaque transition de phase
