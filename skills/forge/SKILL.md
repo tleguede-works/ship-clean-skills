@@ -33,6 +33,7 @@ Forge applique cinq principes fondamentaux :
 1. **Toute règle métier, tout edge case, toute contrainte porte un identifiant stable** (B1, B2... pour les règles métier, E1, E2... pour les edge cases, V1, V2... pour les validations, C1, C2... pour les contraintes). Ces IDs ne sont jamais réutilisés, même si une règle est supprimée. Ils servent de colonne vertébrale à toute la traçabilité : PRD → Architecture → Plan → Tests.
 
 2. **Les gates humains sont non négociables.** Chaque phase se termine par une validation explicite. Ne jamais entamer la phase suivante sans un "approuvé" clair. Ne jamais interpréter un silence ou une question comme une approbation. *(Exception bornée et documentée : le mode Fast Track, qui automatise les Phases 4-5 derrière un checkpoint unique — cf. `references/fast-track.md`.)*
+   **Cette règle est appliquée par un garde-fou, pas seulement par la discipline.** Chaque artefact appartient à une phase (`PHASE_ARTIFACT_OWNERS`) : `state.js register` **refuse** d'enregistrer un artefact produit avant que sa phase soit atteinte, et `forge-guard` rattrape ce qui est déjà sur disque (`no_premature_artifacts`). Un `architecture.md` et quinze plans se sont une fois écrits pendant que le design portait `draft`, et les douze contrôles passaient : l'ordre des phases n'était qu'une consigne. S'il te dit `premature_artifact`, ce n'est pas un obstacle à contourner — c'est le signal que la base n'a pas été validée. Avance la phase, ou produis l'artefact après son gate.
 
 3. **L'exhaustivité avant la vitesse.** Un plan superficiel qui semble cohérent mais cache des trous est pire qu'un plan plus lent à produire mais réellement complet. La question permanente : "qu'est-ce qui manque ? qu'est-ce qui a été oublié ?"
 
@@ -853,7 +854,7 @@ dossier du skill, voir « Comment exécuter les scripts » plus haut.
 | `state.js check-stale` | Document dérivé, ou plan modifié après approbation | Avant d'implémenter |
 | `state.js dep` | Déclare le graphe de dépendances d'une slice ou d'une fondation | Phase 4 |
 | `state.js migrate` | v1 → v2 | Un projet existant |
-| `forge-guard.js all` | Chemins, état, vocabulaire, synchronisation, **provenance `derived_from`**, cases « À DÉCIDER », placeholders, versions | **Avant chaque gate** |
+| `forge-guard.js all` | Chemins, état, vocabulaire, synchronisation, **provenance `derived_from`**, **artefacts produits en avance**, cases « À DÉCIDER », placeholders, versions | **Avant chaque gate** |
 | `consistency-check.js all` | Écarts **entre** artefacts : PRD ↔ archi ↔ plans ↔ tests ↔ écrans | **Avant chaque gate** |
 | `forge-exit.js` | Critère de sortie **exécuté** d'une slice | **Phase 7, par slice** |
 | `coverage-check.js` | Couverture d'un plan de slice | Phase 5 |

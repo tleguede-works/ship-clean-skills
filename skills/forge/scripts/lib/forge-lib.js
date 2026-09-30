@@ -125,6 +125,130 @@ function missingPhaseRequirements(state, phaseKey) {
   return missing;
 }
 
+/** Le seau de `state.json` qui porte un type d'artefact. */
+function bucketOf(state, kind) {
+  const name = kind === 'screen' ? 'screens' : kind === 'slice' ? 'slices'
+    : kind === 'foundation' ? 'foundations' : 'deliverables';
+  return state[name] || {};
+}
+
+/**
+ * La phase qui possède chaque artefact.
+ *
+ * « Ne jamais entamer la phase suivante sans un "approuvé" clair » est
+ * présenté comme la règle la plus importante du skill — et rien ne la
+ * vérifiait. Un `architecture.md` de 1838 lignes et quinze plans se sont
+ * écrits et enregistrés pendant que le design portait encore
+ * `status: draft`, et les douze contrôles passaient au vert : il n'existait
+ * nulle part la notion de « phase d'un artefact ». Sans propriétaire déclaré,
+ * la règle est inapplicable — et l'agent qui l'enfreint ne peut ni le voir,
+ * ni être rattrapé.
+ *
+ * Ce tableau est cette décision, donc sa source unique. Il est lu par
+ * `state.js register` (qui **refuse** d'écrire en avance) et par
+ * `forge-guard` (qui constate ce qui est déjà sur disque, donc ce qui a été
+ * écrit avant que le contrôle existe).
+ *
+ * Une liste nomme des clés précises ; `true` nomme « tout le seau ». Les plans
+ * sont Phase 5 : ce n'est pas la slice qui est en avance, c'est le fait qu'elle
+ * porte déjà un `plan_path`.
+ *
+ * Les clés sont les `kind` **singuliers** de `state.js register`
+ * (`deliverable`, `screen`, `slice`, `foundation`) — pas les noms de seaux de
+ * `state.json` (`deliverables`, `screens`…). Les deux vocabulaires coexistent
+ * et ne se ressemblent que d'un `s`. La première version de cette table
+ * employait les pluriels : le contrôle ne déclencha alors que les plans, via
+ * leur cas particulier, et laissa passer l'architecture et tous les écrans
+ * sans un mot. `selftest` vérifie désormais que toute clé de cette table est
+ * un `kind` enregistrable.
+ *
+ * `benchmarks` est **volontairement sans propriétaire** : SKILL.md le produit
+ * en Phase 1 (recherche de références) et en Phase 3 (grille de conformité).
+ * Lui attribuer une phase serait inventer une règle que la documentation
+ * n'énonce pas — et un propriétaire inventé produit des refus inexpliqués,
+ * ce qui apprend à contourner le garde-fou.
+ */
+const PHASE_ARTIFACT_OWNERS = {
+  '0_bootstrap': { deliverable: ['conventions'] },
+  '1_prd': { deliverable: ['prd'] },
+  '2_roadmap': { deliverable: ['roadmap'] },
+  '3_design': { deliverable: ['design_system'], screen: true },
+  '4_architecture': { deliverable: ['architecture'], slice: true, foundation: true },
+  '5_implementation_plan': { plans: true },
+  '6_validation': { deliverable: ['test_plan'] }
+};
+
+/**
+ * Un artefact a-t-il été produit avant que sa phase ne soit atteinte ?
+ *
+ * On compare à `current_phase`, **pas** au statut de la phase propriétaire :
+ * `complete-phase` avance `current_phase` d'un cran en approuvant, si bien que
+ * la phase suivante est « courante » tout en étant `not_started`. Juger sur le
+ * statut refuserait d'enregistrer le tout premier livrable de chaque phase —
+ * un garde-fou qui bloque le travail légitime s'apprend à contourner.
+ *
+ * `strictly after` est donc la seule lecture qui distingue « j'avance » de
+ * « j'ai produit ce qui n'était pas mon tour ».
+ */
+/**
+ * La phase propriétaire d'un artefact, si elle n'est pas encore atteinte.
+ *
+ * La décision de propriété ne dépend **que** de `(kind, key)` — jamais de
+ * savoir si l'artefact est déjà enregistré. C'était le défaut d'une première
+ * version, qui exigeait `bucketOf(state, kind)[key]` avant de conclure : sur le
+ * chemin d'écriture de `register` le seau est vide par construction, donc le
+ * refus ne se déclenchait jamais — et `forge-guard`, seul à voir l'état déjà
+ * peuplé, concluait que la règle fonctionnait.
+ *
+ * Un garde-fou qui ne s'exerce que sur la copie et jamais à la source protège
+ * de rien : c'est la source qu'il faut fermer.
+ *
+ * `entry` n'est nécessaire que pour le cas `plans`, où la propriété dépend du
+ * contenu de l'entrée (une slice *avec* plan appartient à la phase 5, la même
+ * slice *sans* plan à la phase 4) et non de son seul nom.
+ */
+function ownerPhaseFor(state, kind, key, entry) {
+  const current = parseInt(state && state.current_phase, 10);
+  if (!Number.isFinite(current)) return null;
+
+  for (const [phaseKey, spec] of Object.entries(PHASE_ARTIFACT_OWNERS)) {
+    const idx = PHASE_KEYS.indexOf(phaseKey);
+    if (idx < 0 || idx <= current) continue;
+
+    // `plans` : la slice appartient à la Phase 4, son plan à la Phase 5.
+    if (spec.plans && (kind === 'slice' || kind === 'foundation')) {
+      const item = entry || bucketOf(state, kind)[key];
+      if (item && (item.plan_path || item.plan)) {
+        return { phase: phaseKey, bucket: kind, key, why: 'plan écrit avant la phase 5' };
+      }
+      continue;
+    }
+
+    if (spec[kind] === true || (Array.isArray(spec[kind]) && spec[kind].includes(key))) {
+      return { phase: phaseKey, bucket: kind, key, why: `enregistré avant la phase ${idx}` };
+    }
+  }
+  return null;
+}
+
+/** Un artefact a-t-il été produit avant que sa phase ne soit atteinte ? */
+function isPrematureArtifact(state, kind, key, entry) {
+  const owner = ownerPhaseFor(state, kind, key, entry);
+  return owner ? { premature: true, ...owner } : null;
+}
+
+/** Tous les artefacts enregistrés en avance. Liste vide = rien n'a été produit trop tôt. */
+function prematureArtifacts(state) {
+  const found = [];
+  for (const kind of ['deliverable', 'screen', 'slice', 'foundation']) {
+    for (const key of Object.keys(bucketOf(state, kind))) {
+      const hit = isPrematureArtifact(state, kind, key);
+      if (hit) found.push(hit);
+    }
+  }
+  return found;
+}
+
 /** Clés de state.json autorisées (schema strict, cf. guard state-schema). */
 const ALLOWED_STATE_KEYS = [
   'version', 'forge_skill_version', 'product', 'project', 'reference_projects',
@@ -607,5 +731,6 @@ module.exports = {
   statePath, readState, writeState, ensureLayout, deliverables, findDeliverableByPath,
   appendLog, readLog,
   looksLikeForgeDeliverable,
-  PHASE_KEYS, PHASE_REQUIREMENTS, missingPhaseRequirements
+  PHASE_KEYS, PHASE_REQUIREMENTS, missingPhaseRequirements,
+  PHASE_ARTIFACT_OWNERS, bucketOf, ownerPhaseFor, isPrematureArtifact, prematureArtifacts
 };
