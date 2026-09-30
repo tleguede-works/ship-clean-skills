@@ -2930,6 +2930,29 @@ test('les conventions, premier artefact du projet, PEUVENT déclarer aucune sour
     `le premier artefact peut n'avoir aucune source : ${JSON.stringify(check.offenders)}`);
 });
 
+test('le premier artefact reste le premier APRÈS que le projet a avancé', () => {
+  // `conventions.md` est le premier document du projet, et il le reste en phase 2,
+  // 3, 4. Ma première version exigeait en plus que le projet soit encore en phase
+  // 0 ou 1 — donc `conventions` était refusé dès qu'un PRD **en derivait** : plus
+  // personne ne declarait de source, donc le premier n'etait plus premier.
+  //
+  // « Un artefact produit en avance » est une autre question, et c'est
+  // `no_premature_artifacts` qui y repond, avec la regle complete. Un doublon
+  // partiel ici ne servait a rien et produisait un faux positif.
+  const project = freshProject('front-matter-racine-avance');
+  fs.writeFileSync(path.join(project, '.forge/conventions.md'),
+    '---\ntype: conventions\nstatus: approved\nderived_from: []\n---\n\n# Conventions\n\nRien.\n');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  fs.writeFileSync(path.join(project, '.forge/prd.md'),
+    '---\ntype: prd\nstatus: draft\nderived_from:\n  - .forge/conventions.md\n---\n\n# PRD\n\nTexte.\n');
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  run('state.js', ['set-phase', project, '2_roadmap', 'in_progress']);
+  const res = run('forge-guard.js', ['state', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'derived_from_non_empty');
+  assert(check && check.status === 'pass',
+    `le premier artefact reste le premier apres que le projet avance : ${JSON.stringify(check)}`);
+});
+
 test('un écran isolé n\'est PAS le premier de sa chaîne, même seul enregistré', () => {
   // L'assouplissement « personne d'autre ne déclare de source » acceptait un écran
   // seul dans un projet vide. C'est faux : un écran sans conception n'est pas le

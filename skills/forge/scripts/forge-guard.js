@@ -559,10 +559,6 @@ function checkProvenance(root) {
    * un contrôle assoupli, c'est un contrôle supprimé.
    */
   const isChainRoot = (key, kind, state) => {
-    // `current_phase` est un **nombre**, pas une clé de phase : le comparer à
-    // `PHASE_KEYS.indexOf(...)` donne -1 pour la phase 0, et le premier artefact
-    // du projet était alors refusé pour la raison inverse de celle qu'on corrige.
-    const idx = parseInt(state.current_phase, 10);
     // Le propriétaire de l'artefact, déduit de (kind, key) et non de l'état des
     // phases : c'est la même règle que `prematureArtifacts`, donc les deux ne
     // peuvent pas diverger sur le même artefact.
@@ -575,9 +571,16 @@ function checkProvenance(root) {
       }
     }
     // `ownerIdx === 0` : le document des conventions, seul artefact sans amont.
-    // `idx` sert à refuser un artefact **produit trop tôt** : un écran en phase 0
-    // n'est pas le premier, il est en avance — et c'est un autre contrôle qui le dit.
-    return ownerIdx === 0 && idx >= 0 && idx <= 1;
+    //
+    // La version précédente exigeait aussi `current_phase <= 1`, pour « ne pas
+    // confondre un premier artefact avec un artefact produit en avance ». C'est
+    // faux : un écran enregistré en phase 0 n'est pas le premier, c'est **en
+    // avance** — et c'est `no_premature_artifacts` qui le dit, avec la règle
+    // complète. Le doublon fait ici ne servait à rien et produisait un faux
+    // positif dès que le projet passait en phase 2 : `conventions.md`, toujours
+    // premier de sa chaîne, était refusé parce que « plus personne ne déclare de
+    // source » — alors qu'un PRD **en dérive**.
+    return ownerIdx === 0;
   };
 
   for (const t of targets) {

@@ -27,6 +27,29 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge-guard) — le premier artefact cessait d'être le premier dès que le projet avançait
+
+`derived_from` vide est accepté pour l'artefact **premier de sa chaîne** — c'est-à-dire
+les conventions, seul artefact sans amont. La règle exigeait en plus que le projet
+soit encore en phase 0 ou 1, pour « ne pas confondre un premier artefact avec un
+artefact produit en avance ».
+
+C'est faux. Un écran enregistré en phase 0 n'est pas le premier : il est **en
+avance** — et c'est `no_premature_artifacts` qui y répond, avec la règle complète. Un
+doublon partiel ici ne servait à rien et produisait un **faux positif** dès que le
+projet passait en phase 2 : `conventions.md` était refusé parce que « plus personne ne
+déclare de source » — alors qu'un PRD **en dérive**, donc qu'il y a bien une source,
+et que c'est la bonne.
+
+Constaté sur Bailly en Phase 2, immédiatement après avoir écrit la roadmap — le genre
+de défaut qui n'apparaît qu'au moment où le projet fait sa deuxième chose.
+
+Le prédicat est donc réduit à ce qu'il sait dire : **l'artefact appartient-il à la
+phase 0 ?** C'est le seul fait qui décide, et il ne change pas avec l'avancement.
+
+**199 tests** (+ 1) : le premier artefact reste le premier après que le projet a
+avancé, et un écran isolé reste un défaut.
+
 ## [1.9.5] - 2026-09-30
 
 ### fix(ddl-exec) — deux commandes, deux schémas, et un verdict faux
