@@ -27,6 +27,127 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### feat(forge) — `ddl-exec` : le DDL s'exécute, ou n'est pas écrit
+
+`node "$FORGE/scripts/ddl-exec.js" all <anchor>` rend l'architecture à
+PostgreSQL et rend compte de ce qu'il en dit.
+
+## Le motif
+
+Un DDL écrit dans un document n'est **ni compilé, ni typé, ni exécuté** : il est
+seulement relu. On ne voit donc ses défauts qu'au moment de l'écrire, quand on est
+son auteur et qu'on relit ce qu'on vient d'écrire.
+
+Trois défauts de ce dossier ont survécu à **trois gates** sans qu'aucun ne se voie
+à la relecture :
+
+| défaut | ce que PostgreSQL dit |
+|---|---|
+| `CHECK` contenant une sous-requête | `cannot use subquery in check constraint` — **refusé à la création**, donc la contrainte n'existe pas |
+| `IF NEW.statut = OLD.statut THEN RETURN NEW` en tête d'un trigger | rien : la syntaxe est valide. Un `UPDATE` qui écrit une autre colonne passe **au travers** |
+| `published_at` exigé par le trigger, produit par personne | rien : rien ne l'exécute |
+
+Le premier est une erreur de syntaxe SQL que seule l'exécution révèle. Le
+second est un défaut **sémantique** : la porte est écrite, commentée, justifiée —
+et inerte. Le troisième n'a pas de signature du tout.
+
+## Trois verdicts, de trois natures
+
+| commande | ce qu'elle vérifie | moteur |
+|---|---|---|
+| `completeness` | chaque table que le DDL modifie est créée, ou décrite en tableau de colonnes | aucun |
+| `execute` | PostgreSQL **accepte** chaque instruction | `pglite` |
+| `guards` | chaque garde que le document **déclare** refuse l'opération interdite | `pglite` |
+
+`completeness` est une **résolution de pointeur** : le document écrit ses tables,
+le script compare deux listes de noms. Il ne demande rien à un modèle de langage,
+donc il ne peut pas se tromper. Il a trouvé sur le projet de test **zéro**
+référence dans le vide, et deux tables modifiées sans être créées en SQL — c'est
+-à-dire que ce DDL **n'avait jamais pu être exécuté**, ce qui explique pourquoi
+ses défauts n'avaient jamais été vus.
+
+`execute` et `guards` ont une dépendance **optionnelle** : `@electric-sql/pglite`,
+PostgreSQL compilé en WebAssembly. C'est une dépendance de **développement du
+dépôt**, jamais du skill distribué.
+
+## Déclare tes gardes
+
+Un bloc `sql` dont la première ligne est `-- forge:ddl-refuse` contient une
+instruction qui doit être **rejetée**. Le nom de l'opération interdite n'est pas
+deviné par le contrôle : **le document le nomme**. C'est la différence entre un
+contrôle qui fonctionne et un contrôle qui devine — et tout contrôle qui doit
+déduire produit du bruit.
+
+## Sans moteur, le script ne simule rien
+
+`execute` et `guards` rendent `skipped`, avec ce qu'elles n'ont pas fait et la
+ligne à installer. Elles ne rendent **jamais** `pass` sans avoir exécuté. Un
+contrôle qui prétend avoir exécuté sans avoir exécuté est le pire des contrôles,
+parce qu'il donne un vert.
+
+Un test vérifie ce contrat, pour qu'un jour quelqu'un ne le casse pas.
+
+## Mesuré sur le projet de test
+
+`execute` a trouvé **une** vraie erreur et **zéro** faux positif :
+
+```
+ERREUR   ligne 1077 : cannot use subquery in check constraint
+PRÉREQUIS ligne 1348 : role "amberline_app" does not exist   (×4)
+```
+
+Les quatre `role does not exist` sont classés **préalable**, pas erreur : le
+provisionnement d'un rôle appartient au déploiement, pas à l'architecture. Les
+compter comme des erreurs de DDL aurait été faux — et les faire disparaître
+serait pire : le document envoie ses privilèges à un rôle dont personne ne peut
+dire qu'il existe.
+
+## Cinq bugs de ce contrôle, trouvés par ses propres tests
+
+Lesquels sont tous de la même famille : **un motif ancré au début de ligne, ou
+une découpe à l'aveugle, qui ne voit pas ce que le document écrit vraiment.**
+
+1. les motifs étaient appliqués **ligne à ligne** : un
+   `CREATE TRIGGER … BEFORE UPDATE OF a, b ON table` s'écrit sur trois lignes, et
+   le contrôle ne voyait jamais son `ON` — 2 `ALTER TABLE` trouvés, 2 triggers et
+   3 index manqués ;
+2. il lisait les **commentaires** : sept tables inexistantes nommées `sur`, `qui`,
+   `old`, `on`, `of`, `target` et `amberline_app` — sept mots du texte ;
+3. `INTO target` est une **variable PL/pgSQL** déclarée par `DECLARE target text`
+   six lignes plus haut ; `FROM amberline_app` dans un `REVOKE` est un **rôle** ;
+   `UPDATE OF … ON …` se lisait comme deux tables. Trois pièges, trois résolutions
+   **par déclaration** ;
+4. le découpage `body.split(/;/)` coupait **dans les corps de fonction** : sur
+   trois blocs, il n'exécutait que trois instructions, dont aucune fonction, et
+   rapportait deux erreurs de trigger **qui n'existaient pas dans le document** ;
+5. il ne lisait ni `text[]`, ni `**\`computed_at\`**` — le gras des tableaux de
+   colonnes.
+
+Le cinquième est de la même famille que la corruption `U+BC95`/`U+C5D0` trouvée
+dans un écran **approuvé** de ce projet : l'annotation typographique fait partie
+de la donnée.
+
+## Tests
+
++6 (153 → 159), chacun **vu échouer** avant d'être corrigé, et chacun avec son
+témoin propre :
+
+- un `CHECK` à sous-requête est refusé par PostgreSQL — **et** un DDL valide passe ;
+- une garde déclarée qui ne tient pas est dite **inerte** — **et** une garde qui
+  tient est confirmée **refusée**, pas supposée ;
+- une table modifiée sans être créée est signalée — **et** un DDL autonome ne
+  signale rien ;
+- sans moteur, le contrôle **dit** qu'il n'a rien exécuté.
+
+Le test « une garde qui tient » est celui qui compte : sans lui, on ne sait pas
+si `guards` sait distinguer une garde inerte d'une garde qui refuse. Il rendrait
+« inerte » dans tous les cas, et le contrôle qui a l'air de travailler ne
+travaillerait pas.
+
+Le harnais de tests est passé en file séquentielle : `ddl-exec` a besoin d'un
+moteur asynchrone, et un test asynchrone dans l'ancien harnais aurait été
+**jeté par terre et compté comme passé**.
+
 ## [1.4.3] - 2026-09-30
 
 ### fix(forge) — Les citations : une file d'examen honnête, et l'échec documenté
