@@ -48,6 +48,21 @@ function sandbox() {
   return dir;
 }
 
+/** Un bac à sable qui est aussi un dépôt git, avec les tags demandés. */
+function gitSandbox(tags = []) {
+  const dir = sandbox();
+  const git = (...args) => {
+    try {
+      execFileSync('git', args, { cwd: dir, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch { /* un tag déjà absent n'est pas une erreur ici */ }
+  };
+  git('init', '-q');
+  git('config', 'user.email', 'test@example.invalid');
+  git('config', 'user.name', 'test');
+  for (const t of tags) git('tag', t);
+  return dir;
+}
+
 function runIn(dir, ...args) {
   try {
     const stdout = execFileSync('node', [path.join(dir, 'scripts', 'release.js'), ...args], {
@@ -60,6 +75,77 @@ function runIn(dir, ...args) {
 }
 
 process.stdout.write('\nrelease.js — test de fumée\n\n');
+
+test('bump REFUSE d\'écraser une version dont le tag existe déjà', () => {
+  // Le défaut qu'aucun test ne voyait. Une branche coupée **avant** le
+  // `chore(release)` du bot, puis un `bump` local : le titre écrit remplace
+  // `## [1.8.0]` dans le CHANGELOG reconstruit, et **une release publiée
+  // disparaît sans erreur**. `check` ne le voit pas — il compare VERSION à la
+  // dernière section, et une section disparue ne se signale pas d'elle-même.
+  // Le tag, lui, existe toujours.
+  const dir = gitSandbox(['v1.6.0', 'v1.7.0', 'v1.8.0']);
+  try {
+    fs.writeFileSync(path.join(dir, 'VERSION'), '1.7.0\n');
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), [
+      '# Changelog', '', '## [Unreleased]', '',
+      '### fix(a) — une entrée', '', 'Corps de l\'entrée.', '',
+      '## [1.6.0] - 2026-01-01', '',
+      '### fix(b) — une entrée ancienne', '', 'Corps.'
+    ].join('\n'));
+
+    const r = runIn(dir, 'bump', '--minor');
+    assert(r.code !== 0, `promouvoir une version déjà publiée doit échouer : ${r.stdout}`);
+
+    let json;
+    try { json = JSON.parse(r.stdout); }
+    catch { throw new Error(`le refus doit être du JSON exploitable : ${r.stdout.slice(0, 160)}`); }
+    assert(json.error === 'version_deja_publiee', `motif attendu : ${JSON.stringify(json)}`);
+    assert(json.version === '1.8.0', `la version en cause doit être nommée : ${JSON.stringify(json)}`);
+
+    // Et surtout : rien n'a été écrit.
+    const after = fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf-8');
+    assert(/## \[1\.6\.0\]/.test(after), 'la section existante doit rester');
+    assert(!/## \[1\.8\.0\]/.test(after), 'aucune section ne doit être écrite après un refus');
+    assert(/^1\.7\.0$/m.test(fs.readFileSync(path.join(dir, 'VERSION'), 'utf-8')),
+      'VERSION doit rester intact après un refus');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('bump REFUSE une promotion en arrière', () => {
+  // Même geste, autre signature : un CHANGELOG plus récent que VERSION. C'est la
+  // trace d'un merge qui a perdu un `chore(release)`, et l'écrire aggraverait la
+  // perte en réécrivant au-dessus d'une version plus haute.
+  const dir = gitSandbox(['v1.9.0']);
+  try {
+    fs.writeFileSync(path.join(dir, 'VERSION'), '1.5.0\n');
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), [
+      '# Changelog', '', '## [Unreleased]', '',
+      '### fix(a) — une entrée', '', 'Corps.', '',
+      '## [1.9.0] - 2026-01-01', '',
+      '### fix(b) — une entrée', '', 'Corps.'
+    ].join('\n'));
+
+    const r = runIn(dir, 'bump', '--patch');
+    assert(r.code !== 0, `une promotion en arrière doit échouer : ${r.stdout}`);
+    const json = JSON.parse(r.stdout);
+    assert(json.error === 'promotion_en_arriere', `motif attendu : ${JSON.stringify(json)}`);
+    assert(json.derniere_version_au_changelog === '1.9.0',
+      `la version du CHANGELOG doit être nommée : ${JSON.stringify(json)}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('bump proceed hors d\'un dépôt git, et le dit', () => {
+  // Le bac à sable ordinaire n'est pas un dépôt : la protection par tag n'est pas
+  // disponible, et il faut que le chemin reste praticable plutôt que de casser.
+  const dir = sandbox();
+  try {
+    const changelog = path.join(dir, 'CHANGELOG.md');
+    fs.writeFileSync(changelog, fs.readFileSync(changelog, 'utf-8').replace(
+      '## [Unreleased]', '## [Unreleased]\n\n### fix(test) — entrée\n\nCorps.\n'));
+    const r = runIn(dir, 'bump', '--patch');
+    assert(r.code === 0, `hors git, bump doit rester utilisable : ${r.stdout}${r.stderr}`);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
 
 test('stdout de bump est du JSON avec from et to', () => {
   const dir = sandbox();
