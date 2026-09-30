@@ -5,7 +5,7 @@
     "name": "Bailly",
     "created_at": "2026-09-30T21:26:29.900Z",
     "description": "",
-    "archetype": null
+    "archetype": "mobile_field_ops"
   },
   "project": {
     "path": "/workspaces/ship-clean-skills/Forge Labs/gestion-locative",
@@ -21,7 +21,7 @@
     "mode": "guided",
     "fast_track": null
   },
-  "current_phase": "2",
+  "current_phase": "4",
   "phases": {
     "0_bootstrap": {
       "status": "in_progress"
@@ -33,7 +33,8 @@
       "status": "in_progress"
     },
     "3_design": {
-      "status": "not_started"
+      "status": "approved",
+      "completed_at": "2026-09-30T22:56:29.489Z"
     },
     "4_architecture": {
       "status": "not_started"
@@ -102,7 +103,7 @@
     "roadmap": {
       "path": ".forge/roadmap.md",
       "type": "roadmap",
-      "status": "draft",
+      "status": "approved",
       "content_hash": "sha256:0d3260f843be",
       "headings": {
         "1": "Vision par version",
@@ -125,14 +126,446 @@
         "4.1": "Backlog V2",
         "4.2": "Idées pour le futur (V3+)"
       },
-      "updated_at": "2026-09-30T22:17:02.576Z",
+      "updated_at": "2026-09-30T22:56:29.440Z",
       "derived_from": [
         ".forge/prd.md"
       ]
+    },
+    "design_system": {
+      "path": ".forge/design/design-system.md",
+      "type": "design-system",
+      "status": "approved",
+      "content_hash": "sha256:9be098138f4f",
+      "headings": {
+        "0": "Direction visuelle",
+        "1": "Design tokens",
+        "2": "Le vocabulaire : trois mots, jamais deux",
+        "3": "Composants primitifs",
+        "4": "Patterns de navigation",
+        "5": "Grille et layout",
+        "0.0": "Déclaration des classes de couleurs",
+        "0.1": "Les huit anti-références",
+        "0.2": "Positionnement",
+        "0.3": "Le choix qui divise — un thème sombre unique",
+        "0.4": "Le système de couleurs a quatre teintes, et chacune dit quelque chose",
+        "0.5": "Ce que ce design system ne dessine pas, et pourquoi",
+        "1.1": "Couleurs",
+        "1.2": "Typographie",
+        "1.3": "Espacements",
+        "1.4": "Ombres",
+        "1.5": "Bordures",
+        "1.6": "Animations",
+        "1.7": "Breakpoints",
+        "2.0.1": "Pourquoi cette section existe",
+        "2.0.2": "Les trois mots",
+        "2.0.3": "Les mots interdits",
+        "2.0.4": "Le test, écrit comme une question d'un seul coup",
+        "4.1": "Structure",
+        "4.2": "Navigation principale",
+        "4.3": "Breadcrumbs",
+        "4.4": "Transitions entre pages",
+        "5.1": "Grille de base",
+        "5.2": "Layouts type"
+      },
+      "updated_at": "2026-09-30T22:56:29.393Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/roadmap.md",
+        ".forge/conventions.md"
+      ]
     }
   },
-  "index": {},
-  "screens": {},
+  "index": {
+    "nav": {
+      "archetype": "mobile_field_ops",
+      "platform": "ios,android",
+      "core_loop": "lire le bandeau de synchronisation, saisir ce qui s est passe, confirmer quand le reseau revient",
+      "items": [
+        {
+          "key": "aujourdhui",
+          "label": "Aujourd hui",
+          "rank": 1,
+          "frequency": 5,
+          "task_criticality": 5,
+          "rationale": "ouvre la boucle et enseigne les trois mots : c est le seul ecran ou la regle de vocabulaire est visible, donc le seul ou B2 peut devenir une habitude"
+        },
+        {
+          "key": "saisir",
+          "label": "Saisir",
+          "rank": 2,
+          "frequency": 5,
+          "task_criticality": 5,
+          "rationale": "geste du sous-sol, plusieurs fois par jour, seule slice utilisee tous les jours sans exception ; l organigramme du domaine la classerait sixieme"
+        },
+        {
+          "key": "encaissement",
+          "label": "Encaissement",
+          "rank": 3,
+          "frequency": 3,
+          "task_criticality": 5,
+          "rationale": "frequence mensuelle mais centralite maximale au 6 du mois, ou en retard apparait et ou la relance est la seule action refusee hors ligne"
+        },
+        {
+          "key": "dossiers",
+          "label": "Dossiers",
+          "rank": 4,
+          "frequency": 3,
+          "task_criticality": 5,
+          "rationale": "source des cinq echeances derivees, donc le garde-fou n a rien sans elle ; entree de cycle de vie, ensuite consultation"
+        },
+        {
+          "key": "demandes",
+          "label": "Demandes",
+          "rank": 5,
+          "frequency": 3,
+          "task_criticality": 3,
+          "rationale": "liste qui se consulte en passant ; B14 dit qu elle ne sert qu avec qui doit agir, donc en overflow"
+        }
+      ],
+      "primary_count": 5,
+      "overflow_count": 0,
+      "rationale": null,
+      "updated_at": "2026-09-30T22:34:26.302Z"
+    }
+  },
+  "screens": {
+    "aujourdhui": {
+      "path": ".forge/design/screens/aujourdhui.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:204a7c8fc070",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:10.908Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "dossiers": {
+      "path": ".forge/design/screens/dossiers.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:61d50acc4022",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.198Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "dossier-bail": {
+      "path": ".forge/design/screens/dossier-bail.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:7662c942710c",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.135Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "saisir": {
+      "path": ".forge/design/screens/saisir.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:4801abf1b0ba",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.520Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "saisir-somme": {
+      "path": ".forge/design/screens/saisir-somme.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:2eb627e77f63",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.473Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "fait-detail": {
+      "path": ".forge/design/screens/fait-detail.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:21ba3cf237ca",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.387Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "piece-jointe": {
+      "path": ".forge/design/screens/piece-jointe.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:3d8c9caa1358",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.431Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "encaissement": {
+      "path": ".forge/design/screens/encaissement.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:088eea773613",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.298Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "encaissement-ligne": {
+      "path": ".forge/design/screens/encaissement-ligne.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:f777f0baf0fa",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.251Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "demandes": {
+      "path": ".forge/design/screens/demandes.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:3c836a10ddf3",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.000Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "demande-detail": {
+      "path": ".forge/design/screens/demande-detail.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:2beafdd956c9",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:10.955Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "donnees-personnelles": {
+      "path": ".forge/design/screens/donnees-personnelles.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:d1228c040679",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.087Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "export": {
+      "path": ".forge/design/screens/export.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:f2c40583d4b2",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.341Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    },
+    "deverrouillage": {
+      "path": ".forge/design/screens/deverrouillage.md",
+      "type": "screen",
+      "status": "draft",
+      "content_hash": "sha256:5705d6c0d545",
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "États — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire"
+      },
+      "updated_at": "2026-09-30T22:56:11.043Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
+    }
+  },
   "foundations": {},
   "modules": {},
   "slices": {},
@@ -143,10 +576,28 @@
     "metrics": ".forge/audit/metrics.json",
     "counts": {
       "init": 1,
-      "register": 5,
-      "phase_status": 2,
-      "status_change": 1
+      "register": 51,
+      "phase_status": 3,
+      "status_change": 3,
+      "nav_prioritized": 1,
+      "finding_raised": 1,
+      "gate_approved": 1
     }
   },
-  "divergences": []
+  "divergences": [],
+  "findings": [
+    {
+      "id": "F-001",
+      "domain": "design-system.md",
+      "severity": "major",
+      "origin": "design-quality.md § 2 — Étape 2",
+      "status": "open",
+      "summary": "Le skill de design obligatoire pour une application mobile, imagegen-frontend-mobile, n est pas disponible dans cet environnement : les seuls skills installes sont forge et project-rules-architect.",
+      "correction": "Les interdits du § 3 et les exigences du § 4 ont ete appliques un par un, et l absence est ecrite dans la checklist de gate du design system. La direction visuelle a ete derivée des trois ancres et de l archetype mobile_field_ops, sans maquette : au moment de la Phase 3.3, une image de reference par ecran cle reste a produire.",
+      "artifact": null,
+      "raised_at": "2026-09-30T22:34:29.576Z",
+      "promoted_to": null,
+      "resolved_at": null
+    }
+  ]
 }
