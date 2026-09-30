@@ -2910,6 +2910,43 @@ test('un arrondi ne doit jamais créer un VERT', () => {
     `4,4958:1 est sous 4,5 et doit échouer, même arrondi à 4,50 : ${res.stdout.slice(0, 400)}`);
 });
 
+test('les conventions, premier artefact du projet, PEUVENT déclarer aucune source', () => {
+  // Constaté sur Bailly, premier projet du banc d'essai où ce cas apparaît. Les
+  // conventions dérivent d'un **entretien**, pas d'un fichier : il n'y a personne à
+  // qui emprunter une source. Déclarer `derived_from: []` est donc une déclaration
+  // de vérité, et le contrôle la refusait comme un oubli.
+  //
+  // La contre-épreuve est le test ci-dessus : un écran avec la même clé **vide**
+  // reste un défaut, parce qu'un écran n'est jamais le premier de sa chaîne.
+  const project = freshProject('front-matter-racine');
+  fs.writeFileSync(path.join(project, '.forge/conventions.md'),
+    '---\ntype: conventions\nstatus: draft\nderived_from: []\n---\n\n# Conventions\n\nRien.\n');
+  assert(run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']).code === 0,
+    'register conventions');
+  const res = run('forge-guard.js', ['state', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'derived_from_non_empty');
+  assert(check, 'le contrôle doit figurer dans la sortie');
+  assert(check.status === 'pass',
+    `le premier artefact peut n'avoir aucune source : ${JSON.stringify(check.offenders)}`);
+});
+
+test('un écran isolé n\'est PAS le premier de sa chaîne, même seul enregistré', () => {
+  // L'assouplissement « personne d'autre ne déclare de source » acceptait un écran
+  // seul dans un projet vide. C'est faux : un écran sans conception n'est pas le
+  // premier, il est **en avance** — et un contrôle assoupli jusqu'à ne plus rien
+  // voir n'est pas un contrôle assoupli, c'est un contrôle supprimé.
+  const project = freshProject('front-matter-ecran-seul');
+  const rel = '.forge/design/screens/seul.md';
+  fs.mkdirSync(path.join(project, '.forge/design/screens'), { recursive: true });
+  fs.writeFileSync(path.join(project, rel),
+    '---\ntype: screen\nstatus: draft\nderived_from: []\n---\n\n# Seul\n\nContenu.\n');
+  assert(run('state.js', ['register', project, 'screen', 'seul', rel]).code === 0, 'register écran');
+  const res = run('forge-guard.js', ['state', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'derived_from_non_empty');
+  assert(check && check.status === 'fail',
+    `un écran isolé doit rester un défaut : ${JSON.stringify(check)}`);
+});
+
 /* --- une slice de Phase 4 n'a pas de plan, et ne doit pas se croire-plan --- */
 
 test('NEGATIF — une slice déclarée en Phase 4 n\'est PAS un plan écrit en avance', () => {

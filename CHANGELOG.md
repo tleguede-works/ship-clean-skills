@@ -27,6 +27,43 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge-guard) — le premier artefact du projet ne peut pas avoir de source
+
+`derived_from` vide est refusé par `derived_from_non_empty`, et c'est juste : un
+`derived_from` vide supprime le contrat de lecture du validateur sans laisser de
+trace.
+
+Mais **`conventions.md` est le premier document du projet**. Il dérive d'un
+**entretien**, pas d'un fichier : il n'y a personne à qui emprunter une source.
+Écrire `derived_from: []` y est une **déclaration de vérité**, et le contrôle la
+traitait comme un oubli.
+
+Constaté sur Bailly — le premier projet du banc d'essai où ce cas apparaît, parce
+que c'est le premier où le dossier de départ est **vide** et où l'agent écrit donc
+une clé explicite au lieu de l'omettre. Le gabarit `conventions.md.tmpl` n'a pas de
+clé du tout, ce qui masque le cas jusqu'au moment où quelqu'un decide d'être
+explicite.
+
+**La règle : une liste vide est acceptée si l'artefact est le premier de sa chaîne**,
+et le premier se déduit de la **phase propriétaire** — le seul artefact sans amont
+est celui de la phase 0. Le même prédicat que `prematureArtifacts`, donc les deux
+contrôles ne peuvent pas diverger sur le même artefact.
+
+**Un contre-test a été nécessaire, et il a rejeté ma première version.** J'avais
+d'abord écrit « si personne d'autre ne déclare de source, c'est le premier » — ce qui
+accepte un **écran seul** dans un projet vide. Faux : un écran sans conception n'est
+pas le premier, il est **en avance**. Le test négatif existant l'a immédiatement
+rejeté, et il avait raison : un contrôle assoupli jusqu'à ne plus rien voir n'est pas
+un contrôle assoupli, c'est un contrôle supprimé.
+
+`current_phase` est un **nombre** et non une clé de phase : le comparer à
+`PHASE_KEYS.indexOf(...)` renvoyait `-1` en phase 0, et le premier artefact était
+alors refusé pour la raison inverse de celle qu'on corrige. Deux bugs dans le même
+correctif, tous deux invisibles sans le contre-test.
+
+**197 tests** (+ 2) : le premier artefact peut n'avoir aucune source ; un écran isolé
+reste un défaut.
+
 ## [1.9.3] - 2026-09-30
 
 ### fix(state) — une slice de Phase 4 se croyait avoir un plan

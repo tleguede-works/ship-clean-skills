@@ -540,6 +540,46 @@ function checkProvenance(root) {
   ];
 
   const empty = [];
+  /**
+   * Cet artefact est-il le **premier** de sa chaîne ?
+   *
+   * Opérationnellement : est-il le seul artefact enregistré à déclarer une liste de
+   * sources, ou le seul à ne rien déclarer du tout ? Un `conventions.md` est le
+   * premier parce qu'il n'a **personne** au-dessus de lui ; un `roadmap.md` en a un.
+   *
+   * On ne se fie **pas** au fait que l'artefact soit seul : un écran enregistré seul
+   * dans un projet vide n'est pas le premier de sa chaîne, il est un écran **sans
+   * conception**. Ce qui décide est la **phase propriétaire** : seul l'artefact de la
+   * phase 0 — les conventions — est le premier, parce que c'est le seul dont la phase
+   * n'a pas de prédécesseur.
+   *
+   * Constaté en corrigeant : la première version demandait « personne d'autre ne
+   * déclare de source », ce qui acceptait un écran isolé et faisait passer un test
+   * négatif. Le test l'a vu. Un contrôle assoupli jusqu'à ne plus rien voir n'est pas
+   * un contrôle assoupli, c'est un contrôle supprimé.
+   */
+  const isChainRoot = (key, kind, state) => {
+    // `current_phase` est un **nombre**, pas une clé de phase : le comparer à
+    // `PHASE_KEYS.indexOf(...)` donne -1 pour la phase 0, et le premier artefact
+    // du projet était alors refusé pour la raison inverse de celle qu'on corrige.
+    const idx = parseInt(state.current_phase, 10);
+    // Le propriétaire de l'artefact, déduit de (kind, key) et non de l'état des
+    // phases : c'est la même règle que `prematureArtifacts`, donc les deux ne
+    // peuvent pas diverger sur le même artefact.
+    let ownerIdx = -1;
+    for (const [phaseKey, spec] of Object.entries(L.PHASE_ARTIFACT_OWNERS)) {
+      const i = L.PHASE_KEYS.indexOf(phaseKey);
+      if (i < 0) continue;
+      if (spec[kind] === true || (Array.isArray(spec[kind]) && spec[kind].includes(key))) {
+        ownerIdx = Math.max(ownerIdx, i);
+      }
+    }
+    // `ownerIdx === 0` : le document des conventions, seul artefact sans amont.
+    // `idx` sert à refuser un artefact **produit trop tôt** : un écran en phase 0
+    // n'est pas le premier, il est en avance — et c'est un autre contrôle qui le dit.
+    return ownerIdx === 0 && idx >= 0 && idx <= 1;
+  };
+
   for (const t of targets) {
     const abs = L.toAbs(root, t.path);
     if (!fs.existsSync(abs)) continue;
@@ -547,15 +587,37 @@ function checkProvenance(root) {
     if (!fm) continue;
     if (!Object.prototype.hasOwnProperty.call(fm.data, 'derived_from')) continue;
     const v = fm.data.derived_from;
+    // ## Une liste vide est un **contexte**, pas un oubli — sauf au premier artefact
+    //
+    // `derived_from: []` signifie « cet artefact n'a pas de source » : c'est le cas
+    // **légitime** de `conventions.md`, qui est le premier document écrit et dérive
+    // d'un entretien, non d'un autre fichier. Le même front matter sans la clé du
+    // tout ne dit rien — et l'absence de clé est acceptée, parce que le gabarit
+    // `conventions.md.tmpl` ne déclare pas `derived_from`.
+    //
+    // Constaté sur Bailly, premier projet du banc d'essai où ce cas apparaît : la
+    // clé a été écrite vide pour être explicite, et le contrôle l'a refusée. Le
+    // contrôle avait raison de la forme et tort du fond : il confondait « j'ai
+    // déclaré que je n'ai pas de source » et « j'ai oublié de dire d'où ça vient ».
+    //
+    // La distinction est donc : **une liste vide est acceptée si l'artefact est le
+    // premier de sa chaîne** — c'est-à-dire si aucun autre artefact enregistré déclare
+    // une source, ce qui est la définition opérationnelle de « premier ». Pour tout
+    // le reste, la liste vide reste un défaut, parce qu'elle cache une rupture de
+    // traçabilité.
     const isEmpty = v === null || v === undefined ||
       (typeof v === 'string' && v.trim() === '') ||
       (Array.isArray(v) && v.length === 0);
-    if (isEmpty) {
-      empty.push({
-        kind: t.kind, key: t.key, path: t.path,
-        why: '`derived_from` est déclaré mais vide : les fichiers sources de cet artefact ne sont plus liés.'
-      });
-    }
+    if (!isEmpty) continue;
+
+    if (isChainRoot(t.key, t.kind, state)) continue;
+    empty.push({
+      kind: t.kind, key: t.key, path: t.path,
+      why: '`derived_from` est déclaré mais vide alors que cet artefact dérive d\'un autre : ' +
+           'les fichiers sources ne sont plus liés.',
+      hint: 'Un artefact **premier** de sa chaîne (les conventions, ce qui dérive d\'un ' +
+            'entretien) peut déclarer une liste vide. Tout le reste doit nommer ses sources.'
+    });
   }
   record('derived_from_non_empty', empty.length === 0, {
     checked: targets.length,
