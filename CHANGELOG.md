@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-09-30
+
 ### fix(tokens-used) — une citation en prose passait, et rien ne vérifiait l'absence
 
 `tokens-used` compare ce que chaque écran écrit à ce que le design system définit.
@@ -79,7 +81,6 @@ citations — chaque ligne de sa table de jetons est un couple jeton/valeur. Le
 compter comme une source vérifiée rendrait cette non-vacuité **verte**, puisque le
 design system en produit toujours. Le compteur porte donc sur les **écrans seuls**,
 et `citations` est le nombre que la sortie affiche.
-
 
 ### fix(component-parity) — un contrôle qui n'a rien vérifié rendait « conforme »
 
