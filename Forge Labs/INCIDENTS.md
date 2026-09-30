@@ -1374,3 +1374,156 @@ laisse passer le pire cas.
 **v1.7.0** : PR #35 et #36, archive téléchargée, `snapshot verify` → `pass: true`,
 96 fichiers, 0 différence, et la suite complète rejouée **dans l'archive extraite**
 (177 passés + 7 non exécutés faute de pglite, comptés à part).
+
+## F-41 — Phase 3.4 (Onduleur) : le contrôle le plus dangereux est un contrôle vide
+
+`component-parity` rendait `pass: true` sur un design system dans lequel il avait
+lu **un composant sur sept, à zéro état**.
+
+```
+pass: true
+components: [ { component: "Bouton", slots: 3, states: 0 } ]
+offenders:  []
+```
+
+Zéro exigence portée sur aucun écran. Et **rien à signaler**, parce qu'il n'y avait
+rien à comparer.
+
+### Deux hypothèses, toutes deux anglaises
+
+**La découverte du composant** :
+
+```js
+/^###\s+([A-Z][A-Za-z0-9]*)\s*$/gm
+```
+
+Une forme de nom. Un design system français écrit `### Tuile produit`. Donc
+invisibles : `Tuile produit`, `Champ de saisie`, `Ligne de commande`,
+`Panneau d'état`. Et `### Barre d'onglets, barre de panier, pastille, encart,
+feuille, squelette` — un titre qui **énumère** sept composants, donc que la
+donnée ne peut pas rendre.
+
+**Le libellé du contrat** : `**États** :` exactement. Or le document écrit
+`**États** — rendus par l'union …`. Donc `Bouton` est trouvé, et ses **six** états
+n'existent pas pour le contrôle.
+
+Le contrôle lit deux formes, et chacune dans une seule langue. C'est la **deuxième
+fois en deux jours** que le même défaut apparaît — d'abord les couleurs
+(`design-check`, F-40), maintenant les composants. Le motif est désormais assez
+répété pour mériter sa propre règle.
+
+### Ce qui rend ce défaut pire que les six précédents
+
+Les six autres produisaient du **bruit** : trop de signalements, dont des faux.
+Celui-ci produit un **vide**.
+
+Un faux positif s'ouvre, se corrige, et laisse une trace. Un contrôle qui ne
+vérifie rien **ne s'ouvre jamais**. Un contrôle vide ne se voit pas à la relecture,
+ne se voit pas dans la sortie — la sortie dit `pass: true` — et ne se voit pas dans
+les tests, puisque les testsverts n'échouent pas.
+
+> **Un contrôle qui n'a rien vérifié ne doit pas dire « conforme ». Il doit dire
+> qu'il n'a rien vérifié.**
+
+C'est la règle de fond de ce correctif, et elle ne dépend d'aucun nom, d'aucune
+langue, d'aucun format de titre.
+
+### Le correctif : un composant est déclaré par son contrat
+
+Le nom d'un composant n'est plus une **forme**, c'est une **étiquette** — lisible,
+avec ses espaces et son apostrophe. Ce qui déclare un composant, c'est la présence
+de son contrat :
+
+> **Un composant est une section qui porte `**États**` ou `**Slots**`.**
+
+Et si le design system ne déclare la surface d'aucun composant, le contrôle
+**refuse**, en rendant les titres qu'il a lus, pour qu'on sache quoi écrire :
+
+```json
+{ "problem": "aucune_surface_declaree",
+  "read_headings": ["Tuile produit", "Champ de saisie"],
+  "why": "Ce contrôle ne peut alors rien exiger des écrans : il ne rend pas « conforme », il rend « rien vérifié »." }
+```
+
+`skipped_headings` est désormais dans la sortie. Un composant absent de la liste
+des lus est **visible**, au lieu d'être une absence.
+
+Sur Onduleur, après le correctif :
+
+```
+Bouton            slots=3  etats=6
+Tuile produit     slots=0  etats=7
+Ligne de commande slots=0  etats=8
+```
+
+Trois composants lus, et **trois autres visibles comme non lus** — parce que le
+document ne déclare pas leur surface. C'est un **défaut du document**, désormais
+visible, et non un silence.
+
+### Le cinquième mécanisme, reproduit en corrigeant le sixième
+
+Il suffisait d'écrire `[ \t]*` après le séparateur du libellé. J'ai écrit
+`\s*`.
+
+`\s` franchit le retour à la ligne. Le `\s*` avalait la ligne vide **et** l'en-tête
+du tableau ; `(.*)` lisait `| État | Déclencheur |` comme une prose inline, ne
+trouvait aucun backtick, et déclarait **zéro** état. Silencieusement, sur un
+composant par ailleurs correctement détecté — donc un symptôme (`states: 0`) qui
+ressemble à un problème de forme de nom, et m'a fait chercher au mauvais endroit.
+
+C'est le motif exact de la **borne de 600 caractères** et du `^\s*` qui traversait
+les lignes. Le **deuxième** contrôle à rejouer le schéma en corrigeant le
+précédent, et le troisième **`\s` qui franchit la ligne** du dossier.
+
+La correction est `[ \t]*`, et **ce qui suit le libellé décide de la forme** —
+tableau ou prose. Un document écrit volontiers `**États** — rendus par X :` suivi
+d'un tableau ; déduire la forme de ce qui vient après le séparateur lisait
+l'en-tête du tableau comme une prose.
+
+### Un test négatif, parce qu'élargir peut produire un vert faux
+
+Corriger la découverte pouvait transformer un vert vide en vert **faux** — c'est le
+risque réel de tout élargissement. Le test le vérifie : un écran qui propage
+`2 états : defaut, rupture` quand le design system en déclare trois est signalé,
+et le composant nommé est le bon.
+
+### Le bump local, et ce qu'il a coûté la deuxième fois
+
+J'ai promu `[Unreleased]` en 1.8.0 à la main. Le workflow a refusé — à raison, et
+comme la fois d'avant. Mais cette fois le refus avait laissé une trace grave :
+**j'ai écrasé la section `1.7.0`**, qui contenait le correctif `design-check`. Le
+CHANGELOG mergé ne racontait plus que `1.6.3` comme dernière version, alors que le
+tag `v1.7.0` existait et avait ses notes.
+
+`check` l'a vu : `VERSION (1.7.0) ne correspond pas à la dernière version du
+CHANGELOG (1.6.3)`.
+
+| | ce que le bump local a cassé |
+|---|---|
+| 1re fois | un `## [Unreleased]` **vide** devant la section promue |
+| 2e fois | une release **déjà publiée**, supprimée du CHANGELOG |
+
+Les deux sont le même geste au mauvais endroit. La promotion est une opération du
+bot, et elle n'est pas réversible à la main : la première fois elle ajoute une
+ligne, la deuxième elle en retire une qu'on ne peut pas récupérer.
+
+Le contrôle a tenu — `check` a refusé de valider un CHANGELOG incohérent avec le
+tag. C'est exactement sa raison d'être, et c'est la première fois qu'il **bloque
+quelque chose que j'avais fait**.
+
+### La règle qui reste, et qui est la neuvième du même genre
+
+Sept contrôles ont déjà rejoué un motif plus étroit que ce que les documents
+écrivent. Deux d'entre eux — la **couleur** et le **composant** — lisaient une
+**forme de nom**, et un nom est écrit dans la langue du document. Les deux
+échouaient **en silence**.
+
+> Un motif absent ne produit pas une absence de contrôle. Il produit **le contrôle
+> le plus large qui reste** : pour la couleur, 3:1 pour tout ; pour le composant,
+> zéro exigence pour tous. Le second est pire que le premier, parce qu'il ne produit
+> même pas d'erreur à examiner.
+
+La règle générale, celle qui tient pour les deux :
+
+> **Fais déclarer, puis mesure.** Un contrôle qui déduit d'une forme lit une
+> langue ; un contrôle qui résout un pointeur déclaré lit un document.
