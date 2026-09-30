@@ -541,13 +541,16 @@ function checkPlaceholders(root) {
   for (const f of files) {
     const abs = L.toAbs(root, f.p);
     if (!fs.existsSync(abs)) continue;
-    const found = (fs.readFileSync(abs, 'utf-8').match(PLACEHOLDER_RE) || []);
+    const raw = fs.readFileSync(abs, 'utf-8');
+    const found = (stripCodeSpans(raw).match(PLACEHOLDER_RE) || []);
     if (found.length) offenders.push({ deliverable: f.k, path: f.p, placeholders: [...new Set(found)] });
   }
 
   record('no_unresolved_placeholders', offenders.length === 0, {
     offenders,
-    rule: 'Un livrable ne contient jamais de {{PLACEHOLDER}} : il est généré depuis un template, pas recopié.'
+    rule: 'Un livrable ne contient jamais de {{PLACEHOLDER}} hors guillemets : il est généré ' +
+          'depuis un template, pas recopié. Un placeholder cité entre guillemets documente la ' +
+          'convention, ce n\'est pas une case ouverte.'
   });
 }
 

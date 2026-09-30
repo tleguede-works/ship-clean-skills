@@ -152,61 +152,158 @@ jobs:
       # archive, une release ne permet pas de retrouver la version publiée d'un
       # skill — constaté sur v1.1.6 à v1.1.8, dont le seul asset était
       # `notes.md`, le fichier de notes lui-même.
+      # ---------------------------------------------------------------
+      # Reprise AVANT le bump
+      #
+      # Le tag peut déjà exister sans que la release existe : c'est exactement
+      # l'état produit quand le job échoue APRÈS `git push origin "$TAG"`.
+      # L'ancien code disait « le tag existe déjà — rien à créer » et sortait en
+      # 0 : le dépôt restait donc BLOQUÉ pour toujours, avec VERSION et CHANGELOG
+      # advanced et un tag orphelin. Sortir en 0 sur un état incomplet est la
+      # pire des sorties : elle transforme une panne en état permanent.
+      #
+      # Constaté pour de vrai : v1.2.0 est taggé, VERSION vaut 1.2.0, et
+      # `gh release view v1.2.0` répond « release not found ». Sans cette étape,
+      # le dépôt y resterait.
+      # ---------------------------------------------------------------
+      - name: Reprise — tag existant sans release
+        id: resume
+        run: |
+          set -euo pipefail
+          if [ -z "${{ needs.verify.outputs.should_release }}" ]; then :; fi
+          tag=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -n "$tag" ] && git rev-parse "$tag" >/dev/null 2>&1; then
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "reprise=false" >> "$GITHUB_OUTPUT"
+              echo "la release $tag existe déjà"
+            else
+              echo "reprise=true"  >> "$GITHUB_OUTPUT"
+              echo "version=${{ needs.verify.outputs.level }}" >> /dev/null
+              echo "tag=$tag" >> "$GITHUB_OUTPUT"
+              echo "::warning::tag $tag présent sans release — publication reprise sans nouveau bump"
+            fi
+          else
+            echo "reprise=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bumper la version et figer la section
+        id: bump
+        if: steps.resume.outputs.reprise != 'true'
+        run: |
+          set -euo pipefail
+          node scripts/release.js bump --${{ needs.verify.outputs.level }} > /tmp/bump.json
+          cat /tmp/bump.json
+
+          # Le script écrit son JSON sur stdout. Sans cette recopie dans
+          # GITHUB_OUTPUT, steps.bump.outputs.to reste VIDE en aval : le tag
+          # devient « v », le message de commit devient vide, git refuse le
+          # commit, et le « || exit 0 » masque l'échec. Le run rapportait alors
+          # « success » après avoir publié une release vide.
+          to=$(node -p "require('/tmp/bump.json').to")
+          from=$(node -p "require('/tmp/bump.json').from")
+          if [ -z "$to" ] || [ "$to" = "undefined" ]; then
+            echo "::error::le bump n'a pas renvoyé de version — arrêt plutôt que de publier une release vide"
+            exit 1
+          fi
+          echo "to=$to"   >> "$GITHUB_OUTPUT"
+          echo "from=$from" >> "$GITHUB_OUTPUT"
+
+      - name: Committer VERSION et CHANGELOG
+        if: steps.resume.outputs.reprise != 'true'
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add VERSION CHANGELOG.md
+          # --no-verify : ce commit est mécanique, il ne doit pas relancer la CI
+          if git diff --cached --quiet; then
+            echo "::error::VERSION et CHANGELOG n'ont pas changé après bump — arrêt"
+            exit 1
+          fi
+          git commit -m "chore(release): ${{ steps.bump.outputs.to }}"
+          git push
+
+      # L'archive porte le CONTENU, pas les notes.
+      #
+      # Le skill n'est pas compilé : il n'y a aucun exécutable à produire. Sans
+      # archive, une release ne permet pas de retrouver la version publiée — et
+      # c'était le cas de toutes les releases précédentes, dont le seul asset
+      # était le fichier de notes lui-même.
       - name: Construire le snapshot de la version publiée
         id: snapshot
         run: |
           set -euo pipefail
-          node scripts/snapshot.js build --version "${{ steps.bump.outputs.to }}" --out dist --json | tee /tmp/snapshot.json
+          if [ "${{ steps.resume.outputs.reprise }}" = "true" ]; then
+            version="${{ steps.resume.outputs.tag }}"
+            version="${version#v}"
+          else
+            version="${{ steps.bump.outputs.to }}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          # L'archive doit reproduire l'état PUBLIÉ. En reprise, on se place sur
+          # le commit du tag : c'est cet arbre-là qui a été publié.
+          if [ "${{ steps.resume.outputs.reprise }}" = "true" ]; then
+            git checkout -q "${{ steps.resume.outputs.tag }}"
+          fi
+
+          node scripts/snapshot.js build --version "$version" --out dist --json | tee /tmp/snapshot.json
           archive=$(node -p "require('/tmp/snapshot.json').archive")
           files=$(node -p "require('/tmp/snapshot.json').files")
           digest=$(node -p "require('/tmp/snapshot.json').content_sha256")
-          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "archive=$(basename "$archive")" >> "$GITHUB_OUTPUT"
+          echo "archive_path=$archive"        >> "$GITHUB_OUTPUT"
           echo "files=$files"      >> "$GITHUB_OUTPUT"
           echo "digest=$digest"    >> "$GITHUB_OUTPUT"
-          echo "MANIFEST.json" >> /tmp/assets.txt
-          echo "$archive"     >> /tmp/assets.txt
+          # Le manifeste sort du premier membre de l'archive : il est joint
+          # séparément pour qu'on puisse le consulter SANS extraire 90 fichiers.
+          mkdir -p dist/manifest
+          tar -xzf "$archive" -C dist/manifest MANIFEST.json
+          echo "manifest=dist/manifest/MANIFEST.json" >> "$GITHUB_OUTPUT"
 
       - name: Vérifier l'archive contre le commit publié
         run: |
           set -euo pipefail
           # Ce contrôle est la raison d'être du manifeste : il prouve que
           # l'archive qu'on va joindre reproduit bien l'état publié.
-          node scripts/snapshot.js verify "${{ steps.snapshot.outputs.archive }}" --against .
+          node scripts/snapshot.js verify "${{ steps.snapshot.outputs.archive_path }}" --against .
 
       - name: Créer la release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: "v${{ steps.bump.outputs.to }}"
-          VERSION: "${{ steps.bump.outputs.to }}"
+          TAG: "${{ steps.resume.outputs.tag || format('v{0}', steps.bump.outputs.to) }}"
+          VERSION: "${{ steps.snapshot.outputs.version }}"
+          ARCHIVE: "${{ steps.snapshot.outputs.archive_path }}"
+          MANIFEST: "${{ steps.snapshot.outputs.manifest }}"
+          FILES: "${{ steps.snapshot.outputs.files }}"
+          DIGEST: "${{ steps.snapshot.outputs.digest }}"
         run: |
           set -euo pipefail
           # Les notes viennent de release.js, pas d'une regex écrite ici.
           NOTES=$(node scripts/release.js notes "$VERSION")
 
           # Dernier rempart. Une release avec un tag non sémantique, des notes
-          # vides, une VERSION qui ne correspond pas, ou une archive qui ne
-          # reproduit pas la version, est exactement le « mécanisme arbitraire »
-          # à éviter. Mieux vaut un run en échec qu'une release illisible dans
-          # l'historique.
+          # vides, une VERSION qui ne correspond pas, ou une archive absente,
+          # est exactement le « mécanisme arbitraire » à éviter.
           if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error::tag « $TAG » non sémantique — refus de publier"
             exit 1
           fi
-          if [ -z "$(cat VERSION)" ] || [ "$(cat VERSION)" != "${TAG#v}" ]; then
-            echo "::error::VERSION ($(cat VERSION)) ne correspond pas au tag ${TAG#v}"
+          if [ -z "$(cat VERSION)" ] || [ "$(cat VERSION)" != "$VERSION" ]; then
+            echo "::error::VERSION ($(cat VERSION)) ne correspond pas à la version publiée $VERSION"
             exit 1
           fi
           if [ -z "$NOTES" ]; then
             echo "::error::notes de release vides pour $TAG — la section CHANGELOG correspondante est vide ou introuvable"
             exit 1
           fi
-          if [ ! -f "${{ steps.snapshot.outputs.archive }}" ]; then
-            echo "::error::archive absente : une release sans snapshot ne reproduit pas la version publiée"
+          if [ ! -f "$ARCHIVE" ] || [ ! -f "$MANIFEST" ]; then
+            echo "::error::archive ou manifeste absent : une release sans snapshot ne reproduit pas la version publiée"
             exit 1
           fi
 
           {
-            echo "## ${TAG#v}"
+            echo "## $VERSION"
             echo ""
             echo "$(date -u +%Y-%m-%d)"
             echo ""
@@ -217,58 +314,94 @@ jobs:
             echo "### Snapshot"
             echo ""
             echo "Le skill n'est pas compilé : **l'archive jointe EST la version publiée**."
-            echo "Elle contient \`MANIFEST.json\` en premier membre, avec le SHA-256 de chaque"
-            echo "fichier, et l'identifiant du commit publié."
+            echo "Elle contient l'intégralité du skill, et \`MANIFEST.json\` en premier"
+            echo "membre — SHA-256 de chaque fichier, version, commit publié."
             echo ""
-            echo "- archive : \`$(basename ${{ steps.snapshot.outputs.archive }})\`"
-            echo "- fichiers : ${{ steps.snapshot.outputs.files }}"
-            echo "- empreinte du contenu : \`${{ steps.snapshot.outputs.digest }}\`"
+            echo "- archive : \`$(basename "$ARCHIVE")\`"
+            echo "- manifeste : \`$(basename "$MANIFEST")\`"
+            echo "- fichiers : $FILES"
+            echo "- empreinte du contenu : \`$DIGEST\`"
             echo ""
-            echo "Reproduire l'extraction et vérifier :"
+            echo "Vérifier l'archive sans le dépôt :"
             echo ""
             echo '```bash'
-            echo "tar -xzf $(basename ${{ steps.snapshot.outputs.archive }})"
-            echo "node -e \"const m=require('./MANIFEST.json');console.log(m.version, m.commit)\""
+            echo "tar -xzf $(basename "$ARCHIVE")"
+            echo "node -e \"const m=require('./MANIFEST.json');console.log(m.version, m.commit, m.file_count)\""
             echo '```'
             echo ""
             echo "Installer : \`npx skills add tleguede-works/ship-clean-skills --skill <nom> -g -a opencode\`"
           } > /tmp/notes.md
 
           if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "le tag $TAG existe déjà — rien à créer"
-            exit 0
+            echo "le tag $TAG existe déjà — on ne le recrée pas"
+          else
+            git tag -a "$TAG" -m "release $VERSION"
+            git push origin "$TAG"
           fi
 
-          git tag -a "$TAG" -m "release ${TAG#v}"
-          git push origin "$TAG"
-
-          # Les assets sont `-#-` : ce sont des FICHIERS à joindre, pas des
-          # notes. Une release dont l'unique asset est son propre texte de notes
-          # ne permet pas de récupérer ce qu'elle a publié.
+          # Les assets sont des CHEMINS, jamais une liste reconstruite par
+          # découpage de mots.
+          #
+          # La première version reconstruisait la liste d'assets par
+          # word-splitting puis expansion de motifs, à partir d'un fichier.
+          # Sur le runner, un élément a ete interprete comme un motif non
+          # appari : le job est mort ENTRE la creation du tag et celle de la
+          # release — l'etat exact decrit en tete de ce fichier.
+          # Un chemin est passe comme chemin, entre guillemets, sans detour.
           gh release create "$TAG" \
             --title "$TAG" \
             --notes-file /tmp/notes.md \
-            $(cat /tmp/assets.txt | sed 's/^/"/; s/$/"/' | tr '\n' ' ')
+            "$MANIFEST" \
+            "$ARCHIVE"
 
       - name: Re-télécharger la release et vérifier son contenu
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: "${{ steps.resume.outputs.tag || format('v{0}', steps.bump.outputs.to) }}"
+          VERSION: "${{ steps.snapshot.outputs.version }}"
+          ARCHIVE_NAME: "${{ steps.snapshot.outputs.archive }}"
         run: |
           set -euo pipefail
           # On ne fait pas confiance à ce qu'on vient d'envoyer. On relit la
-          # release depuis l'API, on télécharge l'archive, on l'extrait, et on la
+          # release depuis l'API, on télécharge les assets, on extrait, et on
           # compare au commit publié. C'est la seule vérification qui prouve que
           # la release, telle qu'un utilisateur la trouvera, est exploitable.
-          gh release download "v${{ steps.bump.outputs.to }}" \
+          rm -rf /tmp/relcheck && mkdir -p /tmp/relcheck/x
+          gh release download "$TAG" \
             --dir /tmp/relcheck \
-            --pattern "$(basename ${{ steps.snapshot.outputs.archive }})" \
+            --pattern "$ARCHIVE_NAME" \
             --repo "$GITHUB_REPOSITORY"
-          mkdir -p /tmp/relcheck/x
-          tar -xzf "/tmp/relcheck/$(basename ${{ steps.snapshot.outputs.archive }})" -C /tmp/relcheck/x
-          test -f /tmp/relcheck/x/MANIFEST.json || { echo "::error::MANIFEST.json absent de l'archive publiée"; exit 1; }
-          test -f /tmp/relcheck/x/skills/forge/SKILL.md || { echo "::error::le skill forge est absent de l'archive publiée"; exit 1; }
+
+          test -f "/tmp/relcheck/$ARCHIVE_NAME" \
+            || { echo "::error::l'archive publiée est introuvable : $ARCHIVE_NAME"; exit 1; }
+
+          tar -xzf "/tmp/relcheck/$ARCHIVE_NAME" -C /tmp/relcheck/x
+
+          test -f /tmp/relcheck/x/MANIFEST.json \
+            || { echo "::error::MANIFEST.json absent de l'archive publiee"; exit 1; }
+          test -f /tmp/relcheck/x/skills/forge/SKILL.md \
+            || { echo "::error::le skill forge est absent de l'archive publiee"; exit 1; }
+          test -f /tmp/relcheck/x/skills/forge/scripts/state.js \
+            || { echo "::error::les scripts du skill sont absents de l'archive publiee"; exit 1; }
+
+          # Le manifeste doit aussi etre joint SEUL : c'est ce qu'on consulte
+          # pour verifier sans extraire 90 fichiers.
+          gh release download "$TAG" \
+            --dir /tmp/relcheck \
+            --pattern 'MANIFEST.json' \
+            --repo "$GITHUB_REPOSITORY" || true
+
           node -e "
             const m = require('/tmp/relcheck/x/MANIFEST.json');
-            const expected = process.argv[1];
-            if (m.version !== expected) { console.error('version de l\\'archive : ' + m.version + ', attendu ' + expected); process.exit(1); }
-            console.log('archive publiée : ' + m.version + ' — ' + m.file_count + ' fichiers, commit ' + m.commit);
-          " "${{ steps.bump.outputs.to }}"
-          echo "::notice::release v${{ steps.bump.outputs.to }} vérifiée par re-téléchargement"
+            if (m.version !== process.argv[1]) {
+              console.error('version de l\\'archive : ' + m.version + ', attendu ' + process.argv[1]);
+              process.exit(1);
+            }
+            console.log('archive publiee : ' + m.version + ' — ' + m.file_count + ' fichiers, commit ' + m.commit);
+          " "$VERSION"
+
+          # Et on revalide chaque fichier contre son empreinte : c'est ce que
+          # fera l'utilisateur qui depose une reclamation.
+          node scripts/snapshot.js verify "/tmp/relcheck/$ARCHIVE_NAME" --against /tmp/relcheck/x
+
+          echo "::notice::release $TAG verifiee par re-telechargement et extraction"

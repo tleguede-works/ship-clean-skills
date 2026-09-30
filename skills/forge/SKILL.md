@@ -403,6 +403,27 @@ node "$FORGE/scripts/state.js" set-nav <anchor> '{ "archetype": "...", "core_loo
 3. Définis les **patterns de navigation** : routing, breadcrumbs, sidebar, navbar, ordre des entrées (cf. 3.2).
 4. Applique les **interdits** de `references/design-quality.md` § 3 : pas de blanc pur non choisi, pas d'ombre comme séparateur par défaut, pas de palette par défaut, pas d'échelle typographique uniforme.
 5. Génère **`.forge/design/design-system.md`** depuis `templates/design-system.md.tmpl`.
+6. **Mesure les contrastes — ne les écris pas.** La checklist demande « contraste
+   N:1 », et rien ne la vérifiait : les ratios étaient donc *rédigés*, pas
+   *calculés*.
+
+   ```bash
+   node "$FORGE/scripts/design-check.js" contrast <anchor>
+   node "$FORGE/scripts/design-check.js" tokens <anchor>
+   ```
+
+   Deux choses que ce contrôle attrape, et que la relecture ne voit pas :
+   un ratio **annoncé** qui ne correspond pas au mesuré — une assurance que rien
+   ne soutient — et un texte lisible sur le fond mais trop clair sur **une autre
+   surface**, une ligne alternée de tableau ou un panneau creusé. C'est souvent
+   là que l'échec se trouve.
+
+   Les seuils sont ceux de WCAG : 4,5:1 pour le texte contre **toute** surface
+   (1.4.3), 3:1 pour un composant non textuel — dont l'anneau de focus (1.4.11).
+   La classe de chaque token (texte, composant, remplissage, exempte) est
+   **affichée** dans la sortie, déduite de sa déclaration, de son usage et de son
+   nom : un contrôle qui ne montre pas pourquoi il a classé un token ne peut pas
+   être contesté.
 
 #### 3.4 Écrans et flows
 
@@ -413,7 +434,15 @@ Pour chaque fonctionnalité du PRD qui a une interface utilisateur :
 3. Le gabarit exige 9 états, une direction visuelle par écran, les interactions, le responsive à chaque breakpoint, l'accessibilité et la traçabilité. **Remplis-le intégralement** — un `{{PLACEHOLDER}}` résiduel est un état qui ne sera pas implémenté.
 4. Définis les flows de navigation entre écrans (happy path, alternatives, erreurs, onboarding).
 
-Puis : `node "$FORGE/scripts/forge-guard.js" placeholders <anchor>`.
+Puis :
+
+```bash
+node "$FORGE/scripts/forge-guard.js" placeholders <anchor>
+node "$FORGE/scripts/design-check.js" contrast <anchor>
+```
+
+> Un écran qui cite un token doit citer une valeur qui **existe** et qui est
+> **lisible**. Le second n'est pas visible en relisant l'écran : il se mesure.
 
 #### 3.5 Validation design
 
@@ -828,6 +857,7 @@ dossier du skill, voir « Comment exécuter les scripts » plus haut.
 | `consistency-check.js all` | Écarts **entre** artefacts : PRD ↔ archi ↔ plans ↔ tests ↔ écrans | **Avant chaque gate** |
 | `forge-exit.js` | Critère de sortie **exécuté** d'une slice | **Phase 7, par slice** |
 | `coverage-check.js` | Couverture d'un plan de slice | Phase 5 |
+| `design-check.js` | **Mesure** contrastes (WCAG 1.4.3 / 1.4.11) et tokens sans valeur | **Phase 3, au gate** |
 | `dependency-check.js` | Cycles, ordre topologique ; `--write` persiste le graphe | Phase 4 |
 | `audit-report.js` | Analyse croisée de plusieurs projets | Après plusieurs projets |
 | `selftest` | Tests du skill lui-même | Avant toute publication |

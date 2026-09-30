@@ -1112,6 +1112,24 @@ test('chaque phase 0-6 déclare ce qu\'elle doit produire', () => {
   }
 });
 
+test('toute clé exigée par un contrat de phase est ENREGISTRABLE', () => {
+  // Le gate de la Phase 3 exigeait `design-system` alors que le livrable
+  // s'enregistre sous `design_system` : une clé qu'aucune commande ne peut
+  // produire. Le gate était infranchissable, et son refus nommant une clé
+  // ressemblante, donc inexplicable.
+  const L = require(path.join(SCRIPTS, 'lib', 'forge-lib.js'));
+  const problems = [];
+  for (const [phaseKey, spec] of Object.entries(L.PHASE_REQUIREMENTS)) {
+    for (const key of spec.required || []) {
+      if (!L.CANONICAL_LAYOUT[key]) {
+        problems.push({ phase: phaseKey, key, why: 'aucun `state.js register … deliverable <clé>` ne peut la produire' });
+      }
+    }
+  }
+  assert(problems.length === 0,
+    `clés de contrat inatteignables : ${JSON.stringify(problems)}`);
+});
+
 test('une phase complète passe le contrat', () => {
   const project = freshProject('contrat-satisfait');
   fs.writeFileSync(path.join(project, '.forge', 'conventions.md'),
@@ -1737,6 +1755,171 @@ test('SKILL.md interdit de renuméroter un ID retiré', () => {
     'la règle de non-réattribution doit être présente');
   assert(/B1xx/.test(sectionText) && /casse la traçabilité|à écarter/i.test(sectionText),
     'le renumérotage en plage à part doit être explicitement écarté, pas seulement évité');
+});
+
+/* ------------------------------------------------------------------ *
+ * Design — le contraste se mesure, il ne s'écrit pas
+ * ------------------------------------------------------------------ */
+
+section('Design — contrastes mesurés');
+
+/** Un design system minimal mais réaliste : fond, surfaces, texte, tokens. */
+function designProject(label, overrides = {}) {
+  const project = freshProject(label);
+  const tokens = {
+    '--color-ink-100': '#E4E8E6',
+    '--color-background': '#F2F4F3',
+    '--color-surface': '#E9EDEB',
+    '--color-surface-raised': '#F7F9F8',
+    '--color-text-primary': ['#2C3633', 'Texte principal'],
+    '--color-text-secondary': ['#4F5C57', 'Labels et dates de calcul'],
+    '--color-accent': ['#0F5C57', 'Action principale | 7,07:1 sur le fond'],
+    '--color-border': '#C9D0CD'
+  };
+  for (const [k, v] of Object.entries(overrides)) tokens[k] = v;
+
+  const rows = Object.entries(tokens).map(([k, v]) => {
+    if (Array.isArray(v)) return `| \`${k}\` | \`${v[0]}\` | ${v[1]} |`;
+    return `| \`${k}\` | \`${v}\` | usage |`;
+  }).join('\n');
+
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design System\n\n## 1.1 Couleurs\n\n| Token | Valeur | Usage |\n|---|---|---|\n' + rows + '\n'
+  });
+  assert(run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']).code === 0,
+    'register design_system');
+  return project;
+}
+
+test('design-check mesure et accepte une palette conforme', () => {
+  const project = designProject('design-ok');
+  const res = run('design-check.js', ['contrast', project]);
+  assert(res.code === 0, `une palette conforme doit passer : ${res.stdout}${res.stderr}`);
+  assert(res.json.pass === true, 'pass attendu');
+  assert(res.json.surfaces.length >= 4, `les surfaces doivent être recensées : ${JSON.stringify(res.json.surfaces)}`);
+  assert(res.json.classified.length > 0, 'la classification doit être visible');
+});
+
+test('design-check échoue sur un texte sous 4,5:1', () => {
+  const project = designProject('design-texte-faible', { '--color-text-primary': '#8FA098' });
+  const res = run('design-check.js', ['contrast', project]);
+  assert(res.code !== 0, 'un texte à 2,09:1 doit échouer');
+  const o = res.json.offenders.find(x => x.token === '--color-text-primary');
+  assert(o, `le token fautif doit être nommé : ${res.stdout.slice(0, 300)}`);
+  assert(o.kind === 'text', `la classe texte doit être déterminée : ${o.kind}`);
+});
+
+test('design-check mesure le texte contre TOUTE surface, pas seulement le fond', () => {
+  // Le défaut que ce contrôle a d'abord eu : une liste en dur de surfaces. Un
+  // texte à 4,5:1 sur le fond passait à 4,44:1 sur la ligne alternée des
+  // tableaux — c'est-à-dire là où on lit le plus.
+  const project = designProject('design-surface', {
+    '--color-text-secondary': '#5F6C67',
+    '--color-ink-100': '#E4E8E6'
+  });
+  const res = run('design-check.js', ['contrast', project]);
+  const o = res.json.offenders.find(x => x.token === '--color-text-secondary');
+  assert(o, 'un texte trop clair sur une surface doit être signalé');
+  assert(o.against !== '--color-background',
+    `l'échec doit être attribué à la surface fautive, pas au fond : ${o.against}`);
+  assert(/ink-100/.test(o.against), `la ligne alternée doit être nommée : ${o.against}`);
+});
+
+test('design-check échoue sur un ratio ANNONCE qui ne correspond pas au mesuré', () => {
+  // Un ratio inventé est pire qu'un ratio absent : il donne une assurance que
+  // rien ne vient soutenir.
+  const project = designProject('design-annonce', {
+    '--color-accent': ['#0F5C57', 'Action principale | 9,9:1 sur le fond']
+  });
+  const res = run('design-check.js', ['contrast', project]);
+  const o = res.json.offenders.find(x => x.token === '--color-accent');
+  assert(o && o.problem === 'claimed_ratio_differs',
+    `un ratio annoncé faux doit être signalé : ${JSON.stringify(o)}`);
+  assert(res.code !== 0, 'un ratio annoncé faux doit faire échouer');
+});
+
+test('l\'anneau de focus n\'est PAS exempté de contraste', () => {
+  // Exempter tout le préfixe `--color-border*` exempterait `--color-border-focus`,
+  // qui est précisément le composant qui DOIT atteindre 3:1 : sans lui, un
+  // utilisateur qui navigue au clavier ne voit pas où il est.
+  const project = designProject('design-focus', { '--color-border-focus': '#DDE3E0' });
+  const res = run('design-check.js', ['contrast', project]);
+  const o = res.json.offenders.find(x => x.token === '--color-border-focus');
+  assert(o, 'un anneau de focus à 1,2:1 doit échouer');
+  assert(o.kind === 'non_text', `classe attendue : non_text, obtenu ${o.kind}`);
+});
+
+test('une exemption est nommée et visible dans la sortie', () => {
+  const project = designProject('design-exempt');
+  const res = run('design-check.js', ['contrast', project]);
+  const cls = res.json.classified.find(c => c.token === '--color-border');
+  assert(cls && cls.kind === 'exempt', `le filet décoratif doit être exempté : ${JSON.stringify(cls)}`);
+  assert(cls.why && cls.why.length > 5, 'une exemption doit porter sa raison');
+  assert(cls.by, 'la classification doit dire sur quoi elle s\'appuie');
+});
+
+test('un arrondi ne doit jamais créer un VERT', () => {
+  // `#7A6A3C` sur `#E9EDEB` vaut 4,4958:1. Arrondi à deux décimales : 4,50 —
+  // donc conforme. Or 4,4958 est SOUS 4,5. Un contrôle qui compare l'arrondi au
+  // seuil est vert sur un échec réel, et il le restera pour toujours, parce
+  // qu'on ne voit pas d'erreur là où il n'y en a pas.
+  const project = designProject('design-arrondi', {
+    '--color-surface': '#E9EDEB',
+    '--color-accent-subtle': '#7A6A3C'
+  });
+  const res = run('design-check.js', ['contrast', project]);
+  assert(res.code !== 0,
+    `4,4958:1 est sous 4,5 et doit échouer, même arrondi à 4,50 : ${res.stdout.slice(0, 400)}`);
+});
+
+test('design-check signale un token sans valeur concrète', () => {
+  const project = designProject('design-vide', { '--color-accent': ['À DÉCIDER', 'Action principale'] });
+  const res = run('design-check.js', ['tokens', project]);
+  assert(res.code !== 0, 'un token sans valeur doit échouer');
+  assert(res.json.offenders.some(o => o.token === '--color-accent'),
+    `le token doit être nommé : ${JSON.stringify(res.json.offenders)}`);
+});
+
+test('design-check échoue proprement sans design system', () => {
+  const project = freshProject('design-absent');
+  const res = run('design-check.js', ['contrast', project]);
+  assert(res.code !== 0, 'sans design system, le contrôle doit le dire');
+  assert(res.json.error === 'design_system_absent', 'le motif doit être nommé');
+});
+
+test('placeholders ignore un placeholder cité entre guillemets', () => {
+  // Le contrôle signalait sa propre checklist de design system (« aucun
+  // `{{PLACEHOLDER}}` résiduel »). Un garde-fou qui hurle quand il n'a rien à
+  // dire est un garde-fou qu'on n'écoute plus.
+  const project = freshProject('placeholders-code');
+  const abs = path.join(project, '.forge', 'design', 'design-system.md');
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  fs.writeFileSync(abs,
+    '---\ntype: design-system\nstatus: draft\n---\n\n# DS\n\n' +
+    '- [ ] Aucun `{{PLACEHOLDER}}` résiduel — cité, donc documenté.\n' +
+    '- [ ] Un vrai {{PLACEHOLDER}} laissé ici.\n');
+  assert(run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']).code === 0, 'register');
+
+  const res = run('forge-guard.js', ['placeholders', project]);
+  assert(res.code !== 0, 'un placeholder hors guillemets doit toujours échouer');
+  const c = res.json.checks.find(x => x.check === 'no_unresolved_placeholders');
+  assert(c.status === 'fail', 'le contrôle doit rester actif');
+  // Le contrôle doit avoir vu exactement le placeholder hors guillemets. Si le
+  // cité est aussi signalé, le contrôle hurle sur sa propre checklist — et il
+  // faut alors le désinstaller : la prochaine erreur qu'il rendra
+  //Channels::false sera ignorée.
+  const reported = (c.offenders || []).flatMap(o => o.placeholders || []);
+  assert(reported.length === 1 && reported[0] === '{{PLACEHOLDER}}',
+    `un seul placeholder doit être signalé, celui hors guillemets : ${JSON.stringify(c.offenders)}`);
+});
+
+test('SKILL.md branche design-check au gate de la Phase 3', () => {
+  const c = fs.readFileSync(path.join(SKILL_DIR, 'SKILL.md'), 'utf-8');
+  assert(c.includes('design-check.js'), 'le script doit être documenté dans SKILL.md');
+  assert(c.includes('Mesure les contrastes'), 'la Phase 3 doit exiger une mesure, pas une rédaction');
+  const list = c.slice(c.indexOf('### Scripts'), c.indexOf('### Documents de référence'));
+  assert(/`design-check\.js`/.test(list), 'le script doit figurer dans le tableau de référence');
 });
 
   console.log(`\x1b[32m✓ ${passed} tests passés\x1b[0m`);
