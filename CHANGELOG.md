@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-30
+
 ### feat(forge) — `ddl-exec` : le DDL s'exécute, ou n'est pas écrit
 
 `node "$FORGE/scripts/ddl-exec.js" all <anchor>` rend l'architecture à
