@@ -233,8 +233,24 @@ function tablesTouched(blocks) {
   ];
 
   for (const b of blocks) {
-    // Les motifs voient le SQL **sans ses commentaires** et sans ses littéraux.
-    // `stripSqlComments` préserve les décalages, donc `where()` reste exact.
+    // **Un bloc qui ecrit des donnees ne declare pas un schema.** Il utilise un
+    // schema, il ne le cree pas. Sans cette exclusion, poser trois lignes de
+    // fixture suffisait a faire dire que `actor` et `indicator` n'etaient pas
+    // creees en SQL -- ce qui est une tautologie, donc un faux positif.
+    //
+    // On regarde la **premiere instruction reelle** du bloc, pas « contient ». Une
+    // premiere version testait `/^\s*(INSERT|SELECT|…)/im` sur tout le bloc : `\s`
+    // mange les retours a la ligne, donc le motif reconnaisait un `SELECT` place
+    // au milieu d'un corps PL/pgSQL et ecartait le bloc **entier** — DDL compris.
+    // Resultat : `tables_touched: 0`, et le controle ne regardait plus rien du tout.
+    const firstStmt = stripSqlComments(b.body)
+      .split('\n')
+      .map(l => l.trim())
+      .find(l => l.length) || '';
+    if (/^(INSERT|SELECT|UPDATE|DELETE|COPY)\b/i.test(firstStmt)) continue;
+
+    // Les motifs voient le SQL **sans ses commentaires** et sans ses litteraux.
+    // `stripSqlComments` preserve les decalages, donc `where()` reste exact.
     const code = stripSqlComments(b.body);
     const at = idx => b.content_line + code.slice(0, idx).split('\n').length - 1;
 
@@ -331,9 +347,23 @@ function declaredTables(md) {
         if (!type) { unresolved.push({ column: name, declared: rawType }); continue; }
         if (isPk) pk.push(name);
 
+        // Un defaut SQL est soit une **fonction** (`now()`,
+        // `gen_random_uuid()`), soit un **litteral** — et un litteral est tres
+        // souvent `'quoted'` : `'draft'`, `'provisional'`, `'below'`. Une version
+        // n'acceptait que les fonctions, donc chaque colonne `NOT NULL` portant un
+        // defaut textuel perdait son defaut, et la pose de donnees echouait sur
+        // `null value in column "officiality" ... violates not-null constraint`.
+        //
+        // C'est le meme defaut que la version qui ne lisait ni `text[]` ni
+        // `**\`computed_at\`** : une restriction du motif plus etroite que ce que
+        // les documents ecrivent reellement. Un motif trop etroit est un motif
+        // faux — il ne rend pas le controle moins bruyant, il le rend incapable.
         let def = cells[3].replace(/[`*]/g, '').trim();
         if (/^(—|-|NULL|n\/a)$/i.test(def)) def = null;
-        else if (!/^[A-Za-z_][A-Za-z0-9_]*(\(\))?$/.test(def)) def = null;
+        else if (/^'[^']*'$/.test(def)) def = def;                       // litteral
+        else if (/^-?\d+(\.\d+)?$/.test(def)) def = def;              // nombre
+        else if (/^[A-Za-z_][A-Za-z0-9_]*(\(\))?$/.test(def)) def = def;  // fonction
+        else def = null;                                                // non SQL → pas de defaut
 
         columns.push({
           name,
@@ -534,6 +564,7 @@ async function checkExecute(root) {
   const prerequisites = [];
   const applied = [];
   let statements = 0;
+  let refused_blocks = 0;
 
   // Un rôle absent n'est pas un DDL cassé : c'est un **prérequis** que le
   // document ne déclare pas. Le dire dans le verdict serait faux — le
@@ -561,6 +592,12 @@ async function checkExecute(root) {
     }
 
     for (const b of blocks) {
+      // **Un bloc `forge:ddl-refuse` doit echouer.** Le compter comme une erreur
+      // d'execution revient a dire qu'une porte qui fonctionne est un DDL casse :
+      // sur le projet de test, les quatre portes tenant etaient rendues comme
+      // quatre erreurs, et `execute` echouait alors que le document etait
+      // correct. Ces blocs appartiennent a `guards`, qui sait ce qu'il cherche.
+      if (/--\s*forge:ddl-refuse\b/.test(b.body)) { refused_blocks++; continue; }
       const code = stripSqlComments(b.body);
       for (const s of splitSqlStatements(code)) {
         const stmt = s.text.trim();
@@ -598,6 +635,7 @@ async function checkExecute(root) {
     engine: 'pglite (PostgreSQL en WebAssembly)',
     sql_blocks: blocks.length,
     statements_run: statements,
+    guard_blocks_left_to_guards: refused_blocks,
     tables_declared: declared.length,
     tables_created: applied.length,
     tables_not_resolvable: incomplete.map(t => ({
@@ -659,6 +697,7 @@ async function checkGuards(root) {
   const db = new eng.PGlite();
   const results = [];
   const errors = [];
+  const prerequisites = [];
   try {
     // L'ordre est celui du document : les tables déclarées en prose d'abord
     // (le DDL les `ALTER`), puis les blocs un par un, les gardes étant
@@ -675,20 +714,49 @@ async function checkGuards(root) {
     // d'essai avant son `CREATE TABLE` n'a pas pour autant une garde
     // inintestable — et un contrôle qui rendrait « inerte » à cause de l'ordre
     // des blocs signalerait le contrôle, pas le document.
+    // **Instruction par instruction, jamais bloc par bloc.** Une version de ce
+    // script faisait `db.exec(b.body)` sur le bloc entier. Or `exec` s'arrete a la
+    // **premiere** instruction en echec : sur le projet de test, un bloc contient
+    // quatre `GRANT` echouant sur un role absent, **suivis** des deux
+    // `CREATE TRIGGER` qui font vivre le cycle de vie. Le bloc s'arretait au
+    // `GRANT`, les deux triggers n'etaient **jamais crees**, et le controle
+    // annoncait quand meme « quatre gardes declarees, toutes inertes ».
+    //
+    // Autrement dit : la faute d'execution masquait les instructions suivantes du
+    // meme bloc, et le verdict « garde inerte » portait sur un schema qui
+    // n'existait pas. Un controle qui n'a pas execute ce qu'il croit avoir execute
+    // ne peut rien conclure — ni « inerte », ni « active ». D'ou le decoupage.
+    const runBlock = async (b, kind) => {
+      const code = stripSqlComments(b.body);
+      for (const st of splitSqlStatements(code)) {
+        const stmt = st.text.trim();
+        if (!stmt || /^(--|\/\*)/.test(stmt)) continue;
+        try {
+          await db.exec(stmt);
+        } catch (e) {
+          const msg = String(e.message).split('\n')[0].slice(0, 200);
+          if (/role "[^"]+" does not exist/.test(msg)) {
+            prerequisites.push({ kind: 'prerequisite_absent', block_line: b.start, error: msg });
+            continue;
+          }
+          errors.push({
+            kind,
+            block_line: b.content_line + code.slice(0, st.index).split('\n').length - 1,
+            statement: (stmt.split('\n').find(l => l.trim()) || stmt).slice(0, 120),
+            error: msg
+          });
+        }
+      }
+    };
+
     for (const b of sqlBlocks(md)) {
       if (!isSchema(b)) continue;
-      try { await db.exec(b.body); } catch (e) {
-        errors.push({ kind: 'postgresql_refuse', block_line: b.start,
-          error: String(e.message).split('\n')[0].slice(0, 200) });
-      }
+      await runBlock(b, 'postgresql_refuse');
     }
     for (const b of sqlBlocks(md)) {
       if (isSchema(b)) continue;
       if (/--\s*forge:ddl-refuse\b/.test(b.body)) { deferred.push(b); continue; }
-      try { await db.exec(b.body); } catch (e) {
-        errors.push({ kind: 'données_de_pose_refusées', block_line: b.start,
-          error: String(e.message).split('\n')[0].slice(0, 200) });
-      }
+      await runBlock(b, 'donnees_de_pose_refusees');
     }
 
     for (const b of deferred) {
@@ -720,6 +788,7 @@ async function checkGuards(root) {
     guards_active: results.filter(r => r.refused).length,
     guards_dead: dead.length,
     ddl_errors: errors,
+    prerequisites,
     guards: results,
     what_this_means: dead.length === 0
       ? `Gardes déclarées : ${results.length}. Toutes refusent l'opération interdite.`
