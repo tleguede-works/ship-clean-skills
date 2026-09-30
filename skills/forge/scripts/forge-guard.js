@@ -39,6 +39,18 @@ function record(name, pass, details) {
   return pass;
 }
 
+/**
+ * Un contrôle volontairement non appliqué.
+ *
+ * Saute ≠ passe. C'est une distinction qui compte : un contrôle vert sur
+ * zéro contrôle exécuté donne l'illusion d'une base vérifiée, alors que rien
+ * n'a été regardé. Un `skip` nomme la raison, pour que la sortie dise ce qu'elle
+ * n'a pas couvert.
+ */
+function skip(name, reason) {
+  results.checks.push({ check: name, status: 'skip', reason });
+}
+
 function loadStateOrFail(root) {
   const state = L.readState(root);
   if (!state) {
@@ -265,10 +277,26 @@ function checkPhaseRequirements(root) {
   }
 
   const current = state.current_phase;
-  // On ne juge que la phase en cours, pas les phases futures : le roadmap n'a
+  // On ne juge que la phase EN COURS, pas les phases futures : le roadmap n'a
   // pas à exister tant qu'on n'y est pas.
   const currentKey = L.PHASE_KEYS[parseInt(current, 10)];
   if (!currentKey) return;
+
+  // `complete-phase` avance `current_phase` à la phase **suivante** dès qu'il
+  // approuve. La phase suivante est donc « courante » alors qu'elle n'a pas
+  // commencé — et ce contrôle échouait systématiquement juste après chaque
+  // transition, en annonçant que le roadmap manquait alors que personne n'avait
+  // encore commencé à l'écrire.
+  //
+  // Un contrôle qui produit ce signal au moment exact où l'on n'a rien à faire
+  // s'apprend à ignorer : c'est la seule façon de « passer ». On ne juge donc
+  // que les phases dont le statut n'est pas `not_started`.
+  const phaseStatus = (state.phases || {})[currentKey] || {};
+  if (phaseStatus.status === 'not_started') {
+    skip('current_phase_has_deliverables',
+      `phase ${currentKey} pas encore commencée — le contrat ne s'applique qu'à une phase commencée`);
+    return;
+  }
 
   const buckets = {
     deliverable: state.deliverables || {},
@@ -277,12 +305,11 @@ function checkPhaseRequirements(root) {
     foundation: state.foundations || {}
   };
   const missing = L.missingPhaseRequirements(state, currentKey);
-  const phaseStatus = (state.phases[currentKey] || {}).status;
 
   record('current_phase_has_deliverables', missing.length === 0, {
     current_phase: current,
     phase: currentKey,
-    phase_status: phaseStatus,
+    phase_status: phaseStatus.status,
     missing,
     declared: Object.fromEntries(
       Object.entries(buckets).map(([k, v]) => [k, Object.keys(v).length])

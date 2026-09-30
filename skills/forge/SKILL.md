@@ -217,7 +217,19 @@ node "$FORGE/scripts/state.js" register <anchor> deliverable conventions .forge/
 
 **Une exigence retirée garde son ID**, en tête de l'entrée `## 9. Hors scope` : `- **C102** — Multi-tenant strict — raison : …`. Retirer une exigence en lui ôtant son identifiant la rend introuvable, et la contradiction redevient indétectable — le contrôle refuse d'ailleurs un retrait sans ID, parce qu'un retrait non traçable est un retrait non déclaré.
 
-**Un ID ne désigne qu'une seule exigence.** Si `C1` est « multi-tenant strict » en hors scope et « un seul serveur » en contraintes, toute référence à `C1` devient ambiguë — y compris celle de ce contrôle, qui accuserait alors le mauvais livrable. Le contrôle refuse la collision ; numérote les exigences retirées dans une plage à part (B1xx, C1xx) pour ne pas emprunter un identifiant vivant.
+**Un ID ne désigne qu'une seule exigence.** Si `C1` est « multi-tenant strict » en hors scope et « un seul serveur » en contraintes, toute référence à `C1` devient ambiguë — y compris celle de ce contrôle, qui accuserait alors le mauvais livrable. Le contrôle refuse la collision.
+
+**Comment on évite la collision — et ce qu'il ne faut surtout pas faire.**
+
+Le réflexe « je renumérote les exigences retirées dans une plage à part (B1xx, C1xx) » **casse la traçabilité** et doit être écarté : la règle qui précède dit qu'une exigence retirée *garde son ID*, précisément pour qu'un livrable approuvé puisse être relié à elle. Renommer `B18` en `B118` fait disparaître le lien — et le contrôle n'accusera plus le bon livrable, il accusera un ID que personne n'a jamais écrit.
+
+La bonne pratique est en amont, et tient en une règle :
+
+> **Numérote les exigences retirées en fin de plage, à partir du plus haut numéro déjà utilisé, et ne réattribue jamais un numéro libéré.**
+
+Autrement dit, quand tu retires `B18`, `B19`, `B20`, `B21`, la prochaine exigence vivante est `B22`. Les numéros retirés restent au § 9 avec leur ID d'origine, et la plage 18–21 est déclarée brûlée. C'est exactement ce que le contrôle de collision vérifie, et il n'y a donc rien à négocier.
+
+Cette discipline a un coût — les numéros montent plus vite — et c'est le bon échange : un trou dans la numérotation se voit, une collision d'ID ne se voit pas avant d'avoir produit un diagnostic faux.
 
 `conventions.md` est le cas le plus fréquent : c'est un document vivant, et un amendement du PRD l'oblige. Réamende-le, repasse-le `stale` puis `approved`, et relance `consistency-check premises`.
 

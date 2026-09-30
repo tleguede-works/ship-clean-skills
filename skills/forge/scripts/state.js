@@ -1069,6 +1069,25 @@ function cmdStart(rootArg) {
 
   const unpromoted = (state.findings || []).filter(f => !f.promoted_to && f.status !== 'resolved');
 
+  /**
+   * Livrables approuvés qui n'ont pas déclaré leurs prémisses.
+   *
+   * `consistency-check premises` signale déjà l'omission — mais seulement si
+   * on pense à le lancer. L'Étape 0 est la seule commande que tout le monde
+   * lance, donc c'est le seul endroit où l'information est rendue impossible à
+   * manquer.
+   *
+   * La conséquence n'est pas cosmétique : une prémisse non déclarée est une
+   * prémisse **non vérifiable**. Un livrable peut rester approuvé sur une
+   * exigence que le PRD a retirée, sans que personne ne le sache. Constaté sur
+   * un test grandeur nature : `conventions.md` justifiait cinq décisions par une
+   * exigence retirée en Phase 1, et `--requires` ne mentionnait pas l'ID.
+   */
+  const undeclaredPremises = Object.entries(state.deliverables || {})
+    .filter(([k, d]) => k !== 'prd' && (d.status === 'approved' || d.status === 'in_review'))
+    .filter(([, d]) => !Array.isArray(d.requires) || !d.requires.length)
+    .map(([k, d]) => ({ deliverable: k, path: d.path, status: d.status }));
+
   const phases = state.phases || {};
   const currentIdx = parseInt(String(state.current_phase ?? '0').split('_')[0], 10) || 0;
   const pendingPhase = PHASE_KEYS.find(k => (phases[k] || {}).status !== 'approved');
@@ -1108,6 +1127,16 @@ function cmdStart(rootArg) {
       missing_domain: unpromoted.filter(f => !f.domain).length
     },
 
+    // Une prémisse non déclarée est une prémisse non vérifiable : ce livrable
+    // peut reposer sur une exigence que le PRD a retirée sans que rien ne le voie.
+    undeclared_premises: {
+      count: undeclaredPremises.length,
+      items: undeclaredPremises,
+      hint: undeclaredPremises.length
+        ? 'node "$FORGE/scripts/state.js" register <anchor> deliverable <clé> <chemin> --requires=B1,C1'
+        : null
+    },
+
     project_memory: readSiblingMemory(root),
 
     last_events: L.readLog(root).slice(-5).map(e => ({ ts: e.ts, type: e.type, message: e.message })),
@@ -1115,6 +1144,7 @@ function cmdStart(rootArg) {
     next_actions: [
       suspects.length ? `REVOIR ${suspects.length} slice(s) marquée(s) terminée(s) sans test — ne pas les compter comme faites.` : null,
       stale.length ? `Documents ${stale.length} en dérive de hash : node "$FORGE/scripts/forge-guard.js" hash-check ${root}` : null,
+      undeclaredPremises.length ? `${undeclaredPremises.length} livrable(s) approuvé(s) sans prémisse déclarée — leur justification n'est pas vérifiable : node "$FORGE/scripts/consistency-check.js" premises ${root}` : null,
       unpromoted.length ? `${unpromoted.length} constat(s) non promu(s) — cf. references/skill-boundaries.md` : null,
       (state.divergences || []).some(d => !d.resolved) ? 'Divergences état/front-matter ouvertes : node "$FORGE/scripts/forge-guard.js" sync ' + root + ' --fix' : null
     ].filter(Boolean)

@@ -1537,6 +1537,157 @@ test("aucune commande livrée ne suppose scripts/ à la racine du projet", () =>
     `commandes encore écrites sans $FORGE : ${offenders.join(', ')}`);
 });
 
+
+/* ------------------------------------------------------------------ *
+ * Prémisses : ce que la déclaration saisie à la main ne voit pas
+ * ------------------------------------------------------------------ */
+
+section('Prémisses — déclaration et citations');
+
+/** Un PRD minimal avec une exigence retirée, et un livrable qui la cite. */
+function retiredPremiseProject(label, { citeId = false, declares = null } = {}) {
+  const project = freshProject(label);
+  writeDeliverable(project, '.forge/prd.md', {
+    body: [
+      '## 4. Règles métier',
+      '| ID | Règle |',
+      '|---|---|',
+      '| B1 | Une règle vivante |',
+      '| B2 | Partage par lien public, sans liste nominative |',
+      '',
+      '## 9. Hors scope (explicitement)',
+      '',
+      '- **B2** — Partage par lien public — raison : incompatible avec le journal des accès',
+      ''
+    ].join('\n')
+  });
+  assert(run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']).code === 0, 'register prd');
+  assert(run('state.js', ['set-status', project, 'deliverable', 'prd', 'approved']).code === 0, 'approve prd');
+
+  const body = citeId
+    ? "Un dashboard partagé.\n\nLa session ne passe jamais par un jeton dans l'URL (B2).\n"
+    : "Un dashboard partagé.\n\nLa session ne passe jamais par un jeton dans l'URL.\n";
+  writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body });
+  assert(run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']).code === 0, 'register conv');
+  const args = ['register', project, 'deliverable', 'conventions', '.forge/conventions.md'];
+  if (declares) args.push(`--requires=${declares}`);
+  assert(run('state.js', args).code === 0, 're-register conv');
+  assert(run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']).code === 0, 'approve conv');
+  return project;
+}
+
+test('une exigence retirée citée dans un livrable approuvé est signalée', () => {
+  // Ce que `--requires` ne voit pas : la déclaration est manquée, donc vraie
+  // par omission — et le contrôle sortait `retired: []` avec `pass: true`,
+  // alors que la justification du livrable portait sur une exigence retirée.
+  const project = retiredPremiseProject('premises-citee', { citeId: true, declares: 'B1' });
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks.find(x => x.check === 'premises');
+  assert(Array.isArray(c.retired_cited_in_body) && c.retired_cited_in_body.length === 1,
+    `la citation d'un ID retiré doit être remontée : ${res.stdout.slice(0, 300)}`);
+  const hit = c.retired_cited_in_body[0];
+  assert(hit.deliverable === 'conventions' && hit.premise === 'B2',
+    `mauvaise cible : ${JSON.stringify(hit)}`);
+  assert(hit.acknowledged_only === false,
+    'une citation qui n\'annonce pas le retrait ne doit pas compter comme acquittée');
+});
+
+test('une citation qui annonce explicitement le retrait est acquittée', () => {
+  const project = freshProject('premises-acquittee');
+  writeDeliverable(project, '.forge/prd.md', {
+    body: [
+      '## 4. Règles métier', '| ID | Règle |', '|---|---|', '| B1 | Une règle vivante |',
+      '| B2 | Partage par lien public |', '',
+      '## 9. Hors scope (explicitement)', '',
+      '- **B2** — Partage par lien public — raison : incompatible avec le journal des accès', ''
+    ].join('\n')
+  });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'prd', 'approved']);
+  writeDeliverable(project, '.forge/conventions.md', {
+    type: 'conventions',
+    body: "Session serveur. Le partage par lien est retiré (B2) : l'accès est une liste nominative (B9).\n"
+  });
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=B1,B9']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks.find(x => x.check === 'premises');
+  const hit = (c.retired_cited_in_body || [])[0];
+  assert(hit, 'la citation doit toujours être remontée, même acquittée');
+  assert(hit.acknowledged_only === true,
+    `une mention explicite du retrait doit acquitter la citation : ${JSON.stringify(hit)}`);
+});
+
+test('state.js start liste les livrables approuvés sans prémisse déclarée', () => {
+  const project = retiredPremiseProject('premises-start', { declares: 'B1' });
+  // On retire la déclaration pour reproduire l'omission.
+  const state = readState(project);
+  delete state.deliverables.conventions.requires;
+  writeState(project, state);
+
+  const res = run('state.js', ['start', project]);
+  assert(res.json.undeclared_premises && res.json.undeclared_premises.count === 1,
+    `l'Étape 0 doit remonter l'omission : ${res.stdout.slice(0, 300)}`);
+  assert(res.json.next_actions.some(a => /prémisse/i.test(a)),
+    `l'Étape 0 doit proposer une action : ${JSON.stringify(res.json.next_actions)}`);
+});
+
+/* ------------------------------------------------------------------ *
+ * Transition de phase — le contrôle ne doit pas crier sur une phase jamais commencée
+ * ------------------------------------------------------------------ */
+
+section('Transition de phase');
+
+test('après complete-phase, le contrat ne juge pas la phase qui n\'a pas commencé', () => {
+  // `complete-phase` avance `current_phase` à la phase suivante. Cette phase
+  // est alors « courante » mais pas commencée — et le contrôle annonçait que
+  // le roadmap manquait, à l'instant exact où personne n'avait commencé à
+  // l'écrire. Un contrôle qui hurle quand on n'a rien à faire s'apprend à ignorer.
+  const project = freshProject('phase-transition');
+  writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body: '## Stack\n\nRien.\n' });
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+  assert(run('state.js', ['complete-phase', project, '0_bootstrap']).code === 0, 'complete-phase');
+
+  const res = run('forge-guard.js', ['state', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'current_phase_has_deliverables');
+  assert(c, 'le contrôle doit rester présent dans la sortie');
+  assert(c.status === 'skip',
+    `une phase non commencée doit être sautée, pas refusée : ${JSON.stringify(c)}`);
+  assert(/pas encore commencée/.test(c.reason || ''), `la raison doit être explicite : ${c.reason}`);
+  assert(res.json.pass === true, 'la transition ne doit pas rendre le garde-fou rouge');
+});
+
+test('une phase commencée sans livrable reste un échec', () => {
+  const project = freshProject('phase-commencee');
+  const state = readState(project);
+  state.phases['0_bootstrap'].status = 'in_progress';
+  writeState(project, state);
+
+  const res = run('forge-guard.js', ['state', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'current_phase_has_deliverables');
+  assert(c && c.status === 'fail',
+    `une phase commencée et vide doit échouer : ${JSON.stringify(c)}`);
+});
+
+/* ------------------------------------------------------------------ *
+ * IDs retirés : la règle d'attribution
+ * ------------------------------------------------------------------ */
+
+section('Attribution des IDs');
+
+test('SKILL.md interdit de renuméroter un ID retiré', () => {
+  const c = fs.readFileSync(path.join(SKILL_DIR, 'SKILL.md'), 'utf-8');
+  const sectionText = c.slice(c.indexOf('Un ID ne désigne qu'), c.indexOf('## Gestion des changements'));
+  assert(/garde son ID/.test(sectionText), 'la règle de conservation doit être présente');
+  assert(/ne réattribue jamais un numéro libéré|jamais réattribu/i.test(sectionText),
+    'la règle de non-réattribution doit être présente');
+  assert(/B1xx/.test(sectionText) && /casse la traçabilité|à écarter/i.test(sectionText),
+    'le renumérotage en plage à part doit être explicitement écarté, pas seulement évité');
+});
+
   console.log(`\x1b[32m✓ ${passed} tests passés\x1b[0m`);
 } else {
   console.log(`\x1b[31m✗ ${failed} échec(s)\x1b[0m, ${passed} passés`);

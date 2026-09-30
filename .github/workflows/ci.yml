@@ -39,8 +39,14 @@ jobs:
       # cette règle, la prochaine pull request qui touche ces deux fichiers
       # entre en conflit — et le conflit s'installe au pire moment, entre deux
       # versions publiées.
+      #
+      # `--base main` n'est pas facultatif. Sans lui, le script ne vérifie que
+      # la FORME du fichier ; les deux contrôles qui portent le sens — la partie
+      # publiée n'a pas été réécrite, et `[Unreleased]` a vraiment été modifié —
+      # n'existent pas. La forme seule laisse passer une pull request qui
+      # n'ajoute aucune trace, ce qui est précisément ce que la règle interdit.
       - name: Politique CHANGELOG
-        run: node scripts/changelog-policy.js
+        run: node scripts/changelog-policy.js --base main
 
   workflows:
     name: Syntaxe des workflows
