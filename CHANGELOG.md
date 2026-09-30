@@ -27,6 +27,76 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — Le graphe de dépendances n'était déclarable par aucune commande
+
+La Phase 4 est la phase qui **produit** le découpage en slices. Son étape 3
+consiste à « vérifier le graphe et persister `depends_on` ». Il n'y avait aucun
+moyen de le faire : `state-schema.md` affirme que `dependency-check --write`
+écrit ce champ, mais cette commande ne fait que le **calculer**. Le champ était
+donc censé apparaître tout seul.
+
+Un graphe vide est un graphe valide : `dependency-check` rapportait donc
+`pass: true`, et `dependency-check --write` calculait huit vagues à partir de
+rien. La seule voie restante — éditer `state.json` à la main — contredit la règle
+du skill qui fait de l'état une autorité machine.
+
+`state.js dep <anchor> <slice|fondation> <a,b,c>` déclare le graphe. Il refuse
+une dépendance vers une slice inexistante (un graphe faux, pas incomplet : elle
+ne sera jamais satisfaite et rien ne le signalera), l'auto-dépendance, et tout
+ce qui fermerait un cycle.
+
+### fix(forge) — Un plan de vagues était écrasé en silence
+
+`writeBack` réécrit `impl_wave` par le calcul topologique. Si l'architecture
+annonce un plan différent, l'écart disparaît sans bruit : l'outil rapporte
+`pass: true`, et deux documents de la Phase 4 se contredisent avec la CI verte.
+
+Constaté sur le projet de test : l'architecture annonçait **13 vagues** (V0 à
+V12), le graphe se réduit à **8**. Les deux sont vrais et ne mesurent pas la même
+chose — 8 est ce que la contrainte permet, 13 est ce que l'équipe de quatre
+permet, parce que F4 (politique RLS) et F9 (formule d'écart) ne doivent pas être
+portées par la même personne.
+
+`dependency-check` lit désormais la déclaration du front matter de
+l'architecture et signale l'écart :
+
+- **non déclaré** → échec. Deux documents se contredisent et rien ne le dit.
+- **déclaré sans raison** → échec. Un plan non justifié ne se distingue pas d'une
+  erreur de comptage.
+- **déclaré et justifié** (`impl_waves` + `impl_waves_rationale`) →
+  avertissement visible, l'écart reste dans la sortie.
+
+Un écart assumé ne doit pas être confondu avec une erreur : sinon la seule façon
+de faire disparaître l'avertissement est de corriger le document, donc de
+mentir sur le plan réel.
+
+### fix(forge) — Une justification pliée n'était pas lue
+
+La raison d'un écart est longue, donc écrite en bloc plié YAML. Le lecteur
+renvoyait l'indicateur `>-` au lieu du texte — donc une justification présente
+passait pour absente. C'est le défaut qu'un contrôle ne doit pas commettre :
+confondre « il n'a pas expliqué » avec « il a expliqué, mal lu ».
+
+### fix(forge) — Un contrôle de design échouait pour une information de Phase 4
+
+`consistency-check screens_have_slices` exigeait que chaque écran soit lié à
+une slice, **au gate de la Phase 3** — où aucune slice n'est encore déclarée.
+Constaté sur le projet de test : 9 écrans parfaitement conformes, le contrôle
+échouait sur les 9. La seule façon de « passer » était de ne plus lire la
+sortie.
+
+Le contrôle saute désormais tant qu'aucune slice n'existe, et s'applique dès
+qu'il y en a une — donc au bon moment, qui est la Phase 4. La navigation, elle,
+se vérifie immédiatement : elle est déclarée dans le même document que les
+écrans. Et elle a détecté un vrai trou : l'entrée `Vues` de la navigation ne
+renvoyait à aucun écran, parce que l'analyste pouvait éditer une vue sans
+jamais pouvoir la retrouver — son cas dominant étant la republication.
+
+### fix(forge) — 7 tests ajoutés (87 → 94)
+
+`state.js dep` : déclaration, dépendance inconnue, auto-dépendance, cycle. Plan
+de vagues : non déclaré, déclaré sans raison, déclaré et justifié, raison pliée.
+
 ## [1.1.5] - 2026-09-29
 
 ### fix(forge) — Un livrable approuvé pouvait reposer sur une exigence retirée

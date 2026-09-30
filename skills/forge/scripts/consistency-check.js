@@ -245,10 +245,7 @@ function checkScreenCoverage(root, state) {
 
   const allPlans = planPaths(state).map(p => read(root, p.rel) || '').join('\n');
   const allSlices = JSON.stringify(state.slices || {});
-
-  const noSlice = screens.filter(s =>
-    !allPlans.includes(s) && !allSlices.includes(s)
-  );
+  const slicesDeclared = Object.keys(state.slices || {}).length > 0 || allPlans.length > 0;
 
   const nav = (state.index || {}).nav;
   let navWithoutScreen = [];
@@ -259,10 +256,27 @@ function checkScreenCoverage(root, state) {
       .map(it => it.key);
   }
 
-  record('screens_have_slices', noSlice.length === 0, {
-    screens_without_slice: noSlice,
-    rule: "Un écran de design sans slice ne sera jamais implémenté — c'est le « trou de la décomposition »."
-  });
+  // Le lien écran ↔ slice n'existe qu'à partir du moment où il existe des
+  // slices. Sans slice déclarée, exiger ce lien au gate du design, c'est
+  // demander une information que la phase courante ne peut pas produire : le
+  // gate échoue alors pour une raison étrangère à l'artefact présenté, et la
+  // seule façon de « passer » est d'ignorer l'échec.
+  //
+  // Constaté sur un test grandeur nature : au gate de la Phase 3, avec 9
+  // écrans parfaitement conformes, `screens_have_slices` échouait sur les 9 —
+  // la réponse étant de ne plus lire la sortie.
+  //
+  // La navigation, en revanche, se vérifie dès maintenant : elle est
+  // déclarée dans le même document que les écrans.
+  if (slicesDeclared) {
+    const noSlice = screens.filter(s => !allPlans.includes(s) && !allSlices.includes(s));
+    record('screens_have_slices', noSlice.length === 0, {
+      screens_without_slice: noSlice,
+      rule: "Un écran de design sans slice ne sera jamais implémenté — c'est le « trou de la décomposition »."
+    });
+  } else {
+    skip('screens_have_slices', 'aucune slice déclarée — le lien écran ↔ slice se vérifie à partir de la Phase 4');
+  }
 
   if (nav) {
     record('nav_items_have_screens', navWithoutScreen.length === 0, {

@@ -1265,6 +1265,111 @@ test('un succès n\'écrit rien sur stderr', () => {
   assert((res.stderr || '').trim() === '', `une commande réussie écrit sur stderr : ${res.stderr}`);
 });
 
+/* ------------------------------------------------------------------ *
+ * Graphe de dépendances — déclarable, et l'écart de vagues est visible
+ * ------------------------------------------------------------------ */
+
+section('Graphe de dépendances');
+
+test('state.js dep déclare une dépendance', () => {
+  const project = freshProject('dep-declare');
+  run('state.js', ['register', project, 'slice', 'A', '.forge/plans/A.md']);
+  run('state.js', ['register', project, 'slice', 'B', '.forge/plans/B.md']);
+  const res = run('state.js', ['dep', project, 'B', 'A']);
+  assert(res.code === 0, `dep a échoué : ${res.stdout}${res.stderr}`);
+  assert(/A/.test(res.stdout), 'la dépendance déclarée ne figure pas dans la sortie');
+});
+
+test('state.js dep refuse une dépendance vers une slice inexistante', () => {
+  // Un graphe faux, pas un graphe incomplet : elle ne sera jamais satisfaite et
+  // rien ne le signalerait ensuite.
+  const project = freshProject('dep-inconnue');
+  run('state.js', ['register', project, 'slice', 'A', '.forge/plans/A.md']);
+  const res = run('state.js', ['dep', project, 'A', 'fantome']);
+  assert(res.code !== 0, 'une dépendance vers du vide a été acceptée');
+  assert(res.json.error === 'unknown_dependency', `erreur inattendue : ${res.stdout}`);
+});
+
+test('state.js dep refuse l\'auto-dépendance', () => {
+  const project = freshProject('dep-soi');
+  run('state.js', ['register', project, 'slice', 'A', '.forge/plans/A.md']);
+  const res = run('state.js', ['dep', project, 'A', 'A']);
+  assert(res.code !== 0, 'l\'auto-dépendance a été acceptée');
+  assert(res.json.error === 'self_dependency', `erreur inattendue : ${res.stdout}`);
+});
+
+test('state.js dep refuse de fermer un cycle', () => {
+  const project = freshProject('dep-cycle');
+  run('state.js', ['register', project, 'slice', 'A', '.forge/plans/A.md']);
+  run('state.js', ['register', project, 'slice', 'B', '.forge/plans/B.md']);
+  run('state.js', ['dep', project, 'A', 'B']);
+  const res = run('state.js', ['dep', project, 'B', 'A']);
+  assert(res.code !== 0, 'un cycle a été persisté');
+  assert(res.json.error === 'circular_dependency', `erreur inattendue : ${res.stdout}`);
+});
+
+/** Un graphe A→B, B isolé : le minimum topologique est 2. */
+function waveProject(label, frontMatterExtra) {
+  const project = freshProject(label);
+  run('state.js', ['register', project, 'slice', 'A', '.forge/plans/A.md']);
+  run('state.js', ['register', project, 'slice', 'B', '.forge/plans/B.md']);
+  run('state.js', ['dep', project, 'B', 'A']);
+  fs.writeFileSync(path.join(project, '.forge', 'architecture.md'), [
+    '---', 'type: architecture', 'status: draft', ...frontMatterExtra, '---', '',
+    '# Architecture', ''
+  ].join('\n'));
+  run('state.js', ['register', project, 'deliverable', 'architecture', '.forge/architecture.md']);
+  return project;
+}
+
+test('un plan de vagues plus fin que le minimum est signalé s\'il n\'est pas déclaré', () => {
+  // Constaté sur le projet de test : l'architecture annonçait 13 vagues,
+  // le graphe se réduit à 8. `writeBack` écrasait impl_wave sans rien dire, et
+  // l'outil rapportait pass. Deux documents de la Phase 4 se contredisaient.
+  const project = waveProject('vagues-non-declarees', []);
+  fs.writeFileSync(path.join(project, '.forge', 'architecture.md'), [
+    '---', 'type: architecture', 'status: draft', '---', '',
+    '# Architecture', '', '**5 vagues**, de V0 à V4.', ''
+  ].join('\n'));
+  const res = run('dependency-check.js', ['check', project]);
+  assert(res.json.waves_count === 2, `le minimum calculé devrait être 2, obtenu ${res.json.waves_count}`);
+  assert(res.json.divergence.length === 1, `l\'écart n\'est pas signalé : ${res.stdout}`);
+  assert(res.json.pass === false,
+    'un plan d\'ordonnancement non justifié doit laisser le contrôle en échec');
+});
+
+test('un plan déclaré ET justifié reste visible sans faire échouer', () => {
+  const project = waveProject('vagues-justifiees', [
+    'impl_waves: 5',
+    'impl_waves_rationale: >-',
+    '  On retient 5 vagues parce que A et B ne doivent pas être portées par la',
+    '  même personne.'
+  ]);
+  const res = run('dependency-check.js', ['check', project]);
+  const d = res.json.divergence[0];
+  assert(d, `l\'écart doit rester visible : ${res.stdout}`);
+  assert(d.status === 'warn', `un plan justifié doit être un avertissement, il est : ${d.status}`);
+  assert(res.json.pass === true, 'un plan justifié ne doit pas faire échouer');
+  assert(/même personne/.test(d.rationale || ''),
+    `la raison n\'a pas été lue : ${JSON.stringify(d.rationale)}`);
+});
+
+test('la raison d\'un écart plié est lue, pas son indicateur YAML', () => {
+  // Un lecteur naïf remonte `>-` : une justification présente serait alors
+  // lue comme absente, et le contrôle confondrait « il n'a pas expliqué »
+  // avec « il a expliqué, mal lu ».
+  const project = waveProject('vagues-pliees', [
+    'impl_waves: 5',
+    'impl_waves_rationale: >-',
+    '  Raison sur plusieurs lignes,'
+  ]);
+  const res = run('dependency-check.js', ['check', project]);
+  const d = res.json.divergence[0];
+  assert(d.rationale && d.rationale !== '>-',
+    `la valeur pliée n\'a pas été dépliée : ${JSON.stringify(d.rationale)}`);
+  assert(/plusieurs lignes/.test(d.rationale), `texte inattendu : ${d.rationale}`);
+});
+
   console.log(`\x1b[32m✓ ${passed} tests passés\x1b[0m`);
 } else {
   console.log(`\x1b[31m✗ ${failed} échec(s)\x1b[0m, ${passed} passés`);
