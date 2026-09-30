@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-09-30
+
 ### fix(forge) — `state-parity` : une union documentée doit rester lisible
 
 La lecture d'une union était bornée à **600 caractères**. Cette borne était une
