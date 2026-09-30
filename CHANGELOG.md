@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-09-30
+
 ### fix(forge) — `ddl-exec` : quatre bugs trouvés en corrigeant un vrai document
 
 `ddl-exec` a été construit sur des cas d'école. Corriger les trois décisions
