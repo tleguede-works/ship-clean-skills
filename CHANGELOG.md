@@ -27,6 +27,95 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — `ddl-exec` : quatre bugs trouvés en corrigeant un vrai document
+
+`ddl-exec` a été construit sur des cas d'école. Corriger les trois décisions
+arbitrées de l'architecture du projet de test a suffi à en trouver **quatre**, dont
+un qui rendait le contrôle incapable de conclure.
+
+## 1. `guards` exécutait un bloc entier, et s'arrêtait à la première faute
+
+Le plus grave. `db.exec(b.body)` exécute le bloc d'un trait et **s'arrête à la
+première instruction en échec** ; tout ce qui suit dans le même bloc n'est pas
+exécuté.
+
+Sur le projet de test, un bloc contient quatre `GRANT` échouant sur un rôle
+absent, **suivis des deux `CREATE TRIGGER` qui font vivre le cycle de vie**. Le
+bloc s'arrêtait au `GRANT`, les deux triggers n'étaient **jamais créés** — et le
+contrôle annonçait quand même « quatre gardes déclarées, **toutes inertes** ».
+
+Le verdict portait donc sur un schéma qui n'existait pas. Pire : une porte
+déclarée « inerte » parce qu'aucun trigger n'a été créé, c'est le faux verdict le
+plus coûteux du lot — il accuse le document d'un défaut qu'il n'a pas.
+
+`guards` exécute désormais **instruction par instruction**, comme `execute` le
+faisait déjà. Et il rend `prerequisites` pour les rôles absents, au lieu de les
+compter comme des erreurs de DDL.
+
+## 2. `execute` comptait une porte qui fonctionne comme une erreur
+
+Un bloc `forge:ddl-refuse` **doit** échouer. `execute` le comptait comme une
+erreur : les quatre portes du projet de test étaient correctes, et il les
+rapportait comme quatre erreurs — `execute` échouait alors que le document était
+correct.
+
+Ces blocs sont maintenant comptés (`guard_blocks_left_to_guards`) et laissés à
+`guards`, qui sait ce qu'il cherche.
+
+## 3. `declaredTables` perdait les défauts SQL entre apostrophes
+
+Un défaut est une **fonction** (`now()`, `gen_random_uuid()`) **ou un littéral** —
+et un littéral est très souvent `'quoted'` : `'draft'`, `'provisional'`, `'below'`.
+Seules les fonctions étaient acceptées, donc chaque colonne `NOT NULL` portant un
+défaut textuel perdait son défaut, et la pose échouait sur
+`null value in column "officiality" … violates not-null constraint`.
+
+Même famille que le motif qui ne lisait ni `text[]` ni `**\`computed_at\`**` : une
+restriction plus étroite que ce que les documents écrivent. **Un motif trop étroit
+ne rend pas un contrôle moins bruyant, il le rend incapable.**
+
+## 4. « Ce bloc contient un `INSERT` » n'est pas « ce bloc déclare des données »
+
+`completeness` doit ignorer les blocs de pose : poser trois lignes de fixture ne
+peut pas faire dire que `widget` n'est pas créée en SQL — c'est une tautologie.
+
+La première correction a produit le **faux négatif** inverse. Tester
+`/^\s*(INSERT|SELECT|…)/im` sur tout le bloc : `\s` mange les retours à la ligne,
+donc le motif reconnaissait un `SELECT` au milieu d'un corps PL/pgSQL et écartait
+le bloc **entier** — DDL compris. Résultat : `tables_touched: 0`, et le contrôle ne
+regardait plus rien du tout.
+
+On regarde désormais la **première instruction réelle** du bloc.
+
+## Le contrôle a trouvé un cinquième défaut, dans le document
+
+En corrigeant le projet de test, la déclaration des quatre portes (§ 4.21) a
+révélé que `revoke_target_is_legal` était déclaré `AFTER INSERT ON signature_event`
+**sans clause `WHEN`**, alors que sa fonction exige que `revokes_event_id` pointe
+un acte `sign` ou `submit`. Or cette colonne est `NULL` pour tout acte qui n'est
+pas un `revoke`.
+
+Le trigger s'exécutait donc sur les **cinq** actes et rejetait les quatre autres :
+`submit`, `sign`, `refuse` et `publish` étaient **impossibles à écrire**. Donc
+`in_review` n'avait pas de producteur, la signature ne pouvait pas exister,
+`published_at` ne pouvait pas être posé — tout le cycle de vie était inatteignable.
+
+Le commentaire juste au-dessus annonçait la règle (*« la cible est `sign` ou
+`submit`, jamais `refuse`, jamais `publish` »*) : l'intention était écrite, juste
+pas appliquée au bon ensemble. Trouvé en **déclarant les gardes**, pas en
+relisant.
+
+## Tests
+
++4 (169 → 173), chacun avec le défaut qu'il attrape et son témoin propre. Le
+quatrième est le test le plus important du lot : il pose un `GRANT` cassé **avant**
+le `CREATE TRIGGER`, et exige que la garde soit constatée **active** — donc que le
+trigger ait été créé malgré l'échec qui le précédait.
+
+Deux des quatre tests ont d'abord échoué pour une raison qui n'était pas la leur :
+j'avais écrit `CREATE TRIGGER` **avant** `CREATE FUNCTION`, que PostgreSQL refuse à
+juste titre. Le contrôle disait vrai ; c'est la fixture qui était fausse.
+
 ## [1.6.0] - 2026-09-30
 
 ### feat(forge) — Le contrat d'amendement : étendre, jamais renuméroter

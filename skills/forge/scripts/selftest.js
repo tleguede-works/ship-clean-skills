@@ -3144,3 +3144,127 @@ test('amend : la carte des titres est la référence, capturée à l\'approbatio
     `la carte doit contenir les quatre sections : ${JSON.stringify(h)}`);
   assert(h['5.10'] === 'Publier', `la carte doit porter le titre, pas seulement le numero : ${JSON.stringify(h)}`);
 });
+
+/* ------------------------------------------------------------------ *
+ * ddl-exec — quatre bugs trouvés en corrigeant le projet de test
+ * ------------------------------------------------------------------ */
+
+section('Exécution du DDL — bugs trouvés sur un vrai document');
+
+/** Une entité dont une colonne NOT NULL porte un défaut textuel. */
+function entityProject(label, extra = '') {
+  const project = freshProject(label);
+  writeDeliverable(project, '.forge/architecture.md', {
+    type: 'architecture',
+    body: '## 4.1 `widget`\n\n' +
+      '| Champ | Type | Nullable | Défaut | Contraintes | Description | Exemple |\n' +
+      '|---|---|---|---|---|---|---|\n' +
+      '| `widget_id` | `uuid` (PK) | non | `gen_random_uuid()` | — | id | `a1…` |\n' +
+      "| `status` | `text` | non | `'draft'` | — | statut | `draft` |\n" +
+      '| `position` | `smallint` | non | `0` | — | rang | `0` |\n' +
+      '| `label` | `text` | non | — | 1..80 car. | libellé | `x` |\n' + extra
+  });
+  return project;
+}
+
+testSkippable('ddl : un défaut SQL entre apostrophes est un défaut, pas une absence', () => {
+  // `'draft'`, `'provisional'`, `'below'` : des littéraux. Une version de
+  // `declaredTables` n'acceptait que les **fonctions** (`now()`), donc chaque
+  // colonne `NOT NULL` portant un défaut textuel perdait son défaut — et la pose
+  // échouait sur `null value in column "status" … violates not-null constraint`.
+  //
+  // Même famille que le motif qui ne lisait pas `text[]` ou `**\`computed_at\`**` :
+  // une restriction plus étroite que ce que les documents écrivent. Un motif trop
+  // étroit ne rend pas un contrôle moins bruyant, il le rend **incapable**.
+  const project = entityProject('ddl-defaut-litteral');
+  writeDeliverable(project, '.forge/pose.sql.md', { type: 'plan', body: '' });
+  const abs = path.join(project, '.forge', 'architecture.md');
+  fs.appendFileSync(abs, '\n```sql\nINSERT INTO widget (label) VALUES (\'x\');\n```\n');
+
+  const res = run('ddl-exec.js', ['execute', project]);
+  const c = executed(res, 'execute');
+  assert(!c.errors.some(e => /violates not-null/.test(e.error)),
+    `le defaut textuel doit etre conserve : ${JSON.stringify(c.errors)}`);
+});
+
+testSkippable('ddl : une garde qui tient n\'est PAS une erreur d\'exécution', () => {
+  // Un bloc `forge:ddl-refuse` **doit** échouer. Le compter comme une erreur
+  // d'exécution revient à dire qu'une porte qui fonctionne est un DDL cassé.
+  // C'est exactement ce que rendait `execute` : les quatre portes du projet de
+  // test étaient correctes, et il les rapportait comme quatre erreurs.
+  const project = entityProject('ddl-garde-pas-erreur');
+  const abs = path.join(project, '.forge', 'architecture.md');
+  // La fonction **avant** le trigger : PostgreSQL refuse un `CREATE TRIGGER` dont
+  // la fonction n'existe pas. Ce refus est exact, et `execute` le rapporte — donc
+  // l'ordre du test doit être le bon, sinon le test ne teste pas ce qu'il dit.
+  fs.appendFileSync(abs, '\n```sql\n' +
+    'CREATE FUNCTION f() RETURNS trigger AS $x$ BEGIN RAISE EXCEPTION \'non\'; RETURN NULL; END $x$ LANGUAGE plpgsql;\n```\n' +
+    '\n```sql\n' +
+    'CREATE TRIGGER t BEFORE INSERT ON widget FOR EACH ROW EXECUTE FUNCTION f();\n```\n' +
+    '\n```sql\n-- forge:ddl-refuse\nINSERT INTO widget (label) VALUES (\'interdit\');\n```\n');
+
+  const res = run('ddl-exec.js', ['execute', project]);
+  const c = executed(res, 'execute');
+  assert(c.pass, `un refus attendu ne doit pas faire echouer execute : ${JSON.stringify(c.errors)}`);
+  assert(c.guard_blocks_left_to_guards >= 1,
+    `le bloc de garde doit etre compte et laisse a guards : ${JSON.stringify(c).slice(0, 250)}`);
+});
+
+testSkippable('ddl : un bloc de pose n\'est pas une déclaration de schéma', () => {
+  // Poser trois lignes de fixture ne devrait pas faire dire que `widget` n'est
+  // pas créée en SQL — c'est une tautologie, donc un faux positif.
+  //
+  // Et l'erreur inverse, commise en corrigeant : tester « le bloc **contient** un
+  // INSERT » avec `^\s*` et le drapeau `m`. `\s` mange les retours à la ligne,
+  // donc le motif reconnaissait un `SELECT` au milieu d'un corps PL/pgSQL et
+  // écartait le bloc **entier** — DDL compris. Résultat : `tables_touched: 0`,
+  // et le contrôle ne regardait plus rien du tout.
+  const project = entityProject('ddl-pose');
+  const abs = path.join(project, '.forge', 'architecture.md');
+  fs.appendFileSync(abs, '\n```sql\nALTER TABLE widget ADD CONSTRAINT c1 CHECK (position >= 0);\n```\n' +
+    '\n```sql\nINSERT INTO widget (label) VALUES (\'x\');\n```\n');
+
+  const res = run('ddl-exec.js', ['completeness', project]);
+  const c = executed(res, 'completeness');
+  assert(c.tables_touched >= 1,
+    `le DDL doit toujours etre vu : ${JSON.stringify(c).slice(0, 250)}`);
+});
+
+testSkippable('ddl : une garde déclarée s\'essaie même si une instruction du même bloc échoue', () => {
+  // Le bug le plus grave des quatre. `db.exec` sur un **bloc entier** s'arrête à
+  // la première instruction en échec. Sur le projet de test, un bloc contient
+  // quatre `GRANT` échouant sur un rôle absent, **suivis** des deux `CREATE
+  // TRIGGER` qui font vivre le cycle de vie : le bloc s'arrêtait au `GRANT`, les
+  // triggers n'étaient **jamais créés**, et le contrôle annonçait quand même
+  // « quatre gardes déclarées, toutes inertes ».
+  //
+  // Autrement dit : la faute d'exécution masquait la suite, et le verdict portait
+  // sur un schéma qui n'existait pas.
+  const project = entityProject('ddl-ordre-triggers');
+  const abs = path.join(project, '.forge', 'architecture.md');
+  fs.appendFileSync(abs,
+    '\n```sql\n' +
+    'CREATE FUNCTION f() RETURNS trigger AS $x$ BEGIN\n' +
+    "  IF NEW.status <> 'draft' THEN RAISE EXCEPTION 'refuse'; END IF;\n" +
+    '  RETURN NEW;\n' +
+    'END $x$ LANGUAGE plpgsql;\n' +
+    '```\n' +
+    '\n```sql\n' +
+    'GRANT SELECT ON widget TO role_qui_nexiste_pas;\n' +
+    '```\n' +
+    '\n```sql\n' +
+    "CREATE TRIGGER t BEFORE INSERT ON widget FOR EACH ROW EXECUTE FUNCTION f();\n" +
+    '```\n' +
+    '\n```sql\nINSERT INTO widget (label) VALUES (\'x\');\n```\n' +
+    '\n```sql\n-- forge:ddl-refuse\nINSERT INTO widget (label, status) VALUES (\'y\', \'published\');\n```\n');
+
+  const res = run('ddl-exec.js', ['guards', project]);
+  const c = executed(res, 'guards');
+  assert(c.guards_declared === 1, `la garde doit etre declaree : ${JSON.stringify(c).slice(0, 250)}`);
+  assert(c.guards_active === 1,
+    `la garde doit etre constatee ACTIVE — donc le trigger existe : ${JSON.stringify(c.guards)}`);
+  assert((c.prerequisites || []).length >= 1,
+    `le role absent doit etre classe prealable, pas erreur : ${JSON.stringify(c.ddl_errors)}`);
+  assert(!c.ddl_errors.length,
+    `aucune erreur DDL ne doit etre signalee : ${JSON.stringify(c.ddl_errors)}`);
+});
