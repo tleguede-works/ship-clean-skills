@@ -2179,3 +2179,115 @@ ni contourné ni « corrigé » : il reste, et il est dit.
 | `ddl-exec guards` | **PASS** — 7 déclarées, 7 actives, **0 morte** |
 | `consistency all` | **PASS** — 9 contrôles, 1 skip attendu |
 | `forge-guard all` | 1 échec, `no_premature_artifacts`, **classé correct** |
+
+## F-47 — Bailly Phase 2 : la roadmap n'avait pas d'horloge
+
+Le commanditaire a fait le reproche le plus utile de tout le dossier, et il ne porte
+ni sur le périmètre ni sur un écran : il porte sur **la méthode**.
+
+> *« Ma roadmap n'a pas d'horloge. Une slice est finie quand elle marche une fois. Or
+> « en retard » n'existe qu'au 6e jour, la reconduction tacite qu'au 36e mois, le dépôt
+> qu'après le départ. Conséquence : le garde-fou en position 8 ne sera pas
+> démontrable, et les autres auront été bâtis sur des dates inventées pour la démo. »*
+
+C'est **exact**, et j'avais le défaut sous les yeux sans le voir : le produit entier
+est une gestion de délais, et j'avais découpé comme un produit de saisie.
+
+### Les cinq échéances, et pourquoi deux ne sont pas des rappels
+
+Le commanditaire les a nommées **et les a classées lui-même** — et le classement est la
+partie utile.
+
+| # | Échéance | Délai | Ratée, ça coûte | Famille |
+|---|---|---|---|---|
+| 1 | Fin de terme (opposition à la reconduction tacite) | 3 mois avant — **6 en meublé** | reconduction tacite de 3 ans, relogement perdu | **bloquante** |
+| 2 | Bascule en créance exigible | **6e jour** | plus de base légale ; une relance hors délai ne vaut rien | **bloquante** |
+| 3 | Restitution du dépôt de garantie | 1 mois — **21 jours sans retenue** | intérêts et pénalités, quand le dossier est le plus fragile | **bloquante** |
+| 4 | Validité des diagnostics (DPE, gaz, amiante…) | 6 ans — **10 ans** pour un DPE antérieur à 1948 | dossier qui ne tient pas, nullité possible | **marge** |
+| 5 | Assurance propriétaire (PNO) | annuel | la square est à découvert | **marge** |
+
+**Les trois premières bloquent, les deux autres alertent longuement et silencieusement.**
+Et sa raison est celle qui compte : *« leur échéance est une marge, pas une alarme »*.
+
+C'est la première fois qu'une property se **décompose en deux comportements
+distincts**, et ce n'est pas un détail d'implémentation : c'est la forme du garde-fou.
+Un produit de rappels n'aurait qu'un comportement ; celui-ci en a deux, et les confondre
+produirait soit un mur sur une échéance à 6 ans, soit un silence sur une créance
+exigible.
+
+**Le compromis est écrit** : quittance annuelle, régularisation des charges et
+révision du loyer sont exclues du produit, **réelles en droit**, tenues par un
+calendrier externe. C'est un défaut connu et accepté, pas un oubli.
+
+### Quatre arbitrages que j'avais mal pris
+
+**La relance n'est pas une slice.** Je l'avais découpée seule, en arguant que c'est
+« la seule chose que l'application ne sait pas faire hors ligne ». Sa réponse :
+*« la relance n'a pas d'état propre : c'est un acte sur l'encaissement. Son caractère
+en-ligne-obligatoire est une règle écrite dans une slice, pas un motif de découpage —
+sinon je découpe tout. »* **Un comportement spécial est une règle, pas une frontière.**
+
+**La synchronisation n'est pas une slice, c'est un invariant.** *« Personne ne voit "la
+file d'attente", on voit "3 en attente". Le compteur honnête et la reprise automatique
+doivent être le premier test du produit, pas le quatrième. »* C'est vrai, et j'en avais
+fait la quatrième.
+
+**Le garde-fou n'est pas la huitième slice, c'est la troisième.** Parce que
+l'encaissement, la relance et les demandes consomment **toutes** des dates : construites
+en dernier, elles réinventeraient chacune leurs dates à la main. **Deux sources de
+vérité.**
+
+**Et il manquait deux slices entières.** Ni B9 (les trois états RGPD) ni B11 (l'export
+lisible sans Bailly) n'étaient portés par aucune autre. *« Assignés explicitement, ou
+ils n'existent pas »* — et B11 est **la condition de survie du produit**, pas une
+fonction de confort.
+
+Sur `piece-jointe`, en revanche, il m'a donné raison : *« c'est la seule dont l'échec
+vient de l'environnement et non de la logique. Fusionnée dans saisie, elle se teste en
+4G et se découvre en métro. »*
+
+### La règle qui sort de là, et qui est d'ordre général
+
+> **Une slice dont le comportement dépend d'une date ne peut pas être démontrée par
+> « ça marche ». Elle se démontre par une horloge simulée**, et l'horloge est de
+> **l'infrastructure de test**, pas un réglage du développeur.
+
+Les trois cas, écrits dans la roadmap :
+
+| Slice | Sa date |
+|---|---|
+| `encaissement` | le **6 du mois** — c'est là que « en retard » existe |
+| `garde-fou` | le **11e mois du terme** — c'est là que la reconduction tacite devient visible |
+| `socle-synchronisation` | n'importe quelle date, **mode avion** — la seule dont l'échec ne dépend pas du moment |
+
+C'est la même famille que la boutique de démonstration d'Onduleur (R7) : du **temps
+calendaire** qu'on ne voit pas sur une branche. Et c'est **le même test manquant** que
+dans les deux erreurs précédentes du projet — la signature hors ligne validée parce
+qu'elle marche au bureau, la journée de saisie jugée unique parce qu'elle marche un
+lundi avec du réseau :
+
+> **Le 6 du mois, le 11e mois du terme, en sous-sol, sans réseau.** Une slice non
+> démontrable avec une date simulée et un mode avion n'est pas finie.
+
+### Un défaut du skill, trouvé par ce reproche
+
+`derived_from_non_empty` : la correction de F-45 (autoriser une liste vide pour le
+premier artefact) exigeait en plus que le projet soit **encore en phase 0 ou 1**. Donc
+`conventions.md` a été refusé **dès la phase 2**, parce qu'un PRD en dérive — donc
+« plus personne ne déclare de source », donc le premier n'était plus premier.
+
+Un doublon partiel de `no_premature_artifacts`, qui répond déjà à la bonne question. Le
+prédicat est réduit à **« l'artefact appartient-il à la phase 0 ? »** — le seul fait
+qui décide, et qui ne change pas avec l'avancement.
+
+Constaté sur Bailly **juste après** la roadmap : le genre de défaut qui n'apparaît qu'au
+moment où le projet fait sa deuxième chose. Un test l'aurait laissé passer pour toujours.
+
+### Résultat
+
+8 slices au MVP, 11 en V1, 4 en V2 · 18 règles, 11 cas limites, 9 risques ·
+`forge-guard all` **PASS** · `consistency all` **PASS**.
+
+**v1.9.6** : PR #54, `snapshot verify` → `pass: true`, 96 fichiers, 0 différence,
+192 tests + 7 non exécutés dans l'archive extraite, 14 tests de fumée verts.
+199 tests en local (+ 1).
