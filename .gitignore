@@ -10,3 +10,7 @@ node_modules/
 .opencode/skills/
 .claude/skills/
 .agents/skills/
+
+# Archives dentree : volumineuses, hors produit.
+*.zip
+package-lock.json
