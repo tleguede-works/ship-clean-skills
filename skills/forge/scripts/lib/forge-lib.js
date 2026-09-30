@@ -125,6 +125,33 @@ function missingPhaseRequirements(state, phaseKey) {
   return missing;
 }
 
+/**
+ * `derived_from` du front matter → chemins relatifs à la racine, résolus.
+ *
+ * Le champ vit dans le front matter de chaque livrable. `fast-track.md`
+ * prescrit aux validateurs de lire « l'artefact + son `derived_from` » : tant
+ * que la valeur ne reste pas dans le fichier, cette consigne n'est pas
+ * applicable — le validateur devrait ouvrir le document qu'il doit valider
+ * pour découvrir son propre périmètre.
+ *
+ * `sync` recopie donc la valeur dans l'autorité, ce qui **remplit aussi les
+ * entrées enregistrées avant que cette propagation existe**.
+ */
+function resolveDerivedFrom(root, raw) {
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out = [];
+  for (const v of list) {
+    const t = String(v == null ? '' : v).trim();
+    if (!t || t.startsWith('{{')) continue;
+    const abs = path.isAbsolute(t) ? t : path.resolve(root, t);
+    const rel = path.relative(root, abs);
+    // Un chemin qui sort de la racine n'est pas une provenance exploitable.
+    if (rel.startsWith('..')) continue;
+    out.push(rel.split(path.sep).join('/'));
+  }
+  return [...new Set(out)];
+}
+
 /** Le seau de `state.json` qui porte un type d'artefact. */
 function bucketOf(state, kind) {
   const name = kind === 'screen' ? 'screens' : kind === 'slice' ? 'slices'
@@ -732,5 +759,5 @@ module.exports = {
   appendLog, readLog,
   looksLikeForgeDeliverable,
   PHASE_KEYS, PHASE_REQUIREMENTS, missingPhaseRequirements,
-  PHASE_ARTIFACT_OWNERS, bucketOf, ownerPhaseFor, isPrematureArtifact, prematureArtifacts
+  PHASE_ARTIFACT_OWNERS, bucketOf, resolveDerivedFrom, ownerPhaseFor, isPrematureArtifact, prematureArtifacts
 };

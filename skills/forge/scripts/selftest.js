@@ -2172,6 +2172,232 @@ test('component-parity ne confond pas un § 2.1 avec la fin du composant', () =>
     `les états de Tile doivent être lus avant sa sous-section : ${JSON.stringify(res.json.components)}`);
 });
 
+/* ------------------------------------------------------------------ *
+ * Bloc 2 — le périmètre d'un validateur, et la citation vérifiable
+ * ------------------------------------------------------------------ */
+
+test('register recopie derived_from dans l\'AUTORITÉ', () => {
+  // `fast-track.md` prescrit aux validateurs de lire « son `derived_from` ».
+  // Tant que la valeur ne vit que dans le front matter, la consigne n'est pas
+  // applicable : le validateur doit ouvrir le document qu'il doit valider pour
+  // découvrir son propre périmètre. Constaté sur un test grandeur nature, où
+  // `state.json → slices.<clé>` ne portait aucun `derived_from`.
+  const project = freshProject('derived-from-autorite');
+  fs.writeFileSync(path.join(project, '.forge/prd.md'),
+    '---\nforge: true\nkind: deliverable\nkey: prd\nstatus: draft\nderived_from:\n  - .forge/conventions.md\n---\n\n# PRD\n');
+  const res = run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  assert(res.code === 0, `register a échoué : ${res.stdout}${res.stderr}`);
+  const state = readState(project);
+  assert(Array.isArray(state.deliverables.prd.derived_from),
+    `derived_from absent de l'autorité : ${JSON.stringify(state.deliverables.prd)}`);
+  assert(state.deliverables.prd.derived_from.includes('.forge/conventions.md'),
+    `le chemin résolu est attendu : ${JSON.stringify(state.deliverables.prd.derived_from)}`);
+});
+
+test('sync REMPLIT derived_from sur une entrée enregistrée avant la propagation', () => {
+  // C'est le cas de tout projet ayant utilisé le skill avant ce correctif :
+  // l'entrée existe, le front matter aussi, mais l'autorité ne les relie pas.
+  const project = freshProject('derived-from-backfill');
+  fs.writeFileSync(path.join(project, '.forge/prd.md'),
+    '---\nforge: true\nkind: deliverable\nkey: prd\nstatus: draft\nderived_from:\n  - .forge/conventions.md\n---\n\n# PRD\n');
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  // On simule l'état antérieur : le champ a disparu de l'autorité.
+  const state = readState(project);
+  delete state.deliverables.prd.derived_from;
+  writeState(project, state);
+
+  const res = run('state.js', ['sync', project]);
+  assert(res.code === 0, `sync a échoué : ${res.stdout}${res.stderr}`);
+  const after = readState(project);
+  assert(after.deliverables.prd.derived_from &&
+         after.deliverables.prd.derived_from.includes('.forge/conventions.md'),
+    `sync n'a pas propagé derived_from : ${JSON.stringify(after.deliverables.prd)}`);
+});
+
+test('derived_from ne retient ni un gabarit ni un chemin hors racine', () => {
+  const project = freshProject('derived-from-bruit');
+  fs.writeFileSync(path.join(project, '.forge/prd.md'),
+    '---\nforge: true\nkind: deliverable\nkey: prd\nstatus: draft\nderived_from:\n' +
+    '  - .forge/conventions.md\n  - "{{SOURCE}}"\n  - ../ailleurs.md\n---\n\n# PRD\n');
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  const got = readState(project).deliverables.prd.derived_from || [];
+  assert(got.includes('.forge/conventions.md'), `le chemin réel doit être gardé : ${JSON.stringify(got)}`);
+  assert(!got.some(v => v.includes('{{')), `un gabarit non résolu ne doit pas être une provenance : ${JSON.stringify(got)}`);
+  assert(!got.some(v => v.startsWith('..')), `un chemin hors racine n'est pas une provenance : ${JSON.stringify(got)}`);
+});
+
+test('les TROIS fichiers de périmètre disent la MÊME chose', () => {
+  // Le défaut : `fast-track.md` disait « l'artefact + son derived_from »,
+  // `quality-analyst.md` interdisait le PRD jusqu'en Phase 6, `red-team.md`
+  // l'autorisait pour les IDs. Un validateur applique la règle la plus
+  // étroite qu'il connaît — donc se prive du document dont il a le plus
+  // besoin — et ne le signale pas.
+  const agents = path.join(SCRIPTS, '..', 'agents');
+  const qa = fs.readFileSync(path.join(agents, 'quality-analyst.md'), 'utf-8');
+  const rt = fs.readFileSync(path.join(agents, 'red-team.md'), 'utf-8');
+  const ft = fs.readFileSync(path.join(SCRIPTS, '..', 'references', 'fast-track.md'), 'utf-8');
+
+  for (const [nom, txt] of [['quality-analyst', qa], ['red-team', rt]]) {
+    assert(/derived_from/.test(txt), `${nom} doit nommer derived_from comme source du périmètre`);
+    // L'ancienne règle restrictive a disparu.
+    assert(!/seulement en Phase 6/.test(txt),
+      `${nom} porte encore l'interdiction du PRD qui contredisait fast-track.md`);
+    // On teste le SENS, pas la ponctuation : la ligne qui énonce la sanction
+    // doit nommer `unreadable_without`, « non vide » et BLOCK ensemble.
+    const sanction = txt.split('\n').find(l => /unreadable_without` non vide/.test(l) && /BLOCK/.test(l));
+    assert(sanction,
+      `${nom} ne fait pas de unreadable_without non vide une sanction`);
+    assert(/prior_critical_resolved/.test(txt),
+      `${nom} ne sait pas rendre un constat résolu sans re-BLOCK`);
+  }
+  assert(/une seule règle/i.test(ft), `fast-track.md doit poser la règle en un seul endroit`);
+  assert(/unreadable_without` non vide/.test(ft), `fast-track.md doit porter la sanction`);
+});
+
+test('les deux contrats de sortie des validateurs sont IDENTIQUES', () => {
+  // Ils ne doivent pas diverger de nouveau : c'est exactement le défaut, sous
+  // une autre forme. On compare la forme JSON, pas le texte.
+  const agents = path.join(SCRIPTS, '..', 'agents');
+  const shape = f => {
+    const m = fs.readFileSync(path.join(agents, f), 'utf-8').match(/```json\n([\s\S]*?)```/);
+    assert(m, `${f} n'a pas de bloc json`);
+    const keys = [...m[1].matchAll(/^  "([a-z_]+)":/gm)].map(x => x[1]).sort();
+    const fkeys = [...m[1].matchAll(/^ {6}"([a-z_]+)":/gm)].map(x => x[1]).sort();
+    return { top: keys.join(','), finding: fkeys.join(',') };
+  };
+  const qa = shape('quality-analyst.md');
+  const rt = shape('red-team.md');
+  assert(qa.top === rt.top, `clés du rapport divergentes : ${qa.top} ≠ ${rt.top}`);
+  assert(qa.finding === rt.finding, `clés d'un finding divergentes : ${qa.finding} ≠ ${rt.finding}`);
+});
+
+test('un contrôle borné à sonhappy path est REJETÉ', () => {
+  // La règle, née d'un test grandeur nature où deux contrôles successifs ont
+  // déclaré « 0 problème » sur des fichiers pourtant corrompus : le premier
+  // était un `Get-Content -Raw` PowerShell qui ne matchait rien, le second un
+  // scan CJK-only qui a laissé passer `U+1EE1` dans `_USERNAMEOục`. Deux faux
+  // verts, dont un sur douze fichiers.
+  //
+  // **Un contrôle jamais vu échouer n'est pas validé, il est inconnu.** Il ne
+  // suffit donc pas d'écrire `pass === true` : il faut avoir vu le contrôle
+  // accrocher sur une entrée volontairement défectueuse, et laisser passer un
+  // témoin propre. Ce test applique cette exigence à `component-parity` et à
+  // `state-parity`, les deux contrôles ajoutés après la formulation de la règle.
+  const cases = [
+    {
+      nom: 'component-parity',
+      run: (project, broken) => run('design-check.js',
+        ['component-parity', project, ...(broken ? [] : [])]),
+      casser: project => {
+        // Un écran qui affirme une énumération périmée de la surface.
+        const p = path.join(project, '.forge/design/screens/liste.md');
+        fs.writeFileSync(p, fs.readFileSync(p, 'utf-8')
+          .replace('ses 2 slots', 'ses 3 slots'));
+      },
+      doitEchouer: res => res.code !== 0,
+    }
+  ];
+
+  for (const c of cases) {
+    const project = parityProject(`selftest-negatif-${c.nom}`);
+    const propre = c.run(project);
+    assert(propre.code === 0,
+      `témoin propre : ${c.nom} aurait dû passer : ${propre.stdout}`);
+    c.casser(project);
+    const casse = c.run(project);
+    assert(c.doitEchouer(casse),
+      `${c.nom} n'a pas accroché sur une entrée défectueuse : ` +
+      `un contrôle jamais vu échouer est inconnu, pas validé — ${casse.stdout}`);
+  }
+});
+
+test('state-parity accroche sur un état absent, et laisse un témoin propre', () => {
+  // Même exigence, sur le contrôle qui a mis quatre essais à devenir honnête :
+  // il rendait 22 signalements dont 19 faux. Un contrôle bruyant et un
+  // contrôle muet sont deux versions du même défaut — celui de ne pas l'avoir
+  // vu travailler dans les deux sens.
+  const project = freshProject('selftest-state-parity');
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design System\n\n## 2. Composants primitifs\n\n### Tile\n\n' +
+      '**États** — rendus par l\'union `TileState` :\n\n| État | Déclencheur | Apparence |\n|---|---|---|\n' +
+      '| `default` | valeur | normale |\n| `ghost` | jamais produit | aucune |\n\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']);
+  writeDeliverable(project, '.forge/architecture.md', {
+    type: 'architecture',
+    body: '# Architecture\n\n```ts\nexport type TileState = \'default\';\n```\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'architecture', '.forge/architecture.md']);
+
+  const res = run('consistency-check.js', ['state-parity', project]);
+  assert(res.code !== 0, 'un état déclaré au design et absent de l\'union doit accrocher');
+  const c = (res.json.checks || []).find(x => x.check === 'declared_state_parity');
+  assert(c && c.offenders.some(o => o.state === 'ghost'),
+    `l'état fautif doit être nommé : ${JSON.stringify(c && c.offenders)}`);
+
+  // Témoin propre : l'union contient l'état, et rien ne doit être signalé.
+  writeDeliverable(project, '.forge/architecture.md', {
+    type: 'architecture',
+    body: '# Architecture\n\n```ts\nexport type TileState = \'default\' | \'ghost\';\n```\n'
+  });
+  const propre = run('consistency-check.js', ['state-parity', project]);
+  assert(propre.code === 0,
+    `une union alignée doit passer sans signalement : ${JSON.stringify((propre.json.checks || [])[0])}`);
+});
+
+test('no_stray_characters accroche sur du VRAI parasite, et laisse la typographie française', () => {
+  // Un scan « CJK only » a déclaré propre un fichier contenant `U+1EE1` dans
+  // `_USERNAMEOục` : Latin Extended Additional, hors des plages testées. Le
+  // parasite suivant (`diverge阈ront`) n'a été trouvé qu'en passant par une
+  // liste blanche. Et le premier essai de la liste blanche signalait **28 fois**
+  // des ordinaux français corrects (`1ᵉʳ`) — donc un contrôle que l'on éteint.
+  //
+  // Le test vérifie les deux sens : il accroche sur du vrai parasite, et il
+  // se tait sur la typographie. Les deux, sinon il est inconnu.
+  const project = freshProject('stray-chars');
+  writeDeliverable(project, '.forge/prd.md', {
+    type: 'prd',
+    body: 'Le 1ᵉʳ trimestre, le CO₂ baisse. Au 2ᵉ rang.\n'   // doit rester silencieux
+  });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+
+  const propre = run('forge-guard.js', ['all', project]);
+  const c1 = (propre.json.checks || []).find(x => x.check === 'no_stray_characters');
+  assert(c1 && c1.offenders.length === 0,
+    `la typographie française ne doit pas être signalée : ${JSON.stringify(c1 && c1.offenders)}`);
+
+  // Vrai parasite : un caractère d'un système d'écriture qu'on ne cite jamais,
+  // collé au milieu d'un mot français.
+  const abs = path.join(project, '.forge/prd.md');
+  fs.writeFileSync(abs, fs.readFileSync(abs, 'utf-8')
+    .replace('baisse', 'bei' + String.fromCharCode(0xBC95) + String.fromCharCode(0xC5D0) + 'se'));
+
+  const casse = run('forge-guard.js', ['all', project]);
+  const c2 = (casse.json.checks || []).find(x => x.check === 'no_stray_characters');
+  assert(c2 && c2.offenders.length > 0,
+    'un vrai parasite collé dans un mot français doit être signalé');
+  assert(c2.offenders.some(o => o.char.includes('OutOfContext')),
+    `le parasite doit être qualifié : ${JSON.stringify(c2.offenders)}`);
+});
+
+test('une ligne marquée unicode-scan:ignore est ignorée, et rien d\'autre', () => {
+  // Sans cette marque, le rapport qui **cite** un défaut déclencherait le
+  // contrôle sur sa propre citation — et un rapport de test qui ne s'applique
+  // pas son propre contrôle n'est pas un rapport de test.
+  const project = freshProject('stray-ignore');
+  writeDeliverable(project, '.forge/prd.md', {
+    type: 'prd',
+    body: 'Un caractère CJK parasite : 阈. <!-- unicode-scan:ignore -->\n' +
+          'Et un autre, non marqué : 阈\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  const res = run('forge-guard.js', ['all', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'no_stray_characters');
+  assert(c && c.offenders.length === 1,
+    `seule la ligne NON marquée doit être signalée : ${JSON.stringify(c && c.offenders)}`);
+});
+
 test('design-check mesure et accepte une palette conforme', () => {
   const project = designProject('design-ok');
   const res = run('design-check.js', ['contrast', project]);

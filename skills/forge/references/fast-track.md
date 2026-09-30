@@ -91,6 +91,47 @@ node "$FORGE/scripts/consistency-check.js" all <anchor>     # écarts inter-arte
 
 ---
 
+## Le périmètre d'un validateur — une seule règle
+
+Trois fichiers fixaient trois périmètres différents, et ils étaient
+**incompatibles** :
+
+- `fast-track.md` (ci-dessus) : « l'artefact + son `derived_from` » ;
+- `agents/quality-analyst.md` : le PRD **seulement en Phase 6** ;
+- `agents/red-team.md` : le PRD, mais « uniquement pour ces IDs ».
+
+Un validateur applique **la règle la plus étroite qu'il connaît**. Il se
+prive donc du document dont il a le plus besoin — et comme aucun des trois ne
+mentionnait la sanction, il rend un verdict quand même, sans dire qu'il est
+aveugle. Constaté sur un test grandeur nature : deux validateurs ont rendu
+`unreadable_without` listant le PRD, l'architecture et les conventions, **sans
+que cela change leur verdict**.
+
+**La règle, en une phrase :**
+
+> Lis l'artefact, son `derived_from` — lu dans `state.json`
+> (`deliverables.<clé>.derived_from`, `screens.<clé>.derived_from`,
+> `slices.<clé>.derived_from`), et `state.json`. Rien d'autre, sauf un fichier
+> listé dans `derived_from`.
+
+Trois conséquences, qui sont le but :
+
+1. **Le périmètre est résolvable mécaniquement.** `state.js register` et
+   `state.js sync` recopient `derived_from` dans l'autorité. Sans cela,
+   « son `derived_from` » est une notion que l'agent doit reconstruire en
+   ouvrant le document qu'il doit valider — un contrat qui dépend d'une
+   lecture humaine du document à valider n'est pas un contrat outillé.
+2. **`unreadable_without` non vide ⇒ `BLOCK`.** C'est une sanction, pas une
+   déclaration. Elle est dans les trois fichiers.
+3. **`derived_from` absent de l'autorité ⇒ l'agent le déclare**, et ce
+   `BLOCK` est alors la bonne réponse : l'outillage n'a pas fourni le
+   périmètre, ce n'est pas au validateur de le deviner.
+
+Et ce qui reste interdit : lire tout `.forge`, et combler un trou par
+imagination. Une imagination qui bouche un trou devient le prochain bug.
+
+---
+
 ## Boucle de validation
 
 Pour chaque artefact (architecture, puis chaque plan de slice) :
@@ -173,7 +214,10 @@ Un validateur qui n'est pas d'accord doit dire **pourquoi**, avec une preuve. «
 | Tentatives de révision par artefact | **2** | Au-delà, c'est un problème de spec en amont, pas de plan |
 | Artefacts validés automatiquement | Phase 4, 5, et 7 **par portes exécutables** | Aucun agent ne valide du code par relecture |
 | Checkpoint humain | 1 à la sortie de Phase 5, **+ 1 par jalon** en Phase 7 | Jamais supprimé, même en `full` |
-| Lecture d'un validateur | l'artefact + son `derived_from` | Pas tout `.forge` — le contexte est le coût |
+| Lecture d'un validateur | l'artefact + son `derived_from` **résolu dans `state.json`** + `state.json` | Pas tout `.forge` — le contexte est le coût |
+| **`derived_from` absent de l'autorité** | l'artefact est lisible seul, mais **aucun validateur ne peut certifier une citation** | `state.js register` et `state.js sync` recopient `derived_from` dans `state.json` ; s'il reste absent, le validateur le déclare dans `unreadable_without` |
+| **`unreadable_without` non vide** | `BLOCK` | Un validateur qui n'a pas pu lire ce qu'il devait lire ne peut rien certifier |
+| **`severity: info` + `prior_critical_resolved`** | un constat résolu ne peut pas re-BLOCK | Sans lui, un tour se solde par un `BLOCK` sur un bug déjà corrigé |
 | Arrêt sur `BLOCK` | immédiat | Jamais de `BLOCK` contourné |
 | **Constats sans domaine** | refusés | Un constat non routable n'est pas un constat |
 

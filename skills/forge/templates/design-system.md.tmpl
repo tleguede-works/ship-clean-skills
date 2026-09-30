@@ -153,7 +153,23 @@ derived_from: .forge/prd.md
 | md | {{DIMENSIONS}} | {{USAGE}} |
 | lg | {{DIMENSIONS}} | {{USAGE}} |
 
-**États** :
+<!--
+  `**États**` porte OBLIGATOIREMENT le nom de l'union de l'architecture qui
+  rend ces états. Ce pointeur est la seule chose que le contrôle
+  `consistency-check state-parity` résout : sans lui, aucun contrôle ne peut
+  dire si un état déclaré ici a un rendu, parce que le design et
+  l'architecture ne parlent pas le même vocabulaire — et un contrôle qui
+  devrait le deviner produirait des signalements que personne ne peut fermer.
+
+  Deux formes, et une seule règle :
+
+  - `union \`<Nom>\`` — tous les états du tableau sont rendus par cette union.
+  - `union \`<Nom>\`, sauf \`a\`, \`b\`` — **déclare** les états que l'union ne
+    rend pas. Un état dont le sens est « ne pas rendre » (l'indicateur n'est
+    pas visible : E5) appartient à cette liste : ce n'est pas un état de rendu,
+    et le laisser dans la table ferait crier le contrôle à juste titre.
+-->
+**États** — rendus par l'union `{{NomDeLUnion}}` :
 
 | État | Déclencheur | Apparence |
 |---|---|---|

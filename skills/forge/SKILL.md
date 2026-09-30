@@ -863,7 +863,7 @@ dossier du skill, voir « Comment exécuter les scripts » plus haut.
 | `state.js check-stale` | Document dérivé, ou plan modifié après approbation | Avant d'implémenter |
 | `state.js dep` | Déclare le graphe de dépendances d'une slice ou d'une fondation | Phase 4 |
 | `state.js migrate` | v1 → v2 | Un projet existant |
-| `forge-guard.js all` | Chemins, état, vocabulaire, synchronisation, **provenance `derived_from`**, **artefacts produits en avance**, cases « À DÉCIDER », placeholders, versions | **Avant chaque gate** |
+| `forge-guard.js all` | Chemins, état, vocabulaire, synchronisation, **provenance `derived_from`**, **artefacts produits en avance**, **caractères parasites**, cases « À DÉCIDER », placeholders, versions | **Avant chaque gate** |
 | `consistency-check.js all` | Écarts **entre** artefacts : PRD ↔ archi ↔ plans ↔ tests ↔ écrans | **Avant chaque gate** |
 | `forge-exit.js` | Critère de sortie **exécuté** d'une slice | **Phase 7, par slice** |
 | `coverage-check.js` | Couverture d'un plan de slice | Phase 5 |
@@ -872,7 +872,37 @@ dossier du skill, voir « Comment exécuter les scripts » plus haut.
 | `audit-report.js` | Analyse croisée de plusieurs projets | Après plusieurs projets |
 | `selftest` | Tests du skill lui-même | Avant toute publication |
 
-### Documents de référence
+### Un contrôle n'est pas validé tant qu'on ne l'a pas vu échouer
+
+**Tout contrôle ajouté ou modifié doit casser, dans le même lot, un défaut
+qu'il prétend chercher** — et laisser passer un témoin propre. Les deux.
+
+Ce n'est pas une précaution de forme. Constaté deux fois sur un même projet :
+un scan `Get-Content -Raw` + regex `\u` en PowerShell a déclaré « 0 problème »
+sur des fichiers corrompus ; le scan Node qui l'a remplacé, conçu sur l'hypothèse
+« la corruption est CJK », a déclaré propre un fichier contenant `U+1EE1` dans
+`_USERNAMEOục` — Latin Extended Additional. Le troisième parasite n'a été trouvé
+qu'en passant par une **liste blanche**.
+
+Trois règles qui en découlent :
+
+1. **Liste blanche, pas liste de suspects.** Autorisé = ASCII + Latin-1 +
+   Latin Extended-A + ponctuation + symboles + emoji + la typographie de la
+   langue du dépôt (ordinaux `1ᵉʳ`, indices `CO₂`). **Tout le reste est
+   signalé.** Le premier essai de cette liste signalait 28 fois des ordinaux
+   français corrects : une liste blanche qui ne couvre pas la langue du dépôt
+   devient un contrôle que l'on éteint.
+2. **Une ligne marquée `unicode-scan:ignore` est ignorée**, pour citer un
+   défaut dans un journal sans que la citation se déclenche. Sans cela, le
+   rapport qui prouve le défaut ne peut pas être commité.
+3. **`skip` ≠ `pass`.** Un contrôle qui ne s'exécute pas annonce ce qu'il n'a
+   pas couvert. Un contrôle jamais vu échouer n'est pas validé, il est inconnu.
+
+Et pour les contrôles dont l'entrée est un **fichier produit** : ils doivent
+être vérifiés sur le projet réel avant d'être branchés sur `all`. Un contrôle
+piloté reste accessible par commande, hors de `all`.
+
+## Documents de référence
 
 | Fichier | Contenu |
 |---|---|
