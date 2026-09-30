@@ -27,6 +27,27 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — `state-parity` : une union documentée doit rester lisible
+
+La lecture d'une union était bornée à **600 caractères**. Cette borne était une
+commodité, pas une règle : une union **documentée** — celle-là même où chaque membre
+porte *pourquoi il existe* — dépasse 600 caractères, donc la borne la faisait
+disparaître et le contrôle rendait `union_introuvable_dans_l_architecture` sur un
+document parfaitement correct.
+
+Constaté en complétant l'union `IndicatorDisplayState` du projet de test, qui
+portait cinq états documentés de plus que les sept qu'elle portait.
+
+Le vrai terminateur est ailleurs et il est bon : `;` **en fin de ligne**. La borne
+n'est plus qu'une garde-fou contre un document pathologique — elle peut être large
+sans rien laisser passer.
+
+C'est la **même famille** que la fenêtre d'adjacence de 140 caractères du contrôle
+précédent, et la même leçon : **un motif plus étroit que ce que les documents
+écrivent n'est pas plus prudent, il est faux.**
+
++1 test (175 → 176), avec un témoin : une union **courte** reste lisible aussi.
+
 ## [1.6.2] - 2026-09-30
 
 ### fix(forge) — `state.js amend` : le miroir part avec l'autorité
