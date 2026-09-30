@@ -64,13 +64,28 @@ const PHASE_REQUIREMENTS = {
   '0_bootstrap': { required: ['conventions'] },
   '1_prd': { required: ['prd'] },
   '2_roadmap': { required: ['roadmap'] },
-  '3_design': { required: ['design-system'], atLeastOneOf: [['screen']] },
+  '3_design': { required: ['design_system'], atLeastOneOf: [['screen']] },
   '4_architecture': { required: ['architecture'] },
   '5_implementation_plan': { atLeastOneOf: [['plan']] },
-  '6_validation': { required: ['test-plan'] },
+  '6_validation': { required: ['test_plan'] },
   '7_implementation': {},
   '8_final_validation': {}
 };
+
+/**
+ * Le contrat ne peut exiger que des clés **enregistrables**.
+ *
+ * Une clé du contrat qui n'existe pas dans `CANONICAL_LAYOUT` ne peut jamais
+ * être produite : le gate refuse alors l'approbation, et le refus est
+ * inexplicable puisque la clé demandée ressemble à une autre qui existe.
+ *
+ * Constaté sur un test grandeur nature : `3_design` exigeait `design-system`
+ * (tiret) alors que le livrable s'enregistre sous `design_system` (souligné) —
+ * parce que le `type:` du gabarit porte un tiret et la clé d'état un autre. Le
+ * gate de la Phase 3 était **infranchissable**, et rien ne l'explique.
+ *
+ * `selftest` vérifie désormais que toute clé exigée est enregistrable.
+ */
 
 /** Ce qui manque à une phase pour être complète. Liste vide = complète. */
 function missingPhaseRequirements(state, phaseKey) {

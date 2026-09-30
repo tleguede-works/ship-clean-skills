@@ -62,9 +62,18 @@ jobs:
       - uses: actions/checkout@v4
       # Une action de release mal écrite ne se voit qu'au moment de publier,
       # c'est-à-dire quand c'est le plus coûteux.
-      - name: Valider le YAML de chaque workflow
+      - name: Valider le YAML et le bash de chaque workflow
         run: |
           for f in .github/workflows/*.yml; do
             echo "-- $f"
             python3 -c "import yaml; yaml.safe_load(open('$f')); print('   YAML valide')"
           done
+
+      # Un `run:` qui n'est pas du bash valide passe la contrôle YAML, puis meurt
+      # SUR LE RUNNER — après avoir poussé le tag et commité VERSION/CHANGELOG.
+      # C'est-à-dire qu'il a déjà modifié l'état du dépôt quand il s'arrête.
+      # Constaté en conditions réelles : le job de release est mort entre
+      # `git push origin "$TAG"` et `gh release create`, laissant un tag orphelin
+      # et aucune release. Ce contrôle déplace l'échec avant la publication.
+      - name: Chaque bloc "run" est du bash valide
+        run: python3 scripts/check-workflows.py

@@ -27,6 +27,107 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### feat(forge) — Les contrastes se mesurent, ils ne s'écrivent pas
+
+La checklist de gate du design system demande « contraste N:1 », et
+`screen.md.tmpl` demande « contraste {{ratio}} ». Aucun contrôle ne calculait quoi
+que ce soit : les ratios étaient **rédigés** par l'auteur, pas mesurés.
+
+`scripts/design-check.js` mesure WCAG 1.4.3 (4,5:1) et 1.4.11 (3:1). Deux choses
+qu'il attrape et que la relecture ne voit pas : un ratio **annoncé** qui ne
+correspond pas au mesuré — une assurance que rien ne soutient — et un texte
+lisible sur le fond mais trop clair sur **une autre surface** : ligne alternée de
+tableau, panneau creusé. C'est souvent là que l'échec se trouve.
+
+Sur le projet de test, il a trouvé cinq défauts dans un design system que j'avais
+écrit et relu : `--color-text-secondary` a 4,17:1 — ce token porte les **dates de
+calcul**, donc la provenance sur laquelle repose tout le produit (B5) ;
+`--color-stale` a 3,55:1 ; `--color-border-strong` a 2,80:1 ; le même texte est a
+4,44:1 sur la ligne alternée ; et deux tokens identiques portent deux noms.
+
+Trois décisions de conception du contrôle, apprises en l'écrivant : la classe de
+chaque token est **affichée** dans la sortie (un contrôle qui ne montre pas pourquoi
+il a classé un token ne peut pas être contesté) ; le texte est mesure contre
+**toute** surface du document, pas contre une liste en dur — la liste en dur
+manquait la ligne alternée ; et **une exemption est nommée, jamais par préfixe**,
+parce qu'exempter `--color-border*` exempterait l'anneau de focus, c'est-à-dire le
+composant qui doit justement atteindre 3:1.
+
+L'arrondi ne crée jamais un vert : `#7A6A3C` sur `#E9EDEB` vaut 4,4958:1, ce qui
+arrondi à 4,50 passe le seuil. La comparaison se fait sur la valeur brute.
+
+### fix(forge) — Les gates des phases 3 et 6 étaient infranchissables
+
+`PHASE_REQUIREMENTS` exigeait `design-system` et `test-plan` — avec un tiret —
+alors que les livrables s'enregistrent sous `design_system` et `test_plan`. Le
+`type:` du gabarit porte un tiret, la clé d'état un autre.
+
+Aucune commande ne pouvait donc produire la clé exigée : `complete-phase 3_design`
+et `complete-phase 6_validation` échouaient avec « aucun livrable enregistré pour
+cette phase », en nommant une clé qui **ressemble** à une clé existante. Le refus
+était donc inexplicable, et le seul contournement visible aurait été d'enregistrer
+un livrable bidon sous le nom à tiret — ce qui casse ensuite `forge-guard paths`.
+
+Le test qui verrouille la classe a trouvé les **deux** instances dès sa première
+exécution.
+
+### feat(forge) — Aucun contrôle ne reliait les écrans à leurs tokens
+
+Après avoir corrigé trois tokens de couleur du design system — parce que leurs
+contrastes échouaient — **cinq écrans sur neuf continuaient de citer les valeurs
+anciennes**, avec les ratios anciens, et en tiraient des règles d'usage : « les
+dates ne doivent pas utiliser le secondaire », « `stale` ne sert qu'au filet ».
+
+Ces règles sont nées d'un couple couleur/fond qui n'existe plus dans le design
+system. Elles étaient donc **fausses**, et un lecteur qui les aurait appliquées
+aurait dégradé l'interface pour corriger un problème inexistant.
+
+`forge-guard` était vert. Rien ne relie un écran aux tokens qu'il cite : modifier
+un token après avoir écrit les écrans n'est pas une mise à jour, c'est une
+**rupture de contrat silencieuse**.
+
+`design-check.js tokens-used` compare chaque couple `` `token` `valeur` `` cité
+par un écran à ce que le design system définit. Onze divergences sur dix écrans,
+toutes réelles.
+
+### fix(forge) — Le contrôle des placeholders signalait sa propre checklist
+
+Un livrable qui écrit « aucun `{{PLACEHOLDER}}` résiduel » — donc qui **documente**
+la convention — était signalé comme portant un placeholder non rendu. Même défaut
+que les cases `À DÉCIDER`, qui signalaient la phrase du gabarit qui les définit.
+
+Un contrôle qui hurle quand il n'a rien à dire est un contrôle qu'on n'écoute plus :
+il faut alors choisir entre le désactiver et le mal regarder.
+
+### fix(repo) — Une release pouvait rester bloquée POUR TOUJOURS
+
+Le job de publication disait « le tag existe déjà — rien à créer » et sortait en 0.
+Mais un tag peut exister **sans** que la release existe : c'est l'état produit
+quand le job échoue après `git push origin "$TAG"` et avant `gh release create`.
+Le dépôt restait alors bloqué indéfiniment, avec VERSION et CHANGELOG avancés et
+un tag orphelin.
+
+Sortir en 0 sur un état incomplet transforme une panne en état permanent. Le job
+détecte maintenant « tag sans release » et reprend la publication **depuis le
+commit du tag**, sans nouveau bump.
+
+### fix(repo) — Les assets de release passaient par un découpage de mots
+
+La commande `gh release create` recevait ses assets par
+`$(cat /tmp/assets.txt | sed … | tr …)` : une liste reconstruite par word-splitting
+puis expansion de motifs. Sur le runner, un élément a été interprété comme un motif
+non apparié et le job est mort **entre** la création du tag et celle de la release.
+
+Un chemin est maintenant passé comme chemin, entre guillemets, sans détour.
+
+### test(forge) — 12 tests ajoutés (112 -> 124)
+
+Palette conforme, texte sous AA, texte trop clair sur une surface non-fond, ratio
+annoncé faux, anneau de focus non exempté, exemption nommée et visible, arrondi
+ne créant pas de vert, token sans valeur, design system absent, placeholder cité
+entre guillemets, clé de contrat enregistrable, `design-check` branché au gate de
+la Phase 3, tokens cités par un écran.
+
 ## [1.2.0] - 2026-09-30
 
 ### feat(repo) — Chaque release porte le snapshot complet du skill
