@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-09-30
+
 ### fix(state) — une slice de Phase 4 se croyait avoir un plan
 
 `register` écrivait `plan_path = relPath` pour toute slice ou fondation. Les slices
