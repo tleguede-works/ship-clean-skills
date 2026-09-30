@@ -2057,6 +2057,121 @@ function designProject(label, overrides = {}) {
   return project;
 }
 
+/* ------------------------------------------------------------------ *
+ * component-parity — la surface d'un composant, dans tous les écrans
+ * ------------------------------------------------------------------ */
+
+/** Un design system avec un composant nommé, et un écran qui le rend. */
+function parityProject(label, { slots = ['label', 'value'], states = ['default', 'loading'], screenSlots = null } = {}) {
+  const project = freshProject(label);
+  const slotRows = slots.map((n, i) => `| \`${n}\` | ${i === 0 ? 'oui' : 'non'} | usage |`).join('\n');
+  const stateRows = states.map(n => `| \`${n}\` | déclencheur | apparence |`).join('\n');
+
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design System\n\n## 1.1 Couleurs\n\n' +
+      '| Token | Valeur | Usage |\n|---|---|---|\n' +
+      '| `--color-text-primary` | `#2C3633` | Texte principal |\n\n' +
+      '## 2. Composants primitifs\n\n### Tile\n\n**Rôle** : afficher une valeur.\n\n' +
+      '**États** :\n\n| État | Déclencheur | Apparence |\n|---|---|---|\n' + stateRows + '\n\n' +
+      '**Slots** :\n\n| Slot | Requis | Contenu |\n|---|---|---|\n' + slotRows + '\n'
+  });
+  assert(run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']).code === 0,
+    'register design_system');
+
+  const cited = screenSlots === null ? slots : screenSlots;
+  writeDeliverable(project, '.forge/design/screens/liste.md', {
+    type: 'screen',
+    body: '# Liste\n\nGrille de `Tile` en `sm`.\n\n' +
+      `Chaque tuile porte ses ${cited.length} slots : ${cited.map(n => '`' + n + '`').join(', ')}.\n\n` +
+      'États rendus : ' + states.map(n => '`' + n + '`').join(', ') + '.\n'
+  });
+  assert(run('state.js', ['register', project, 'screen', 'liste', '.forge/design/screens/liste.md']).code === 0,
+    'register écran');
+  return project;
+}
+
+test('component-parity accepte un écran à jour de la surface du composant', () => {
+  const project = parityProject('parity-ok');
+  const res = run('design-check.js', ['component-parity', project]);
+  assert(res.code === 0, `un écran à jour doit passer : ${res.stdout}${res.stderr}`);
+  assert(res.json.pass === true, 'pass attendu');
+  assert(res.json.components.length === 1, `le composant doit être recensé : ${JSON.stringify(res.json.components)}`);
+});
+
+test('component-parity détecte une ÉNUMÉRATION de surface périmée', () => {
+  // Le composant gagne un slot ; un écran continue d'affirmer « ses 6 slots ».
+  // Aucun contrôle ne le voyait : `tokens-used` vérifie que les tokens cités
+  // existent, pas que la surface annoncée est celle du composant. Le même
+  // composant se retrouve avec deux rendus, et l'écart apparaît précisément là
+  // où la règle de précédence existe pour l'empêcher.
+  const project = parityProject('parity-perime',
+    { slots: ['label', 'value', 'threshold'], screenSlots: ['label', 'value'] });
+  const res = run('design-check.js', ['component-parity', project]);
+  assert(res.code !== 0, 'une énumération périmée doit échouer');
+  const o = res.json.offenders.find(x => x.problem === 'enumeration_perimee');
+  assert(o, `le défaut doit être nommé : ${JSON.stringify(res.json.offenders)}`);
+  assert(o.component === 'Tile', `le composant doit être nommé : ${JSON.stringify(o)}`);
+  assert(o.actual_count === 3 && o.cited_count === 2,
+    `les deux comptes doivent être rapportés : ${JSON.stringify(o)}`);
+  assert(/threshold/.test(o.hint), `le slot manquant doit être nommé : ${o.hint}`);
+});
+
+test('component-parity n\'accuse pas le mauvais composant', () => {
+  // Une ligne de tableau cite plusieurs composants : `ProvenanceStrip`,
+  // `ExportPanel`, puis « chaque tuile porte ses 6 slots » — qui parle de la
+  // tuile. Rattacher l'énumération au dernier composant nommé accuse le mauvais.
+  const project = parityProject('parity-attribution');
+  const screenPath = path.join(project, '.forge/design/screens/liste.md');
+  const md = fs.readFileSync(screenPath, 'utf-8');
+  fs.writeFileSync(screenPath, md.replace('Grille de `Tile`', '`ExportPanel` complet, puis `Tile`'));
+
+  const res = run('design-check.js', ['component-parity', project]);
+  assert(res.code === 0, `l'énumération correcte ne doit pas être signalée : ${JSON.stringify(res.json.offenders)}`);
+  assert(res.json.offenders.length === 0, `aucun signalement attendu : ${JSON.stringify(res.json.offenders)}`);
+});
+
+test('component-parity lit les deux écritures d\'un contrat de composant', () => {
+  // `**États** :` suivi d'un tableau, et `**États** : \`a\` · \`b\`` en prose.
+  // Ne lire que le tableau déclare que la moitié des composants sans état —
+  // donc n'exige rien d'eux, en silence.
+  const project = freshProject('parity-prose');
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design System\n\n## 2. Composants primitifs\n\n### Table\n\n' +
+      '**États** : `loading` (squelette) · `filled` · `error` (message).\n\n' +
+      '### Tile\n\n**États** :\n\n| État | Déclencheur | Apparence |\n|---|---|---|\n' +
+      '| `default` | valeur | normale |\n| `no_data` | aucune ligne (E2) | vide |\n'
+  });
+  assert(run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']).code === 0,
+    'register');
+  const res = run('design-check.js', ['component-parity', project]);
+  const byName = Object.fromEntries(res.json.components.map(c => [c.component, c.states]));
+  assert(byName.Table === 3, `la forme prose doit être lue : ${JSON.stringify(res.json.components)}`);
+  assert(byName.Tile === 2, `la forme tableau doit être lue : ${JSON.stringify(res.json.components)}`);
+});
+
+test('component-parity ne confond pas un § 2.1 avec la fin du composant', () => {
+  // `search` rend l'index du PREMIER `#`. Sauter `start + 1` laisse
+  // `## Tile` en tête de la section extraite, qui ressort comme « titre
+  // suivant » à l'offset 0 — et le composant est déclaré sans état, donc sans
+  // aucune exigence, sans aucune erreur.
+  const project = freshProject('parity-sous-section');
+  writeDeliverable(project, '.forge/design/design-system.md', {
+    type: 'design-system',
+    body: '# Design System\n\n## 2. Composants primitifs\n\n### Tile\n\n' +
+      '**États** :\n\n| État | Déclencheur | Apparence |\n|---|---|---|\n| `default` | valeur | normale |\n\n' +
+      '#### 2.1 `Machine` — les transitions\n\n| De | Vers |\n|---|---|\n| `a` | `b` |\n\n' +
+      '### Autre\n\n**États** : `x`.\n'
+  });
+  assert(run('state.js', ['register', project, 'deliverable', 'design_system', '.forge/design/design-system.md']).code === 0,
+    'register');
+  const res = run('design-check.js', ['component-parity', project]);
+  const tile = res.json.components.find(c => c.component === 'Tile');
+  assert(tile && tile.states === 1,
+    `les états de Tile doivent être lus avant sa sous-section : ${JSON.stringify(res.json.components)}`);
+});
+
 test('design-check mesure et accepte une palette conforme', () => {
   const project = designProject('design-ok');
   const res = run('design-check.js', ['contrast', project]);

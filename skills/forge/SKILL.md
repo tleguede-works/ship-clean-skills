@@ -440,10 +440,19 @@ Puis :
 ```bash
 node "$FORGE/scripts/forge-guard.js" placeholders <anchor>
 node "$FORGE/scripts/design-check.js" contrast <anchor>
+node "$FORGE/scripts/design-check.js" component-parity <anchor>
 ```
 
 > Un écran qui cite un token doit citer une valeur qui **existe** et qui est
 > **lisible**. Le second n'est pas visible en relisant l'écran : il se mesure.
+
+> Un écran qui rend un composant doit connaître sa **surface**. Quand un
+> composant gagne un slot ou un état, le propager à tous les écrans qui le
+> rendent n'est pas une politesse : c'est la condition pour que le même
+> composant n'ait pas deux rendus. `component-parity` attrape la forme que ça
+> prend quand on l'oublie — une énumération devenue fausse (« ses 6 slots »
+> quand il y en a 7). Un écran qui choisit de ne pas rendre un état l'écrit
+> avec sa raison : `` `Tile` — exempt: `offline` (le tableau est en ligne) ``.
 
 #### 3.5 Validation design
 
@@ -858,7 +867,7 @@ dossier du skill, voir « Comment exécuter les scripts » plus haut.
 | `consistency-check.js all` | Écarts **entre** artefacts : PRD ↔ archi ↔ plans ↔ tests ↔ écrans | **Avant chaque gate** |
 | `forge-exit.js` | Critère de sortie **exécuté** d'une slice | **Phase 7, par slice** |
 | `coverage-check.js` | Couverture d'un plan de slice | Phase 5 |
-| `design-check.js` | **Mesure** contrastes (WCAG 1.4.3 / 1.4.11) et tokens sans valeur | **Phase 3, au gate** |
+| `design-check.js` | **Mesure** contrastes (WCAG 1.4.3 / 1.4.11), tokens sans valeur, et **parité de surface** entre composant et écrans | **Phase 3, au gate** |
 | `dependency-check.js` | Cycles, ordre topologique ; `--write` persiste le graphe | Phase 4 |
 | `audit-report.js` | Analyse croisée de plusieurs projets | Après plusieurs projets |
 | `selftest` | Tests du skill lui-même | Avant toute publication |
