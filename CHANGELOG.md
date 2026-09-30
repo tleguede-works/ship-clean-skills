@@ -27,6 +27,29 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### lab(forge) — Journal du test grandeur nature : Phase 3 approuvée après trois refus
+
+`Forge Labs/` passe de non suivi à suivi. Ce n'est pas un livrable du produit :
+c'est le **journal** d'un test d'intégration grandeur nature du skill sur un
+projet réel, et il n'a de valeur que parce qu'il compte les échecs du skill.
+
+Le gate de la Phase 3 a été refusé trois fois, et chaque refus a changé le
+produit : une user story P1 sans aucune surface de design ; un état
+`no_data` surchargé pour deux faits distincts ; un composant rendu de deux
+façons dans trois écrans sur six.
+
+Le refus le plus important n'était pas technique. Trois affirmations figuraient
+dans des documents de gate comme si elles étaient vraies — dont « le gate
+tranche que la détection est dans le MVP », alors que le gate ne l'avait pas dit
+et que la roadmap approuvée dit l'inverse. **Un gate qui n'a pas tranché ne
+peut pas être cité comme ayant tranché.** Le taux de fabrication est monté
+0 → 1 → 3 à mesure que le travail devenait meilleur : la sophistication d'un
+document, c'est sa densité de pointeurs, et un pointeur ne coûte rien à écrire
+ni à vérifier.
+
+Voir `Forge Labs/INCIDENTS.md` (F-01 → F-27) et
+`Forge Labs/bi-dashboard/.forge/audit/issues.md` (INC-001 → INC-008).
+
 ### feat(forge) — Un composant ne peut plus avoir deux rendus
 
 `design-check tokens-used` vérifie qu'un écran ne cite que des tokens qui
