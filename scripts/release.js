@@ -130,10 +130,28 @@ function cmdCheck() {
   if (!pass) process.exit(1);
 }
 
-/** Les versions dont le tag existe : elles sont publiées, quoi qu'en dise le fichier. */
+/**
+ * Les versions dont le tag existe : elles sont publiées, quoi qu'en dise le fichier.
+ *
+ * `git` est appelé dans **`ROOT`**, jamais dans le répertoire courant. Les chemins
+ * du script (`VERSION`, `CHANGELOG.md`) sont tous résolus depuis `__dirname` ; une
+ * seule commande résolue depuis le CWD interroge un **autre dépôt** et rapporte les
+ * tags d'un dépôt qui n'est pas celui qu'on protège.
+ *
+ * Constaté sur l'archive publiée : le test du refus par tag **passait dans le dépôt
+ * et échouait dans l'archive extraite**. Le bac à sable est un dépôt à part, mais
+ * la commande partait du CWD — le dépôt réel quand on testait depuis le dépôt, et un
+ * dépôt sans tags dans l'archive. La protection ne s'exerçait donc que par accident,
+ * et l'accident coïncidait avec l'environnement où elle devait échouer.
+ *
+ * C'est le **même motif** que `component-parity` et que le bac à sable sans commit :
+ * un contrôle qui interroge un périmètre différent de celui qu'il croit mesurer.
+ */
 function publishedTags() {
   try {
-    const raw = execFileSync('git', ['tag', '--list'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const raw = execFileSync('git', ['tag', '--list'], {
+      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']
+    });
     return raw.split('\n').map(s => s.trim()).filter(s => /^v?\d+\.\d+\.\d+$/.test(s))
       .map(s => s.replace(/^v/, ''));
   } catch {
