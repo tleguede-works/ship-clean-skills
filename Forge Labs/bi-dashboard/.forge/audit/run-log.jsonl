@@ -259,3 +259,14 @@
 {"ts":"2026-09-30T16:27:16.340Z","type":"amend","kind":"deliverable","key":"architecture","reason":"les trois décisions arbitrées, plus le défaut que leur application a révélé"}
 {"ts":"2026-09-30T16:27:58.005Z","type":"status_change","kind":"deliverable","key":"architecture","from":"stale","to":"draft","mirrored":{"mirrored":true,"changed":false,"path":".forge/architecture.md","status":"draft"}}
 {"ts":"2026-09-30T16:27:58.076Z","type":"amend","kind":"deliverable","key":"architecture","reason":"les trois décisions arbitrées, plus le défaut que leur application a révélé"}
+{"ts":"2026-09-30T16:36:03.683Z","type":"status_change","kind":"deliverable","key":"design_system","from":"draft","to":"approved","mirrored":{"mirrored":true,"changed":true,"path":".forge/design/design-system.md","from":"draft","to":"approved"}}
+{"ts":"2026-09-30T16:36:03.743Z","type":"status_change","kind":"screen","key":"definitions","from":"draft","to":"approved","mirrored":{"mirrored":true,"changed":true,"path":".forge/design/screens/definitions.md","from":"draft","to":"approved"}}
+{"ts":"2026-09-30T16:36:18.460Z","type":"graph_written","nodes":15,"waves":4}
+{"ts":"2026-09-30T16:36:26.174Z","type":"hash","kind":"deliverable","entry":"architecture","content_hash":"sha256:8822c2355b03"}
+{"ts":"2026-09-30T16:36:26.229Z","type":"hash","kind":"deliverable","entry":"design_system","content_hash":"sha256:943af5123c6f"}
+{"ts":"2026-09-30T16:47:57.115Z","type":"fast_track_validate","message":"architecture","agent":"quality-analyst","verdict":"BLOCK","findings":"2"}
+{"ts":"2026-09-30T16:47:57.161Z","type":"fast_track_validate","message":"architecture","agent":"red-team","verdict":"BLOCK","findings":"2"}
+{"ts":"2026-09-30T16:47:57.205Z","type":"fast_track_block","message":"architecture","finding":"garde_cycle_de_vie_ne_lit_pas_OLD_status:published_et_refused_ne_sont_pas_terminaux_en_base","agent":"both"}
+{"ts":"2026-09-30T16:47:57.253Z","type":"fast_track_block","message":"architecture","finding":"one_active_signature_per_signer_interdit_la_resignature:le_chemin_ouvert_par_le_retrait_de_revoked_est_bloque","agent":"both"}
+{"ts":"2026-09-30T16:47:57.297Z","type":"fast_track_block","message":"architecture","finding":"aucun_trigger_BEFORE_INSERT:une_version_peut_naitre_published_sans_acte","agent":"quality-analyst"}
+{"ts":"2026-09-30T16:47:57.340Z","type":"fast_track_block","message":"architecture","finding":"porte_3_passe_pour_la_mauvaise_raison:la_fixture_v2_n_a_aucun_acte_revoke","agent":"both"}

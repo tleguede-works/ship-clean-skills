@@ -334,8 +334,27 @@ d'appel réseau »). Hors périmètre : la logique de données et le fetch.
 ```ts
 // src/components/indicator-tile.tsx
 export type IndicatorDisplayState =
-  | 'default' | 'out_of_band' | 'unknown_freshness'
-  | 'source_unavailable' | 'no_data' | 'computation_too_long' | 'loading';
+  | 'default' | 'loading'
+  // La cible et le seuil : cinq états distincts, pas un. `out_of_band` seul ne
+  // suffit pas — « hors cible » ne dit pas si l'alerte est en cours, déjà émise,
+  // si le seuil est verrouillé, ni s'il vient d'être réarmé. B12 porte exactement
+  // sur cette distinction : une alerte par franchissement, et un réarmement au
+  // retour dans la zone normale. Un seul `out_of_band` rendrait B12 impossible à
+  // afficher.
+  | 'out_of_band'            // hors cible, aucun seuil déclaré (B11, B14)
+  | 'out_of_band_alerting'   // franchissement en cours, première fois
+  | 'out_of_band_alerted'    // franchi, alerte déjà émise, seuil désarmé
+  | 'threshold_latched'      // refranchi sans être repassé dans la zone
+  | 'threshold_armed'        // revenu dans la zone normale : le seuil est réarmé (B12)
+  | 'unknown_freshness' | 'source_unavailable' | 'computation_too_long'
+  // **Les deux états « aucune valeur » sont distincts, et ils le restent.**
+  // `no_data` : la période n'a aucune ligne (E2). `perimeter_empty` : le périmètre
+  // de la définition ne résout **aucune** ligne (E15) — ce n'est pas une absence
+  // de données, c'est une absence de périmètre, et l'utilisateur doit pouvoir le
+  // voir. `ReadOutcome.empty.reason` porte déjà la distinction
+  // (`no_row_in_period` | `resolved_scope_empty`) : il ne manquait que le côté
+  // rendu. Notifier l'un comme l'autre ferait croire à une panne de la source.
+  | 'no_data' | 'perimeter_empty';
 
 /**
  * La ligne de seuil — B11. LA FORME EST FIXÉE ICI, UNE SEULE FOIS.

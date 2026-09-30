@@ -3,7 +3,7 @@ type: screen
 slug: definitions
 title: Référentiel des définitions
 module: definitions
-status: draft
+status: approved
 generated_at: 2026-09-30
 derived_from:
   - .forge/prd.md

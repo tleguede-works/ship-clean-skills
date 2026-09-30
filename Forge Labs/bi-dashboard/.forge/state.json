@@ -119,9 +119,9 @@
     "design_system": {
       "path": ".forge/design/design-system.md",
       "type": "design-system",
-      "status": "draft",
-      "content_hash": "sha256:a2f37a20df3c",
-      "updated_at": "2026-09-30T14:21:19.311Z",
+      "status": "approved",
+      "content_hash": "sha256:943af5123c6f",
+      "updated_at": "2026-09-30T16:36:26.228Z",
       "requires": [
         "B5",
         "B6",
@@ -133,14 +133,37 @@
       ],
       "derived_from": [
         ".forge/prd.md"
-      ]
+      ],
+      "headings": {
+        "0": "Direction visuelle",
+        "1": "Design tokens",
+        "2": "Composants primitifs",
+        "3": "Patterns de navigation",
+        "4": "Grille et layout",
+        "1.1": "Couleurs",
+        "1.2": "Typographie",
+        "1.3": "Espacements",
+        "1.4": "Ombres",
+        "1.5": "Bordures",
+        "1.6": "Animations",
+        "1.7": "Breakpoints",
+        "2.1": "`ThresholdMachine` — la machine à états du franchissement (B11, B12, US-4)",
+        "2.2": "Précédence des états sur une même tuile",
+        "2.7": "États de ligne d'un référentiel",
+        "3.1": "Structure",
+        "3.2": "Navigation principale",
+        "3.3": "Breadcrumbs",
+        "3.4": "Transitions entre pages",
+        "4.1": "Grille de base",
+        "4.2": "Layouts type"
+      }
     },
     "architecture": {
       "path": ".forge/architecture.md",
       "type": "architecture",
       "status": "stale",
-      "content_hash": "sha256:823c44212fe3",
-      "updated_at": "2026-09-30T16:27:57.997Z",
+      "content_hash": "sha256:8822c2355b03",
+      "updated_at": "2026-09-30T16:36:26.173Z",
       "requires": [
         "B1",
         "B2",
@@ -576,9 +599,9 @@
     "definitions": {
       "path": ".forge/design/screens/definitions.md",
       "type": "screen",
-      "status": "draft",
+      "status": "approved",
       "content_hash": "sha256:f18b5fcc14f2",
-      "updated_at": "2026-09-30T14:30:05.408Z",
+      "updated_at": "2026-09-30T16:36:03.734Z",
       "requires": [
         "B1",
         "B2",
@@ -594,7 +617,26 @@
       "derived_from": [
         ".forge/prd.md",
         ".forge/design/design-system.md"
-      ]
+      ],
+      "headings": {
+        "1": "Rôle de l'écran",
+        "2": "Direction visuelle de cet écran",
+        "3": "Anatomie",
+        "4": "States — tous, sans exception",
+        "5": "Interactions",
+        "6": "Responsive",
+        "7": "Accessibilité",
+        "8": "Données",
+        "9": "Traçabilité",
+        "10": "Checklist de gate",
+        "2.1": "Anti-générique — obligatoire",
+        "4.1": "Les états de ligne — le contrat est dans le composant, ici seulement leur place",
+        "4.2": "Précédence des états et compte d'action",
+        "7.1": "Contrastes calculés sur les tokens réellement utilisés",
+        "7.2": "Écart de mesure relevé sur les deux écrans frères du même module",
+        "9.1": "Contraintes et user stories servies",
+        "9.2": "Écarts et arbitrages ouverts"
+      }
     }
   },
   "foundations": {
@@ -952,15 +994,16 @@
       "init": 1,
       "register": 81,
       "gate_revise": 3,
-      "status_change": 41,
+      "status_change": 43,
       "gate_approved": 7,
       "finding_raised": 2,
       "phase_status": 3,
       "nav_prioritized": 2,
       "sync": 3,
       "dependency_declared": 17,
-      "fast_track_validate": 2,
-      "amend": 2
+      "fast_track_validate": 4,
+      "amend": 2,
+      "fast_track_block": 4
     }
   },
   "divergences": [],
