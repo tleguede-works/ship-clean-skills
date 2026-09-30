@@ -2291,3 +2291,103 @@ moment où le projet fait sa deuxième chose. Un test l'aurait laissé passer po
 **v1.9.6** : PR #54, `snapshot verify` → `pass: true`, 96 fichiers, 0 différence,
 192 tests + 7 non exécutés dans l'archive extraite, 14 tests de fumée verts.
 199 tests en local (+ 1).
+
+---
+
+## F-48 — `premises` ne lisait que `[BCE]` : six exigences non fonctionnelles déclarées « mortes »
+
+**Constaté sur Bailly, au gate de la Phase 4.** La Phase 3 et la Phase 4 écrites, les
+quatre declarations `--requires` posees, et `premises` accuse 14 **références mortes** :
+`N3`, `N4`, `N5`, `N6`, `N7`, `N8` sur trois livrables.
+
+Les six exigences existent. Elles sont écrites dans le PRD § 7 « Exigences non
+fonctionnelles », **dans un tableau**.
+
+### Le défaut
+
+Deux motifs, deux fois dans la même fonction :
+
+```js
+const row = line.match(/^\|\s*\*{0,2}([BCE]\d+)\*{0,2}\s*\|\s*([^|]*)/);   // définitions
+for (const m of text.matchAll(/\b([BCE]\d+)\b/g)) declared.add(m[1]);    // déclarés
+```
+
+`N` est une **catégorie d'exigence à part entière** — un PRD qui refuse de porter une
+contrainte chiffrée parmi ses règles métier la range à part, et c'est **bien** ce que
+fait Bailly. Le motif ne la voyait pas. Résultat : un livrable ne pouvait **pas**
+déclarer sa dépendance à une exigence non fonctionnelle sans se faire accuser d'une
+référence morte, et l'accusation citait `N3` (targetes tactiles ≥ 44 pt) avec le
+délai d'échéance du dépôt de garantie — un rapport entre deux choses sans rapport.
+
+Le même jour, `declaredTables` avait déjà été élargi de `[A-Z]` à `Champ |` pour un
+motif voisin. **Deux fois la même erreur, deux motifs différents dans la même
+semaine**, et la deuxième n'a pas hérité de la première.
+
+Le correctif **extrait la catégorie dans une constante unique** partagée par les deux
+lectures. Un prédicat dupliqué diverge, c'est tout ce qu'il fait : corriger l'un et
+pas l'autre donnait un contrôle qui voyait les `N` dans une passe et les perdait dans
+l'autre.
+
+C'est la **dixième** manifestation de la règle du dossier : *un motif plus étroit que ce
+que le document écrit est faux.* Celle-ci porte sur les **identifiants eux-mêmes**,
+qui sont la chose que le contrôle a le moins le droit de mal lire.
+
+### Contre-témoins
+
+Trois. Le premier prouve qu'un `N3` dans une cellule d'index **n'est pas** une
+définition. Le deuxième qu'un `N3` retiré du PRD reste signalé. Le troisième que les
+14 dépendances de Bailly sont vérifiées et **zéro** inconnue — la preuve positive, parce
+qu'un contrôle de référence morte peut passer `pass: true` en ne voyant rien.
+
+---
+
+## F-49 — `no_undecided_slots` confondait la case vide et la phrase qui raconte une décision
+
+**Constaté sur Bailly, même gate, même document.** Huit cases legitimately ouvertes
+dans `conventions.md` — la Phase 4 les tranche toutes, correctement. Le contrôle les
+signale encore, avec **onze** lignes, et **trois** d'entre elles sont du pur accent :
+
+```
+design_system l 593  | `absent`  | Aucune échéance bloquante à décider. Le panneau…
+design_system l 603  | `marge_a_voir` | … « 1 échéance longue approche…
+dossiers l 125       └─ [contexte] "14 baux · 1 à décider · 1 en retard"
+donnees-personnelles l 174   "Ce qui a servi à décider…"
+```
+
+Le motif est un marqueur d'**emplacement** : il dit *rien n'a été écrit ici, et quelque
+chose devait l'être*. La même suite de caractères, dans une **phrase**, décrit souvent
+le contraire — elle **raconte** une décision. Le contrôle lisait une phrase comme un
+emplacement.
+
+Et le cas le plus instructif est dans le produit lui-même : Bailly s'appelle « les trois
+états de traitement », l'une de ses colonnes s'appelle `decidee_le`, et son bandeau
+affiche « 1 à décider ». **Interdire le mot « décider » dans ce projet, c'est
+interdire de le nommer.** Un contrôle de complétude qui interdit de nommer un champ
+n'est pas un contrôle de complétude, c'est un empêcheur de travailler.
+
+### Le correctif
+
+Un marqueur n'est une case que s'il occupe **la place d'une valeur** : dans une cellule
+de tableau, **seul dans sa cellule**, ou en tête d'une section. Ailleurs c'est de la
+prose.
+
+La distinction se fait par la **forme de la ligne**, jamais par le sens du mot. C'est la
+seule chose qu'un contrôle peut décider sans lire le document, et la seule qui ne
+dépende pas d'une intention — un contrôle qui juge le sens d'une phrase en français
+n'est pas un contrôle, c'est un usage, pas une décision.
+
+### Contre-témoins
+
+Trois, dont deux que j'avais d'abord écrits **vides**.
+
+- « à décider » en prose → `pass`, **après** la Phase 4 où c'est un échec dur.
+- Une cellule `À DÉCIDER EN PHASE 4` → retrouvée **et nommée** avant la Phase 4, puis
+  échec dur après. Prouver qu'elle est **retrouvée** est la moitié du travail : un
+  correctif de faux positif fait disparaître la vraie case en silence.
+- Un document qui contient **les deux formes** → exactement **une** ligne accusée.
+
+Et le contre-témoin du contre-témoin, qui compte : le test négatif **passait avec le
+correctif neutralisé**. Il asserait `status === 'pass'`, un statut qui est vrai avant la
+Phase 4 **quels que soient** les lignes trouvées. Un test qui passe avec le correctif
+annulé ne prouve pas le correctif — il prouve qu'il tourne. Corrigé, il regarde
+`expected` et `offenders`, et il échoue bien quand le correctif est enlevé.
