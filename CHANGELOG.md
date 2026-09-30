@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-09-30
+
 ### fix(forge) — Le graphe de dépendances n'était déclarable par aucune commande
 
 La Phase 4 est la phase qui **produit** le découpage en slices. Son étape 3
