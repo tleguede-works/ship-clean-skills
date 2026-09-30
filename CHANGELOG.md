@@ -27,8 +27,6 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
-## [1.8.0] - 2026-09-30
-
 ### fix(component-parity) — un contrôle qui n'a rien vérifié rendait « conforme »
 
 `component-parity` découvrait les composants par la **forme de leur nom** —
@@ -155,6 +153,42 @@ Le gabarit pose la déclaration avant la section 1, avec les cinq directives, le
 seuils, et la raison de `on:`. Un design system rédigé en suivant le gabarit est
 donc mesuré correctement **sans avoir lu le code du contrôle** — ce qui est le
 seul moyen que la règle tienne pour quelqu'un qui écrit en français.
+
+## [1.7.0] - 2026-09-30
+
+### fix(design-check) — un texte français à 3,80:1 passait, parce que le contrôle ne savait pas le nommer
+
+`design-check` classait chaque couleur d'après son **nom**, et ses trois signaux
+étaient des littéraux **anglais** : `--color-text-*`, `--color-ink-50/100/200`,
+`*-subtle`. Écrits contre Amberline, alors que tout ce que ce skill produit est en
+français.
+
+Sur le premier design system français, **tout** tombait sur « composant non
+textuel », donc sur 3:1. Six faux positifs, dont un texte inversé mesuré à 1,10:1
+sur le papier où il n'est jamais posé — et **un faux négatif** : `--color-texte-desactive`,
+token de texte à **3,80:1** sur la surface enfoncée, classé composant, donc jugé
+conforme, apparu dans `measured` et **jamais** dans `offenders`.
+
+Septième mécanisme de la même famille, et le premier **silencieux**.
+
+### feat(design-check) — le document déclare ses classes, le script mesure
+
+Le design system déclare `text`, `surface`, `nontext`, `on`, `exempt` dans un bloc
+`forge:token-classes`. Ajouter `--color-texte-*` à côté de `--color-text-*` aurait
+été le correctif évident, et faux : il faudrait réécrire la liste à chaque
+vocabulaire. Résolution : déclaration, puis `EXEMPT`, puis heuristiques — Amberline
+et ses tests restent verts.
+
+`on:` dit sur quels fonds un texte est **réellement** posé, sans quoi un texte
+inversé est mesuré contre le papier et échoue par construction.
+
+### feat(design-system) — le gabarit déclare ses classes, et explique pourquoi
+
+Le gabarit pose la déclaration avant la section 1, avec les cinq directives et
+leurs seuils. Un design system rédigé en suivant le gabarit est donc mesuré
+correctement **sans avoir lu le code du contrôle**.
+
+---
 
 ## [1.6.3] - 2026-09-30
 
