@@ -21,7 +21,7 @@
     "mode": "guided",
     "fast_track": null
   },
-  "current_phase": "2",
+  "current_phase": "3",
   "phases": {
     "0_bootstrap": {
       "status": "in_progress"
@@ -34,7 +34,7 @@
       "status": "in_progress"
     },
     "3_design": {
-      "status": "not_started"
+      "status": "in_progress"
     },
     "4_architecture": {
       "status": "not_started"
@@ -115,6 +115,26 @@
       "derived_from": [
         ".forge/prd.md"
       ]
+    },
+    "design_system": {
+      "path": ".forge/design/design-system.md",
+      "type": "design-system",
+      "status": "draft",
+      "content_hash": "sha256:36574b590687",
+      "headings": {
+        "0": "Les trois ancres",
+        "1": "Direction de la couleur",
+        "2": "Typographie",
+        "3": "Espacements, durées, formats",
+        "4": "Navigation",
+        "5": "Composants primitifs",
+        "6": "Points à décider en Phase 4",
+        "0.0": "Déclaration des classes"
+      },
+      "updated_at": "2026-09-30T17:49:45.805Z",
+      "derived_from": [
+        ".forge/prd.md"
+      ]
     }
   },
   "index": {},
@@ -129,8 +149,8 @@
     "metrics": ".forge/audit/metrics.json",
     "counts": {
       "init": 1,
-      "register": 3,
-      "phase_status": 2,
+      "register": 5,
+      "phase_status": 3,
       "status_change": 1,
       "gate_approved": 1
     }
