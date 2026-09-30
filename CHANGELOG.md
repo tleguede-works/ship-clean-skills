@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-30
+
 ### feat(forge) — Un composant ne peut plus avoir deux rendus
 
 `design-check tokens-used` vérifie qu'un écran ne cite que des tokens qui
@@ -64,7 +66,6 @@ Trois pièges rencontrés en l'écrivant, tous deux couverts par un test :
   donc par **preuve** — le composant dont la surface contient tous les noms cités.
 
 +5 tests (135 → 140).
-
 
 ## [1.3.1] - 2026-09-30
 
