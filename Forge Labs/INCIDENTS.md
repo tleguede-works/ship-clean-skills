@@ -543,3 +543,76 @@ défaut de la ligne 1388 (`IF NEW.status = OLD.status THEN RETURN NEW`) : cette
 garde n'est atteinte que sur une transition de statut, donc un `UPDATE` qui écrit
 `published_at` en ne changeant pas le statut passe **au travers**. Elle est
 écrite, commentée, et inerte.
+
+---
+
+## F-34 — Le skill n'avait aucune règle d'amendement, et l'amendement a cassé 17 renvois
+
+**Signalé par** INC-011, **corrigé par** `state.js amend` et
+`consistency-check references` (skill v1.6.0).
+
+### Ce que le skill disait
+
+Deux phrases, en tout et pour tout : « `conventions.md` est un document vivant »
+et « peut être amendé à tout moment ». **Aucun contrat.** Rien ne disait ce qu'un
+amendement doit préserver, ni ce qu'il ne doit pas faire.
+
+### Ce que l'amendement a fait
+
+L'amendement des deux causes racines critiques a **inséré** deux endpoints en
+§ 5.9 et § 5.10, ce qui a décalé § 5.11 → § 5.13 … § 5.20 → § 5.22. Dix-sept
+renvois dans huit plans pointent vers la mauvaise section, et **aucune ligne ne le
+signale** : ils pointent vers quelque chose, donc ils résolvent.
+
+Le refus de `state.js amend` nomme la dérive dans l'ordre, ce qui rend le mécanisme
+visible :
+
+```
+5.10  était « Publier »      →  « NOUVEAU inséré en plein milieu »
+5.11  était « Partager »    →  « Publier »
+5.12  était « Journaliser »  →  « Partager »
+```
+
+Le correctif sans risque : ajouter les deux endpoints **en fin de § 5**, sans
+toucher à un numéro existant.
+
+### F-34-b — 276 renvois qui ne nomment pas leur cible
+
+`consistency-check references` sur « Amberline » : **1 073 renvois résolus**,
+**0 pointeur cassé**, **0 cible inconnue**, **276 renvois nus**.
+
+| classe | compte | verdict |
+|---|---|---|
+| résolus | 1 073 | — |
+| **pointeur cassé** | **0** | échec |
+| cible inconnue | 0 | échec |
+| **cible non déclarée** | **276** | **compté** |
+
+Les 276 sont la classe d'INC-011 : `§ 5.15` seul ne dit pas de quel document il
+parle. Les nommer est un chantier ; les faire échouer produirait un contrôle
+éteint en une semaine. Le compte a donc une **voie de sortie écrite dans la sortie
+du contrôle** : écrire `` `architecture.md` § 5.15 ``, et il tombe.
+
+Les plus chargés :
+
+| fichier | renvois nus |
+|---|---|
+| `design/screens/definitions.md` | 42 |
+| `design/screens/indicateurs.md` | 26 |
+| `design/screens/indicateur-detail.md` | 22 |
+| `design/screens/tableau-de-bord.md` | 20 |
+| `design/screens/tableau-de-bord-composition.md` | 15 |
+
+**Zéro faux positif** sur 1 349 renvois. C'est le premier contrôle de cette famille
+qui y parvienne, et il y est parvenu en **cinq** essais — dont quatre qui
+produisaient 539, 13, 5 et 3 faux positifs. La forme qui tient est la plus étroite :
+**le nom du fichier et son numéro doivent être écrits l'un à côté de l'autre.**
+Au-delà de douze caractères, le contrôle refuse de deviner et compte.
+
+### Ce qui reste à faire dans le projet
+
+| # | action |
+|---|---|
+| 1 | nommer la cible des 276 renvois nus, en commençant par les 15 plans (les cibles d'INC-011) |
+| 2 | ne plus éditer un artefact approuvé : passer par `state.js amend --reason` |
+| 3 | reprendre les 17 renvois d'INC-011 contre l'architecture amendée, en Phase 5 |
