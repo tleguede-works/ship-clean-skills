@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-30
+
 ### docs(forge) — Journal du test grandeur nature : Phase 3 approuvée après trois refus
 
 `Forge Labs/` passe de non suivi à suivi. Ce n'est pas un livrable du produit :
