@@ -4,3 +4,6 @@
 {"ts":"2026-09-30T22:12:55.537Z","type":"phase_status","phase":"1_prd","from":"not_started","to":"in_progress"}
 {"ts":"2026-09-30T22:12:55.586Z","type":"register","deliverable":"prd","path":".forge/prd.md","kind":"deliverable"}
 {"ts":"2026-09-30T22:13:02.129Z","type":"register","deliverable":"prd","path":".forge/prd.md","kind":"deliverable"}
+{"ts":"2026-09-30T22:17:02.480Z","type":"phase_status","phase":"2_roadmap","from":"not_started","to":"in_progress"}
+{"ts":"2026-09-30T22:17:02.523Z","type":"status_change","kind":"deliverable","key":"prd","from":"draft","to":"approved","mirrored":{"mirrored":true,"changed":true,"path":".forge/prd.md","from":"draft","to":"approved"}}
+{"ts":"2026-09-30T22:17:02.576Z","type":"register","deliverable":"roadmap","path":".forge/roadmap.md","kind":"deliverable"}

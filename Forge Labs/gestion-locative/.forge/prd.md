@@ -1,6 +1,6 @@
 ---
 type: prd
-status: draft
+status: approved
 generated_at: 2026-09-30
 derived_from:
   - .forge/conventions.md

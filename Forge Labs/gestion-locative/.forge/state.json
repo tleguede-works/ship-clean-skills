@@ -21,7 +21,7 @@
     "mode": "guided",
     "fast_track": null
   },
-  "current_phase": "1",
+  "current_phase": "2",
   "phases": {
     "0_bootstrap": {
       "status": "in_progress"
@@ -30,7 +30,7 @@
       "status": "in_progress"
     },
     "2_roadmap": {
-      "status": "not_started"
+      "status": "in_progress"
     },
     "3_design": {
       "status": "not_started"
@@ -72,7 +72,7 @@
     "prd": {
       "path": ".forge/prd.md",
       "type": "prd",
-      "status": "draft",
+      "status": "approved",
       "content_hash": "sha256:b781a14eb6c0",
       "headings": {
         "1": "Résumé exécutif",
@@ -94,9 +94,40 @@
         "3.5": "Le garde-fou — la propriété transverse",
         "3.6": "Ce que je n'ai pas dans les user stories, et pourquoi"
       },
-      "updated_at": "2026-09-30T22:13:02.128Z",
+      "updated_at": "2026-09-30T22:17:02.518Z",
       "derived_from": [
         ".forge/conventions.md"
+      ]
+    },
+    "roadmap": {
+      "path": ".forge/roadmap.md",
+      "type": "roadmap",
+      "status": "draft",
+      "content_hash": "sha256:0d3260f843be",
+      "headings": {
+        "1": "Vision par version",
+        "2": "MVP — Minimum Viable Product",
+        "3": "V1 — Première version complète",
+        "4": "V2 et au-delà",
+        "5": "Compromis assumés",
+        "6": "Effort relatif par version",
+        "7": "Dépendances externes",
+        "2.1": "Périmètre",
+        "2.2": "Ce qui n'est PAS dans le MVP",
+        "2.3": "Les cinq échéances, et pourquoi deux ne sont pas des rappels",
+        "2.4": "Risques spécifiques au MVP",
+        "2.5": "Le défaut de structure, et la règle qu'il impose",
+        "2.6": "Questions que cette roadmap pose au PRD",
+        "3.1": "Ajouts par rapport au MVP",
+        "3.2": "Ce qui est repoussé en V2+",
+        "3.3": "Risques spécifiques à la V1",
+        "3.4": "Dépendances inter-versions",
+        "4.1": "Backlog V2",
+        "4.2": "Idées pour le futur (V3+)"
+      },
+      "updated_at": "2026-09-30T22:17:02.576Z",
+      "derived_from": [
+        ".forge/prd.md"
       ]
     }
   },
@@ -112,8 +143,9 @@
     "metrics": ".forge/audit/metrics.json",
     "counts": {
       "init": 1,
-      "register": 4,
-      "phase_status": 1
+      "register": 5,
+      "phase_status": 2,
+      "status_change": 1
     }
   },
   "divergences": []
