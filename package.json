@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "validate": "node scripts/validate-repo.js",
-    "test": "node scripts/validate-repo.js && node skills/forge/scripts/selftest.js"
+    "test": "node scripts/validate-repo.js && node skills/forge/scripts/selftest.js && node scripts/release-smoke.js && node scripts/snapshot-smoke.js",
+    "snapshot": "node scripts/snapshot.js build"
   },
   "private": false
 }

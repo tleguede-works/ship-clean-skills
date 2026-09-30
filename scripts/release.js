@@ -253,19 +253,108 @@ function cmdNotes(versionArg) {
   process.stdout.write(body + '\n');
 }
 
+/* ------------------------------------------------------------------ *
+ * decide — le mécanisme de versionnement, en un seul endroit
+ * ------------------------------------------------------------------ */
+
+const LEVEL_ORDER = { patch: 0, minor: 1, major: 2 };
+
+/** Niveau déduit des types d'entrée présents. SemVer, appliqué aux types du CHANGELOG. */
+function levelFor(entries) {
+  if (entries.some(e => e.type === 'breaking')) return 'major';
+  if (entries.some(e => e.type === 'feat')) return 'minor';
+  return 'patch';
+}
+
+/**
+ * Faut-il publier, et à quel niveau ?
+ *
+ * Cette décision vivait entièrement dans le workflow, en `node -e` échappé dans
+ * un heredoc bash, dupliquée trois fois. Deux conséquences, toutes deux réelles :
+ *
+ *   1. elle n'était testable que **par une publication** ;
+ *   2. `workflow_dispatch` court-circuitait **avant** l'analyse : le niveau
+ *      demandé agissait comme un plafond, alors que `CONTRIBUTING.md` documentait
+ *      un plancher. Une demande de `patch` sur une section contenant un `feat`
+ *      publiait un patch.
+ *
+ * Règle : le niveau demandé est un **plancher**. Le niveau publié est le plus
+ * grand des deux.
+ *
+ * Le niveau demandé ne crée pas de contenu : une section `[Unreleased]` vide reste
+ * non publiable, même en dispatch manuel. Publier « parce qu'on l'a demandé »
+ * consommerait un numéro pour un changement invisible — exactement ce que la règle
+ * automatique interdit.
+ */
+function cmdDecide(argv) {
+  const text = read(CHANGELOG);
+  if (text === null) {
+    process.stdout.write(JSON.stringify({ error: 'CHANGELOG.md absent' }, null, 2) + '\n');
+    process.exit(1);
+  }
+
+  const fi = argv.indexOf('--force');
+  const forced = fi !== -1 && argv[fi + 1] && !argv[fi + 1].startsWith('--')
+    ? argv[fi + 1].replace(/^--/, '')
+    : null;
+  if (forced && !(forced in LEVEL_ORDER)) {
+    process.stdout.write(JSON.stringify({
+      error: 'niveau inconnu', given: forced, accepted: Object.keys(LEVEL_ORDER)
+    }, null, 2) + '\n');
+    process.exit(1);
+  }
+
+  const unreleased = parseChangelog(text).find(s => s.version === 'Unreleased');
+  const entries = unreleased ? unreleased.entries : [];
+  const deduced = levelFor(entries);
+
+  if (!entries.length) {
+    process.stdout.write(JSON.stringify({
+      should_release: false,
+      level: null,
+      deduced_level: deduced,
+      forced_level: forced,
+      entries: 0,
+      reason: 'La section `## [Unreleased]` est vide. Un niveau demandé à la main ne ' +
+              'crée pas de contenu : publier ici consommerait un numéro pour un changement invisible.'
+    }, null, 2) + '\n');
+    return;
+  }
+
+  const level = forced && LEVEL_ORDER[forced] > LEVEL_ORDER[deduced] ? forced : deduced;
+  const types = [...new Set(entries.map(e => e.type))];
+
+  process.stdout.write(JSON.stringify({
+    should_release: true,
+    level,
+    deduced_level: deduced,
+    forced_level: forced,
+    raised_by_force: level !== deduced,
+    entries: entries.length,
+    types,
+    reason: forced
+      ? (level !== deduced
+        ? `contenu de niveau ${deduced}, niveau demandé ${forced} : publié en ${level} — le niveau demandé est un plancher, pas un plafond`
+        : `contenu de niveau ${deduced}, niveau demandé ${forced} : même niveau`)
+      : `contenu de niveau ${deduced}`
+  }, null, 2) + '\n');
+}
+
 const [cmd, arg] = process.argv.slice(2);
 switch (cmd) {
   case 'current': cmdCurrent(); break;
   case 'check': cmdCheck(); break;
   case 'notes': cmdNotes(process.argv[3]); break;
+  case 'decide': cmdDecide(process.argv.slice(3)); break;
   case 'bump': cmdBump((arg || '').replace(/^--/, '')); break;
   default:
     process.stdout.write(JSON.stringify({
       usage: {
         'release.js current': 'affiche la version',
         'release.js check': 'valide VERSION ↔ CHANGELOG (CI)',
-        'release.js bump --major|--minor|--patch': 'promeut [Unreleased] en version datée',
-        'release.js notes [version]': 'corps de la section [version], pour les notes de release'
+        'release.js notes [version]': 'corps de la section [version], pour les notes de release',
+        'release.js decide [--force patch|minor|major]': 'faut-il publier, et à quel niveau',
+        'release.js bump --major|--minor|--patch': 'promeut [Unreleased] en version datée'
       }
     }, null, 2) + '\n');
 }

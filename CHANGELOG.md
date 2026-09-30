@@ -27,6 +27,68 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### feat(repo) — Chaque release porte le snapshot complet du skill
+
+Une release ne contenait que `notes.md` — le fichier de notes lui-même. Vérifié
+sur v1.1.6, v1.1.7 et v1.1.8 : **un seul asset**, de quelques kilo-octets. Le
+skill n'est pas compilé, donc rien ne produit d'exécutable à joindre, et le tag ne
+dit rien du contenu : impossible de retrouver la version publiée.
+
+`scripts/snapshot.js` construit `ship-clean-skills-v<version>.tar.gz` contenant
+`skills/`, `scripts/`, `README.md`, `LICENSE`, `VERSION`, `CHANGELOG.md` et
+`package.json` — tout ce qui rend le skill utilisable hors du dépôt, rien de ce
+qui sert à maintenir le dépôt. `MANIFEST.json` est le **premier** membre de
+l'archive : SHA-256 de chaque fichier, version, commit publié.
+
+L'archive est **déterministe** : ordre trié, mtimes figés, uid/gid nuls, gzip sans
+en-tête variable. Deux constructions de la même version sont identiques octet pour
+octet — sans quoi « l'archive reproduit la version » n'a aucun sens.
+
+Le workflow vérifie l'archive contre le checkout **avant** de publier, puis
+**re-télécharge la release et l'extrait** après. Il ne fait pas confiance à ce
+qu'il vient d'envoyer.
+
+### fix(repo) — La version publiée était décidée à trois endroits, dont aucun testable
+
+La décision « faut-il publier, et à quel niveau ? » vivait dans le workflow, en
+`node -e` échappé dans un heredoc bash, **dupliquée trois fois**. Deux conséquences
+réelles : elle n'était testable que **par une publication**, et `workflow_dispatch`
+court-circuitait **avant** l'analyse — donc le niveau demandé agissait comme un
+**plafond**, alors que `CONTRIBUTING.md` annonçait un plancher depuis le début.
+Une demande de `patch` sur une section contenant un `feat` publiait un patch.
+
+`release.js decide` porte maintenant toute la règle, dans un fichier testable :
+`breaking` → major, `feat` → minor, sinon patch. Le niveau demandé est un
+**plancher**, le niveau publié est le plus grand des deux, et un niveau forcé ne
+crée pas de contenu — une section vide reste non publiable, à la main comme
+automatiquement.
+
+### test(repo) — L'archive est testée par ses **négatifs**
+
+`scripts/snapshot-smoke.js` construit l'archive, vérifie qu'elle reproduit le
+checkout, exige deux constructions identiques, puis **altère l'archive et exige
+que la vérification échoue**. Un contrôle qui ne peut pas échouer ne prouve rien.
+
+Ce sont les négatifs qui ont trouvé deux vrais défauts pendant l'écriture du test :
+
+- `verify <archive>` **sans** `--against` comparait l'archive à elle-même
+  (`rest[0]` devenait la référence), et sortait « 93 différences » sur une archive
+  parfaitement saine — un diagnostic qui accuse l'archive d'être fausse parce
+  qu'elle ne se compare pas à elle-même ;
+- une archive construite avec `--version 9.9.9` **passait** la vérification contre
+  un checkout en 1.1.9 : seul `MANIFEST.json` différait, et il n'est pas dans la
+  liste des fichiers comparés. L'archive annonçait donc une version fausse en
+  étant déclarée fidèle — exactement le défaut qu'un manifeste doit attraper. La
+  `VERSION` est désormais comparée elle aussi.
+
+### feat(repo) — La version de release se décide par un mécanisme, plus à la main
+
+`release.js decide` et `snapshot.js` sont couverts par la CI. 11 tests de snapshot
+(construction, reproduction du checkout, reproductibilité, fichier altéré, version
+fausse, archive illisible, manifeste absent, périmètre inclus/exclu, position du
+manifeste) et 4 tests de `decide` (section vide, niveau déduit, plancher, niveau
+inconnu), en plus des 10 existants.
+
 ## [1.1.9] - 2026-09-30
 
 ### fix(forge) — Un acquittement de retrait se lisait sur un extrait tronqué

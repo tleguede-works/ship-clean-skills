@@ -157,6 +157,74 @@ test('notes échoue sur une version absente, et nomme les versions présentes', 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('decide refuse de publier une section [Unreleased] vide, même forcée', () => {
+  const dir = sandbox();
+  try {
+    fs.writeFileSync(path.join(dir, 'CHANGELOG.md'), fs.readFileSync(path.join(dir, 'CHANGELOG.md'), 'utf-8')
+      .replace(/^## \[Unreleased\][\s\S]*?(?=\n## )/m, '## [Unreleased]\n\n'));
+
+    for (const args of [['decide'], ['decide', '--force', 'major']]) {
+      const r = runIn(dir, ...args);
+      assert(r.code === 0, `decide ne devrait pas échouer : ${r.stdout}${r.stderr}`);
+      const json = JSON.parse(r.stdout);
+      assert(json.should_release === false,
+        `un [Unreleased] vide ne doit jamais être publiable, même forcé (${args.join(' ')}) : ${r.stdout}`);
+      assert(json.level === null, 'aucun niveau ne doit être proposé');
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('decide déduit le niveau des types d\'entrée', () => {
+  const dir = sandbox();
+  try {
+    const changelog = path.join(dir, 'CHANGELOG.md');
+    const withEntry = (type) => fs.writeFileSync(changelog,
+      fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf-8')
+        .replace(/^## \[Unreleased\][\s\S]*?(?=\n## )/m, '## [Unreleased]\n\n### ' + type + '(test) — une entrée\n\nCorps.\n\n'));
+
+    for (const pair of [['fix', 'patch'], ['docs', 'patch'], ['feat', 'minor'], ['breaking', 'major']]) {
+      withEntry(pair[0]);
+      const r = runIn(dir, 'decide');
+      const json = JSON.parse(r.stdout);
+      assert(json.should_release === true, pair[0] + ' doit être publiable : ' + r.stdout);
+      assert(json.level === pair[1], pair[0] + ' doit donner ' + pair[1] + ', obtenu ' + json.level);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('le niveau forcé est un PLANCHER, pas un plafond', () => {
+  // `CONTRIBUTING.md` l'annonce depuis le début ; le workflow court-circuitait
+  // avant l'analyse et appliquait un plafond. Une demande de patch sur un
+  // contenu de niveau feat publiait un patch.
+  const dir = sandbox();
+  try {
+    const changelog = path.join(dir, 'CHANGELOG.md');
+    fs.writeFileSync(changelog, fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf-8')
+      .replace(/^## \[Unreleased\][\s\S]*?(?=\n## )/m, '## [Unreleased]\n\n### feat(test) — une entrée\n\nCorps.\n\n'));
+
+    let r = runIn(dir, 'decide', '--force', 'patch');
+    let json = JSON.parse(r.stdout);
+    assert(json.level === 'minor',
+      'un feat avec un plancher patch doit publier un minor, obtenu ' + json.level);
+    assert(json.raised_by_force === false, 'le niveau ne doit pas être relevé si le plancher est plus bas');
+
+    r = runIn(dir, 'decide', '--force', 'major');
+    json = JSON.parse(r.stdout);
+    assert(json.level === 'major', 'un plancher major doit relever le niveau, obtenu ' + json.level);
+    assert(json.raised_by_force === true, 'le relèvement doit être visible');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('decide refuse un niveau inconnu', () => {
+  const dir = sandbox();
+  try {
+    const r = runIn(dir, 'decide', '--force', 'geant');
+    assert(r.code !== 0, 'un niveau inconnu doit être refusé');
+    const json = JSON.parse(r.stdout);
+    assert(Array.isArray(json.accepted), 'les niveaux acceptés doivent être listés : ' + r.stdout);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('check détecte une divergence VERSION ↔ CHANGELOG', () => {
   const dir = sandbox();
   try {
