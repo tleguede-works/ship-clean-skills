@@ -27,7 +27,57 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
-## [1.7.0] - 2026-09-30
+## [1.8.0] - 2026-09-30
+
+### fix(component-parity) — un contrôle qui n'a rien vérifié rendait « conforme »
+
+`component-parity` découvrait les composants par la **forme de leur nom** —
+`^### PascalCase$` — puis n'en retenait que ceux dont le libellé de contrat
+s'écrivait exactement `**États** :`.
+
+Or tout ce que ce skill produit est en français. Sur Onduleur, premier design
+system français à passer par ici, la mesure est celle-ci :
+
+```
+pass: true
+components: [ { component: "Bouton", slots: 3, states: 0 } ]
+```
+
+**Un composant lu sur sept. Zéro état lu sur celui-là. Zéro exigence portée sur
+aucun écran. Et `pass: true`.**
+
+`### Tuile produit`, `### Champ de saisie`, `### Ligne de commande`,
+`### Panneau d'état` sont invisibles : la forme du nom ne correspond pas. Et
+`Bouton` est trouvé, mais son libellé s'écrit `**États** —` là où le lecteur
+attendait `**États** :`, donc ses six états n'existent pas pour le contrôle. Le
+pire n'est pas le faux positif : c'est un contrôle dont **le périmètre vide se
+déclare conforme**.
+
+**La correction de fond est la non-vacuité.** Un composant est désormais
+reconnu par la **présence de son contrat** — `**États**` ou `**Slots**` — et non
+par la forme de son nom. Le nom redevient ce qu'il est : une étiquette, lisible,
+avec ses espaces et son apostrophe. Et si le design system ne déclare la surface
+d'aucun composant, le contrôle **refuse** et rend les titres qu'il a lus, pour
+qu'on sache quoi écrire. Un contrôle qui n'a rien vérifié ne dit plus
+« conforme ».
+
+Le séparateur du libellé est lu des deux côtés (`:` ou tiret cadratin), et **ce
+qui suit le libellé décide de la forme** — tableau ou prose. Un document écrit
+volontiers `**États** — rendus par X :` suivi d'un tableau ; déduire la forme de
+ce qui vient après le séparateur envoyait lire l'en-tête du tableau comme une
+prose inline, et déclarait zéro état.
+
+**Et le cinquième mécanisme du dossier, reproduit en corrigeant le sixième.**
+Ajouter `[ \t]*` après le séparateur suffisait ; j'ai écrit `\s*`, qui franchit le
+retour à la ligne : il avalait la ligne vide et l'en-tête du tableau, `(.*)` lisait
+`| État | Déclencheur |` comme une prose, ne trouvait aucun backtick, et déclarait
+zéro état. C'est le motif exact de la borne de 600 caractères et du
+`^\s*` qui traversait les lignes — le **deuxième** contrôle à rejouer le même
+schéma en corrigeant le précédent.
+
+`skipped_headings` est désormais dans la sortie : un composant absent de la liste
+des lus est **visible**, au lieu d'être une absence.
+
 
 ### fix(design-check) — un texte français à 3,80:1 passait, parce que le contrôle ne savait pas le nommer
 

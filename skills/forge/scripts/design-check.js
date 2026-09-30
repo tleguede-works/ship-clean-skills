@@ -576,6 +576,29 @@ function checkTokensUsed(root) {
  * ------------------------------------------------------------------ */
 
 /**
+ * Les sections `##`/`###`/`####` du document, avec leur corps.
+ *
+ * Le nom est le titre **entier**, moins sa clause après un tiret cadratin : un
+ * composant français s'écrit `### Tuile produit`, pas `### ProductTile`.
+ */
+function sectionBodies(md) {
+  const out = [];
+  const re = /^#{2,4}\s+(.+?)\s*$/gm;
+  let m;
+  while ((m = re.exec(md)) !== null) {
+    const after = md.indexOf('\n', m.index);
+    const rest = after < 0 ? '' : md.slice(after + 1);
+    const next = rest.search(/^#{2,4}\s+\S/m);
+    out.push({
+      name: m[1].split(/\s+[—–-]\s+/)[0].trim(),
+      line: md.slice(0, m.index).split('\n').length,
+      body: next < 0 ? rest : rest.slice(0, next)
+    });
+  }
+  return out;
+}
+
+/**
  * Les slots et les états nommés qu'un composant déclare.
  *
  * Deux écritures coexistent dans les design systems réels, et il faut lire les
@@ -587,45 +610,55 @@ function checkTokensUsed(root) {
  * En prose, on ne retient que le **premier** nom de chaque segment séparé par
  * `·` : les parenthèses explicatives contiennent des backticks qui ne sont pas
  * des états (`error` (message + `Réessayer`)).
+ *
+ * ## Le séparateur du libellé : `:` ou `—`
+ *
+ * Le libellé s'écrit `**États** :` dans un design system et `**États** —` dans
+ * l'autre ; les deux écritures coexistent, et lire seulement la première donnait
+ * zéro état à tout un document — donc **zéro exigence**, et un vert.
  */
 function readComponentContract(md, component) {
-  // § 2. Composants primitifs → ### IndicatorTile
-  const start = md.search(new RegExp(`^#{2,4}\\s+${component}\\s*$`, 'm'));
-  if (start < 0) return null;
+  const sec = sectionBodies(md).find(s => s.name === component);
+  return sec ? contractFromBody(sec.body) : null;
+}
 
-  // `search` rend l'index du PREMIER `#`. `slice(start + 1)` laisserait donc
-  // `## IndicatorTile` en tête, qui ressortirait comme « titre suivant » à
-  // l'offset 0 — et la section serait vide pour tous les composants, sans
-  // aucune erreur. On saute la ligne entière.
-  const afterHeading = md.indexOf('\n', start);
-  const rest = afterHeading < 0 ? '' : md.slice(afterHeading + 1);
-  const nextHeading = rest.search(/^#{2,4}\s+\S/m);
-  const body = nextHeading < 0 ? rest : rest.slice(0, nextHeading);
-
+function contractFromBody(body) {
   const collect = (label) => {
-    const m = body.match(new RegExp(`^\\*\\*${label}\\*\\*\\s*:(.*)$`, 'm'));
+    // `[ \t]*` et non `\s*` : `\s` franchit le retour à la ligne, donc un `\s*`
+    // après le séparateur avaleait la ligne vide et la ligne d'en-tête du
+    // tableau — `(.*)` lisait alors `| État | Déclencheur |` comme une prose
+    // inline, ne trouvait aucun backtick, et déclarait **zéro** état. C'est
+    // exactement le cinquième mécanisme du dossier (`^\s*` qui franchit les
+    // lignes), reproduit en corrigeant le sixième.
+    const m = body.match(new RegExp(`^\\*\\*${label}\\*\\*[ \\t]*[:—–][ \\t]*(.*)$`, 'm'));
     if (!m) return [];
 
-    const inline = m[1].trim();
-    if (inline) {
+    // Ce qui suit le libellé décide de la forme : un tableau, ou de la prose.
+    // On ne déduit pas la forme de ce qu'il y a **après** le séparateur — un
+    // document écrit volontiers `**États** — rendus par X :` suivi d'un tableau,
+    // et cette déduction envoyait lire l'en-tête du tableau comme une prose.
+    const after = body.slice(m.index + m[0].length).replace(/^[^\n]*\n/, '');
+    const lines = after.split('\n');
+    const first = (lines.find(l => l.trim()) || '').trim();
+
+    if (!first.startsWith('|')) {
       // Forme prose : le premier nom de chaque segment.
-      return inline.split('·')
-        .map(seg => seg.match(/`([a-z][a-z0-9_-]*)`/i))
+      return m[1].trim().split('·')
+        .map(seg => seg.match(/`([^`]+)`/))
         .filter(Boolean)
-        .map(hit => ({ name: hit[1] }));
+        .map(hit => ({ name: hit[1].trim() }));
     }
 
     // Forme tableau. Le reste de la ligne du libellé est vide : le parcourir
     // casserait la boucle de lignes sur la toute première itération, et le
     // composant serait déclaré sans état — donc sans aucune exigence.
     const rows = [];
-    const after = body.slice(m.index + m[0].length).replace(/^[^\n]*\n/, '');
-    for (const line of after.split('\n')) {
+    for (const line of lines) {
       if (/^\|\s*-{2,}/.test(line)) continue;
       if (!line.trim()) continue;
       if (!line.trim().startsWith('|')) break; // le tableau est fini
-      const cell = line.trim().match(/^\|\s*`([a-z][a-z0-9_-]*)`\s*\|/i);
-      if (cell) rows.push({ name: cell[1] });
+      const cell = line.trim().match(/^\|\s*`([^`]+)`\s*\|/);
+      if (cell) rows.push({ name: cell[1].trim() });
     }
     return rows;
   };
@@ -691,25 +724,49 @@ function checkComponentParity(root) {
 
   const dsMd = fs.readFileSync(designAbs, 'utf-8');
 
-  // Les composants du § 2, dans l'ordre où le design system les déclare.
-  const components = [...dsMd.matchAll(/^###\s+([A-Z][A-Za-z0-9]*)\s*$/gm)]
-    .map(m => m[1])
-    .filter(name => ['Slots', 'États', 'Tailles', 'Variantes'].indexOf(name) < 0);
-
-  // La surface déclarée de chaque composant, par nature.
+  // ## Un composant est déclaré par son CONTRAT, pas par la forme de son nom
+  //
+  // La version précédente cherchait `^### PascalCase$` et ne retenait ensuite que
+  // les sections dont le libellé s'écrivait `**États** :`. Sur un design system
+  // français — c'est-à-dire **tout** ce que ce skill produit — six composants sur
+  // sept s'écrivent `### Tuile produit`, et les libellés s'écrivent `**États** —`.
+  // Résultat, mesuré sur Onduleur : **un** composant lu, **zéro** état, **zéro**
+  // exigence — et `pass: true`.
+  //
+  // Un contrôle qui n'a rien vérifié ne doit pas dire « conforme ». C'est la
+  // correction de fond : le nom n'est plus une forme, la **présence d'un contrat**
+  // est le pointeur déclaré, et l'absence de contrat est dite au lieu de passer.
+  const sections = sectionBodies(dsMd);
   const surfaces = new Map();
-  for (const component of components) {
-    const contract = readComponentContract(dsMd, component);
-    if (!contract) continue;
-    const declared = [...contract.slots.map(x => ({ ...x, kind: 'slot' })),
-                      ...contract.states.map(x => ({ ...x, kind: 'state' }))];
-    if (!declared.length) continue;
-    surfaces.set(component, {
+  const skipped = [];
+
+  for (const sec of sections) {
+    const contract = contractFromBody(sec.body);
+    const declared = contract
+      ? [...contract.slots.map(x => ({ ...x, kind: 'slot' })),
+         ...contract.states.map(x => ({ ...x, kind: 'state' }))]
+      : [];
+    if (!contract || !declared.length) { skipped.push(sec.name); continue; }
+    surfaces.set(sec.name, {
       slots: contract.slots.map(x => x.name),
       states: contract.states.map(x => x.name)
     });
-    results.components.push({ component, slots: contract.slots.length, states: contract.states.length });
+    results.components.push({
+      component: sec.name, line: sec.line,
+      slots: contract.slots.length, states: contract.states.length
+    });
   }
+
+  if (!surfaces.size) {
+    results.offenders.push({
+      problem: 'aucune_surface_declaree',
+      read_headings: sections.map(s => s.name),
+      why: 'Le design system ne déclare la surface d\'aucun composant (ni `**États**`, ni `**Slots**`). ' +
+           'Ce contrôle ne peut alors rien exiger des écrans : il ne rend pas « conforme », il rend « rien vérifié ».'
+    });
+    results.pass = false;
+  }
+  results.skipped_headings = skipped;
 
   const state = L.readState(root) || {};
   const screens = Object.entries(state.screens || {}).map(([k, s]) => ({ key: k, path: s.path }));
