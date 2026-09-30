@@ -2398,6 +2398,141 @@ test('une ligne marquée unicode-scan:ignore est ignorée, et rien d\'autre', ()
     `seule la ligne NON marquée doit être signalée : ${JSON.stringify(c && c.offenders)}`);
 });
 
+test('citations : une paraphrase ne doit PAS être signalée', () => {
+  // Ce contrôle ne peut pas distinguer une paraphrase d'une erreur : il rend
+  // donc une file d'examen, pas un verdict. Ce test verrouille le point
+  // critique — s'il signalait les paraphrases, personne ne le lirait.
+  const project = freshProject('citations-paraphrase');
+  writeDeliverable(project, '.forge/prd.md', {
+    type: 'prd',
+    body: '# PRD\n\n| # | Règle | US |\n|---|---|---|\n' +
+      '| B1 | Un indicateur a exactement une définition ; toute modification crée une nouvelle version. | US-1 |\n' +
+      '| B2 | Le signataire est distinct de l\'auteur de la version. | US-2 |\n' +
+      '| B3 | Le périmètre est une restriction, jamais un élargissement. | US-5 |\n' +
+      '| B4 | La date de calcul vient de la source. | US-3 |\n' +
+      '| B5 | Chaque valeur porte sa date de calcul. | US-3 |\n' +
+      '| B6 | La fraîcheur est lue dans la source. | US-3 |\n' +
+      '| B7 | Une ligne interdite n\'est ni lisible ni exportable. | US-5 |\n' +
+      '| B8 | L\'export ne montre que ce que l\'écran montre. | US-9 |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+
+  // Une paraphrase correcte : mêmes mots que B2, dans un autre ordre, avec du
+  // vocabulaire de l'écran.
+  writeDeliverable(project, '.forge/roadmap.md', {
+    type: 'roadmap',
+    body: '# Roadmap\n\n| # | Point | Décision |\n|---|---|---|\n' +
+      '| 1 | B2 | le signataire est distinct de l\'auteur de la version |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'roadmap', '.forge/roadmap.md']);
+
+  const res = run('consistency-check.js', ['citations', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'citation_accuracy');
+  assert(c, `le contrôle doit être présent : ${JSON.stringify(res.json.checks)}`);
+  assert(c.status === 'pass', `une file d'examen ne doit jamais faire échouer : ${c.status}`);
+  assert(!c.suspects.some(o => o.id === 'B2'),
+    `une paraphrase correcte ne doit pas être mise en file : ${JSON.stringify(c.suspects)}`);
+});
+
+test('citations : une paraphrase TOTALEMENT reformulée atterrit en file, sans faire échouer', () => {
+  // La limite, écrite comme test, parce qu'elle est la raison pour laquelle ce
+  // contrôle est **piloté** et hors de `all`.
+  //
+  // Aucune mesure lexicale ne sépare « l'entrepôt est injoignable » de
+  // « source indisponible » : deux phrases qui disent la même chose avec des
+  // mots différents. Un contrôle qui prétend trancher accuse donc aussi les
+  // paraphrases — et un contrôle qui accuse juste est éteint comme les autres.
+  //
+  // Ce qui est vérifiable, en revanche : le contrôle **ne fait jamais échouer**,
+  // et il annonce le nombre de suspects plutôt que de les.assertionner faux.
+  const project = freshProject('citations-limite');
+  writeDeliverable(project, '.forge/prd.md', {
+    type: 'prd',
+    body: '# PRD\n\n| # | Règle | US |\n|---|---|---|\n' +
+      '| B1 | Source indisponible au moment du rendu. | US-3 |\n' +
+      '| B2 | Matérialisation pas encore rafraîchie. | US-3 |\n' +
+      '| B3 | Calcul trop long pour être rendu. | US-3 |\n' +
+      '| B4 | Ligne interdite ni lisible ni exportable. | US-5 |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  writeDeliverable(project, '.forge/roadmap.md', {
+    type: 'roadmap',
+    body: '# Roadmap\n\n| # | Point | Décision |\n|---|---|---|\n' +
+      '| 1 | B1 | entrepôt injoignable au rendu : on garde la dernière valeur connue |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'roadmap', '.forge/roadmap.md']);
+
+  const res = run('consistency-check.js', ['citations', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'citation_accuracy');
+  assert(c.status === 'pass',
+    `ce contrôle ne doit JAMAIS faire échouer : une paraphrase est peut-être mise en file, ` +
+    `elle n'est pas un défaut — ${c.status}`);
+  assert(typeof c.measured_precision === 'string' && /%/.test(c.measured_precision),
+    `la précision mesurée doit être annoncée : ${JSON.stringify(c).slice(0, 200)}`);
+  assert(/FILE D.EXAMEN/.test(c.obligation),
+    `l'obligation doit dire que c'est une file d'examen : ${c.obligation}`);
+});
+
+test('citations : une citation qui ne dit pas la règle est mise en file', () => {
+  const project = freshProject('citations-fausse');
+  writeDeliverable(project, '.forge/prd.md', {
+    type: 'prd',
+    body: '# PRD\n\n| # | Règle | US |\n|---|---|---|\n' +
+      '| B1 | Un indicateur a exactement une définition ; toute modification crée une nouvelle version. | US-1 |\n' +
+      '| B2 | Le signataire est distinct de l\'auteur de la version. | US-2 |\n' +
+      '| B3 | Le périmètre est une restriction, jamais un élargissement. | US-5 |\n' +
+      '| B4 | La date de calcul vient de la source. | US-3 |\n' +
+      '| B5 | Chaque valeur porte sa date de calcul. | US-3 |\n' +
+      '| B6 | La fraîcheur est lue dans la source. | US-3 |\n' +
+      '| B7 | Une ligne interdite n\'est ni lisible ni exportable. | US-5 |\n' +
+      '| B8 | L\'export ne montre que ce que l\'écran montre. | US-9 |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+
+  // Faux、年：B4 est la date de calcul ; on l'emploie pour l'immuabilité.
+  writeDeliverable(project, '.forge/roadmap.md', {
+    type: 'roadmap',
+    body: '# Roadmap\n\n| # | Point | Décision |\n|---|---|---|\n' +
+      '| 1 | B4 | l\'immuabilité de la ligne gelée prevents toute reprise du calcul |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'roadmap', '.forge/roadmap.md']);
+
+  const res = run('consistency-check.js', ['citations', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'citation_accuracy');
+  const hit = c.suspects.find(o => o.id === 'B4');
+  assert(hit, `une citation fausse doit être mise en file : ${JSON.stringify(c.suspects)}`);
+  assert(/date de calcul/.test(hit.rule_text),
+    `la règle réelle doit être nommée dans la file : ${hit.rule_text}`);
+});
+
+test('citations : une cellule qui cite plusieurs règles n\'est pas comparée à chacune', () => {
+  // Une affirmation collective (« B7, E5, E10 » dans une seule cellule) comparée
+  // à chaque règle séparément garantit un faux positif par règle non concernée.
+  // C'était la source du bruit : 3 des 6 suspects les plus solides.
+  const project = freshProject('citations-collectif');
+  writeDeliverable(project, '.forge/prd.md', {
+    type: 'prd',
+    body: '# PRD\n\n| # | Règle | US |\n|---|---|---|\n' +
+      '| B7 | Une ligne interdite n\'est ni lisible ni exportable. | US-5 |\n' +
+      '| B9 | Aucun accès public n\'existe : la liste est nominative. | US-6 |\n' +
+      '| B10 | Chaque consultation est journalisée. | US-3 |\n' +
+      '| B11 | Un seuil n\'existe que sur un indicateur signé. | US-4 |\n' +
+      '| B12 | Une alerte par franchissement de seuil. | US-4 |\n' +
+      '| B13 | Un indicateur non signé n\'est pas partageable. | US-11 |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  writeDeliverable(project, '.forge/roadmap.md', {
+    type: 'roadmap',
+    body: '# Roadmap\n\n| # | Point | Décision |\n|---|---|---|\n' +
+      '| 1 | B7, B9, B10, B11, B12, B13 | le périmètre, le partage nominatif et le journal forment un seul geste de gouvernance |\n'
+  });
+  run('state.js', ['register', project, 'deliverable', 'roadmap', '.forge/roadmap.md']);
+  const res = run('consistency-check.js', ['citations', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'citation_accuracy');
+  assert(c.citations_collective >= 1, `une citation collective doit être comptée : ${JSON.stringify(c)}`);
+  assert(c.suspects.length === 0, `une cellule collective ne doit produire aucun suspect : ${JSON.stringify(c.suspects)}`);
+});
+
 test('design-check mesure et accepte une palette conforme', () => {
   const project = designProject('design-ok');
   const res = run('design-check.js', ['contrast', project]);
