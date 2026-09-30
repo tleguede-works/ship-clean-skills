@@ -90,6 +90,10 @@
         "B5",
         "B7",
         "C1"
+      ],
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/roadmap.md"
       ]
     },
     "roadmap": {
@@ -107,14 +111,17 @@
         "B9",
         "B17",
         "C6"
+      ],
+      "derived_from": [
+        ".forge/prd.md"
       ]
     },
     "design_system": {
       "path": ".forge/design/design-system.md",
       "type": "design-system",
-      "status": "approved",
-      "content_hash": "sha256:e845dc92cdd5",
-      "updated_at": "2026-09-30T12:21:25.563Z",
+      "status": "draft",
+      "content_hash": "sha256:a2f37a20df3c",
+      "updated_at": "2026-09-30T14:21:19.311Z",
       "requires": [
         "B5",
         "B6",
@@ -123,14 +130,17 @@
         "E1",
         "E2",
         "E11"
+      ],
+      "derived_from": [
+        ".forge/prd.md"
       ]
     },
     "architecture": {
       "path": ".forge/architecture.md",
       "type": "architecture",
       "status": "draft",
-      "content_hash": "sha256:1e8d8e08f7de",
-      "updated_at": "2026-09-30T12:24:51.072Z",
+      "content_hash": "sha256:cb66547ed237",
+      "updated_at": "2026-09-30T13:16:21.474Z",
       "requires": [
         "B1",
         "B2",
@@ -162,6 +172,9 @@
         "C9",
         "C10",
         "C11"
+      ],
+      "derived_from": [
+        ".forge/prd.md"
       ]
     }
   },
@@ -224,6 +237,7 @@
         "wave": 1,
         "nodes": [
           "definition-declarer",
+          "seuil-et-etat",
           "restriction-lignes",
           "journal-acces"
         ]
@@ -239,7 +253,6 @@
       {
         "wave": 3,
         "nodes": [
-          "seuil-et-etat",
           "historique-indicateur",
           "drill-down",
           "export-provenance"
@@ -267,6 +280,12 @@
         "E3",
         "E8",
         "E15"
+      ],
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/benchmarks.md",
+        ".forge/conventions.md"
       ]
     },
     "indicateur-detail": {
@@ -289,6 +308,10 @@
         "E16",
         "E17",
         "E19"
+      ],
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
       ]
     },
     "decomposition": {
@@ -296,49 +319,79 @@
       "type": "screen",
       "status": "approved",
       "content_hash": "sha256:2a9556f2c6f8",
-      "updated_at": "2026-09-30T12:21:25.692Z"
+      "updated_at": "2026-09-30T12:21:25.692Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/roadmap.md",
+        ".forge/benchmarks.md",
+        ".forge/design/design-system.md"
+      ]
     },
     "tableau-de-bord": {
       "path": ".forge/design/screens/tableau-de-bord.md",
       "type": "screen",
       "status": "approved",
       "content_hash": "sha256:e2b8ff9a9f28",
-      "updated_at": "2026-09-30T12:21:25.734Z"
+      "updated_at": "2026-09-30T12:21:25.734Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/roadmap.md",
+        ".forge/benchmarks.md",
+        ".forge/design/design-system.md"
+      ]
     },
     "tableau-de-bord-composition": {
       "path": ".forge/design/screens/tableau-de-bord-composition.md",
       "type": "screen",
       "status": "approved",
       "content_hash": "sha256:5a9e650d3d91",
-      "updated_at": "2026-09-30T12:21:25.780Z"
+      "updated_at": "2026-09-30T12:21:25.780Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/roadmap.md",
+        ".forge/benchmarks.md",
+        ".forge/design/design-system.md"
+      ]
     },
     "definition-formulaire": {
       "path": ".forge/design/screens/definition-formulaire.md",
       "type": "screen",
       "status": "approved",
       "content_hash": "sha256:02fdc1583158",
-      "updated_at": "2026-09-30T12:21:25.867Z"
+      "updated_at": "2026-09-30T12:21:25.867Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
     },
     "definition-signature": {
       "path": ".forge/design/screens/definition-signature.md",
       "type": "screen",
       "status": "approved",
       "content_hash": "sha256:c2d716a04f8e",
-      "updated_at": "2026-09-30T12:21:25.911Z"
+      "updated_at": "2026-09-30T12:21:25.911Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
     },
     "acces-journal": {
       "path": ".forge/design/screens/acces-journal.md",
       "type": "screen",
       "status": "approved",
       "content_hash": "sha256:c14320ea7b67",
-      "updated_at": "2026-09-30T12:21:25.965Z"
+      "updated_at": "2026-09-30T12:21:25.965Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
     },
     "definitions": {
       "path": ".forge/design/screens/definitions.md",
       "type": "screen",
-      "status": "approved",
-      "content_hash": "sha256:184b3f5c816a",
-      "updated_at": "2026-09-30T12:21:25.823Z",
+      "status": "draft",
+      "content_hash": "sha256:f18b5fcc14f2",
+      "updated_at": "2026-09-30T14:30:05.408Z",
       "requires": [
         "B1",
         "B2",
@@ -350,6 +403,10 @@
         "E4",
         "E8",
         "E15"
+      ],
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
       ]
     }
   },
@@ -371,7 +428,12 @@
       ],
       "impl_wave": 0,
       "plan_path": ".forge/plans/auth.md",
-      "slice": "auth"
+      "slice": "auth",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/conventions.md"
+      ]
     },
     "query-engine": {
       "path": ".forge/plans/query-engine.md",
@@ -389,7 +451,12 @@
       ],
       "impl_wave": 0,
       "plan_path": ".forge/plans/query-engine.md",
-      "slice": "query-engine"
+      "slice": "query-engine",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/conventions.md"
+      ]
     },
     "design-primitives": {
       "path": ".forge/plans/design-primitives.md",
@@ -400,11 +467,17 @@
       "depends_on": [],
       "depended_on_by": [
         "definition-declarer",
-        "consultation-indicateur"
+        "consultation-indicateur",
+        "seuil-et-etat"
       ],
       "impl_wave": 0,
       "plan_path": ".forge/plans/design-primitives.md",
-      "slice": "design-primitives"
+      "slice": "design-primitives",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md"
+      ]
     },
     "access-log": {
       "path": ".forge/plans/access-log.md",
@@ -419,7 +492,12 @@
       ],
       "impl_wave": 0,
       "plan_path": ".forge/plans/access-log.md",
-      "slice": "access-log"
+      "slice": "access-log",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/conventions.md"
+      ]
     },
     "error-handling": {
       "path": ".forge/plans/error-handling.md",
@@ -433,7 +511,12 @@
       ],
       "impl_wave": 0,
       "plan_path": ".forge/plans/error-handling.md",
-      "slice": "error-handling"
+      "slice": "error-handling",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/conventions.md"
+      ]
     }
   },
   "modules": {},
@@ -455,7 +538,14 @@
       ],
       "impl_wave": 1,
       "plan_path": ".forge/plans/definition-declarer.md",
-      "slice": "definition-declarer"
+      "slice": "definition-declarer",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/definition-formulaire.md",
+        ".forge/design/screens/definitions.md"
+      ]
     },
     "definition-signer": {
       "path": ".forge/plans/definition-signer.md",
@@ -472,43 +562,65 @@
       ],
       "impl_wave": 2,
       "plan_path": ".forge/plans/definition-signer.md",
-      "slice": "definition-signer"
+      "slice": "definition-signer",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/definition-signature.md"
+      ]
     },
     "consultation-indicateur": {
       "path": ".forge/plans/consultation-indicateur.md",
       "type": "slice",
       "status": "identified",
       "content_hash": "sha256:c106337a9431",
-      "updated_at": "2026-09-30T10:10:44.298Z",
+      "updated_at": "2026-09-30T13:17:33.490Z",
       "depends_on": [
         "query-engine",
         "auth",
         "design-primitives",
         "definition-declarer",
-        "error-handling"
+        "error-handling",
+        "seuil-et-etat"
       ],
       "depended_on_by": [
-        "seuil-et-etat",
         "drill-down",
         "export-provenance"
       ],
       "impl_wave": 2,
       "plan_path": ".forge/plans/consultation-indicateur.md",
-      "slice": "consultation-indicateur"
+      "slice": "consultation-indicateur",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/indicateurs.md",
+        ".forge/design/screens/indicateur-detail.md"
+      ]
     },
     "seuil-et-etat": {
       "path": ".forge/plans/seuil-et-etat.md",
       "type": "slice",
       "status": "identified",
       "content_hash": "sha256:abb730313df8",
-      "updated_at": "2026-09-30T10:10:44.341Z",
+      "updated_at": "2026-09-30T13:17:33.443Z",
       "depends_on": [
+        "design-primitives"
+      ],
+      "depended_on_by": [
         "consultation-indicateur"
       ],
-      "depended_on_by": [],
-      "impl_wave": 3,
+      "impl_wave": 1,
       "plan_path": ".forge/plans/seuil-et-etat.md",
-      "slice": "seuil-et-etat"
+      "slice": "seuil-et-etat",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/indicateur-detail.md",
+        ".forge/design/screens/indicateurs.md"
+      ]
     },
     "historique-indicateur": {
       "path": ".forge/plans/historique-indicateur.md",
@@ -524,7 +636,13 @@
       "depended_on_by": [],
       "impl_wave": 3,
       "plan_path": ".forge/plans/historique-indicateur.md",
-      "slice": "historique-indicateur"
+      "slice": "historique-indicateur",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/indicateur-detail.md"
+      ]
     },
     "drill-down": {
       "path": ".forge/plans/drill-down.md",
@@ -539,7 +657,13 @@
       "depended_on_by": [],
       "impl_wave": 3,
       "plan_path": ".forge/plans/drill-down.md",
-      "slice": "drill-down"
+      "slice": "drill-down",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/decomposition.md"
+      ]
     },
     "restriction-lignes": {
       "path": ".forge/plans/restriction-lignes.md",
@@ -556,7 +680,14 @@
       ],
       "impl_wave": 1,
       "plan_path": ".forge/plans/restriction-lignes.md",
-      "slice": "restriction-lignes"
+      "slice": "restriction-lignes",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/indicateurs.md",
+        ".forge/design/screens/tableau-de-bord.md"
+      ]
     },
     "partage-dashboard": {
       "path": ".forge/plans/partage-dashboard.md",
@@ -571,7 +702,14 @@
       "depended_on_by": [],
       "impl_wave": 2,
       "plan_path": ".forge/plans/partage-dashboard.md",
-      "slice": "partage-dashboard"
+      "slice": "partage-dashboard",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/tableau-de-bord.md",
+        ".forge/design/screens/tableau-de-bord-composition.md"
+      ]
     },
     "export-provenance": {
       "path": ".forge/plans/export-provenance.md",
@@ -587,7 +725,14 @@
       "depended_on_by": [],
       "impl_wave": 3,
       "plan_path": ".forge/plans/export-provenance.md",
-      "slice": "export-provenance"
+      "slice": "export-provenance",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/tableau-de-bord.md",
+        ".forge/design/screens/indicateur-detail.md"
+      ]
     },
     "journal-acces": {
       "path": ".forge/plans/journal-acces.md",
@@ -602,7 +747,13 @@
       "depended_on_by": [],
       "impl_wave": 1,
       "plan_path": ".forge/plans/journal-acces.md",
-      "slice": "journal-acces"
+      "slice": "journal-acces",
+      "derived_from": [
+        ".forge/architecture.md",
+        ".forge/prd.md",
+        ".forge/design/design-system.md",
+        ".forge/design/screens/acces-journal.md"
+      ]
     }
   },
   "gates_pending": [],
@@ -613,14 +764,15 @@
     "counts": {
       "init": 1,
       "register": 81,
-      "gate_revise": 2,
-      "status_change": 38,
+      "gate_revise": 3,
+      "status_change": 40,
       "gate_approved": 7,
       "finding_raised": 2,
       "phase_status": 3,
       "nav_prioritized": 2,
-      "sync": 2,
-      "dependency_declared": 15
+      "sync": 3,
+      "dependency_declared": 17,
+      "fast_track_validate": 2
     }
   },
   "divergences": [],

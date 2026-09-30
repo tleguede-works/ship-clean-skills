@@ -438,7 +438,11 @@ lui-même, pas sur une convention.
 | F-001 | Signataire non nommé — **non promu** en règle, à la décision du commanditaire | routé, en attente |
 | F-002 | Entrepôt de test non seedé — **non promu**, il lui faut un titulaire et une date | routé, en attente |
 | F-27 | Aucune vérification des **citations** : un livrable peut faire dire à une règle approuvée ce qu'elle ne dit pas, ou attribuer une décision à un gate qui ne l'a pas prise | ouvert, voie proposée par le commanditaire |
-| — | Phase 4 : gate sur `architecture.md` | à faire |
+| F-28 | **Aucune résolution de pointeur.** Quatre formes du même trou, vues en Phase 4 : une exigence sans producteur (`in_review`, `published_at`, `perimeter_empty`), un rendu jamais produit, un job non stockable (`export_job` sans membre `journal`), un **renvoi périmé** (17 renvois `§ 5.x` cassés par une renumérotation) | **partiellement traité** — `declared_state_parity` (pointeur déclaré) et `no_stray_characters` sont en place |
+| F-29 | **`méthode` écrit avec un caractère grec et un caractère hébreu** à la place de `é`, dans `design/screens/definitions.md` — un écran **approuvé**, invisible à trois gates et à tous les contrôles existants | **corrigé** — `forge-guard no_stray_characters`, v1.4.2 |
+| F-30 | **`state.json` ne portait pas `derived_from`** : « son `derived_from` » n'était pas mécaniquement découvrable, et les deux validateurs se privaient donc du PRD sans le dire | **corrigé** — propagé par `register` et `sync`, v1.4.2 |
+| — | Phase 4 : la seconde boucle FastTrack est en cours | en cours |
+| — | Phase 4 : 24 majeures restantes à traiter **par blocs**, chaque bloc contenant un choix produit revenant au commanditaire | à faire |
 | — | Phase 5 : les 15 plans sont `premature_artifact` tant que la phase 5 n'est pas atteinte — **c'est correct**, pas un défaut | attendu |
 | — | FastTrack (Phases 4-5 automatisées) jamais exécuté | critère de fin non satisfait |
 | — | Projets 2 et 3 | à faire avec le skill amélioré |

@@ -3,7 +3,7 @@ type: screen
 slug: definitions
 title: Référentiel des définitions
 module: definitions
-status: approved
+status: draft
 generated_at: 2026-09-30
 derived_from:
   - .forge/prd.md
@@ -47,7 +47,7 @@ flow: liste-definitions
 
 **Pourquoi il est au rang 3 de la navigation** : centralité 5, fréquence 2. C'est le **cœur du produit** — B1 (une définition, des versions) et B2 (la signature par un tiers) sont les deux règles sans lesquelles aucun chiffre du produit n'est opposable. Mais **seul le contrôleur de gestion l'ouvre**, une fois par semaine, quand il écrit ou fait relire ; le directeur de site y passe une fois par mois, le temps d'une signature. Le placer au rang 1 ou au rang 2 aurait mis l'outil du rare au-dessus de la lecture quotidienne (`indicateurs`, fréquence 5) et au-dessus du support de comité (`tableau-de-bord`, fréquence 4) : c'est exactement l'erreur que design-system §3.2 refuse, et le rang 3 est le plus haut rang qui n'oppose pas la gouvernance à la boucle.
 
-> **Cet écran alimente la boucle, il n'en est pas le centre.** Sans lui, la signature (US-2) n'a **pas d'entrée** : le contrôleur écrit une version dans `/definitions/nouvelle`, le signataire doit la retrouver par où ? Le formulaire et la modale de signature existent ; il manquait le **lieu d'où on part**. C'est le trou que ce document ferme, et c'est la raison pour laquelle il est écrit avant toute question de법에.
+> **Cet écran alimente la boucle, il n'en est pas le centre.** Sans lui, la signature (US-2) n'a **pas d'entrée** : le contrôleur écrit une version dans `/definitions/nouvelle`, le signataire doit la retrouver par où ? Le formulaire et la modale de signature existent ; il manquait le **lieu d'où on part**. C'est le trou que ce document ferme, et c'est la raison pour laquelle il est écrit avant toute question deé.
 >
 > L'ordre des trois écrans du module est donc : **`/definitions` (trouver) → `/definitions/nouvelle` ou `/definitions/[slug]` (écrire) → `/definitions/[slug]/signature` (conclure)**. Le retour du formulaire et de la modale est ici, avec les filtres conservés dans l'URL.
 

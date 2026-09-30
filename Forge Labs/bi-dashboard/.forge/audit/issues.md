@@ -145,6 +145,43 @@ generated_at: 2026-09-30
   trois fabrications qui l'accompagnaient sont en `Forge Labs/INCIDENTS.md` § F-26.
 - **Statut** : corrigé au gate
 
+### INC-009 — FastTrack Phase 4 : BLOCK, et deux causes racines
+- **Origine** : Forge
+- **Constat** : première exécution réelle de la boucle FastTrack (`references/fast-track.md`) sur l'architecture. Trois validateurs en parallèle : `quality-analyst` **BLOCK** (1 critique, 10 majeures, 7 mineures), `red-team` **BLOCK** (2 critiques, 12 majeures, 8 mineures), `plan-validator` **REVISE** (2 majeures, 3 mineures). **45 findings**, dont **3 critiques**. Verdict consolidé = **BLOCK** (étape 5 : on prend le plus grave).
+- **Les deux causes racines critiques, confirmées à la main** :
+  - **(A) Le cycle de vie d'une version n'a aucun écrivain.** `definition_version.status` accepte `in_review` (§4.6), `POST /definitions/:versionId/signature` refuse tout ce qui n'est pas `in_review` (§5.8 → 409), et **aucun des 19 endpoints n'écrit `in_review`** : §5.5 crée en `draft`, et les dix écritures sont déclarer / version / signer / révoquer / dashboard / partager / partager- / export / export-journal. **La signature est inatteignable** — donc US-2, B2, ADR-1, B4, B22, B26 et le jalon `T_première signature` de la roadmap. Deux validateurs ont trouvé ça indépendamment.
+  - **(B) B11 casse à la frontière de lecture.** `definition_threshold` (§4.7) porte bien `comparison`, `threshold_value`, `defined_at` — mais aucun endpoint ne renvoie de seuil, et `IndicatorTileProps` n'a pas de slot `threshold`. Le design system approuvé rend cette ligne **obligatoire au MVP** et interdit qu'elle soit rognée.
+- **Pourquoi aucun script ne l'a vu** : `consistency-check` vérifie que les IDs sont tracés, pas que chaque valeur légale d'un enum a un **écrivain**. Le motif est partout le même — une règle énoncée avec le mécanisme manquant : B17 sans endpoint de réaffectation, le miroir d'annuaire sans réconciliation, `export_job` sans membre `journal` alors que §5.19 en crée un, ADR-8 interdisant `UPDATE` sur une table dont `status` est une colonne de cycle de vie.
+- **Contournement** : aucun. Mais **deux corrections exigent de toucher un livrable `approved`** — `roadmap.md` (E16 est construit alors que la roadmap dit « sort du MVP ») et `benchmarks.md` (l'architecture et le registre se contredisent sur le module « alertes » **dans les deux sens**). Les réécrire en silence serait exactement INC-008.
+- **Action corrective** : **escalade humaine**, comme le prescrit FastTrack sur un `BLOCK`. Rien n'avance en Phase 5.
+- **Statut** : ouvert, en attente d'arbitrage
+
+### INC-010 — L'architecture dérive d'une roadmap approuvée, une troisième fois
+- **Origine** : Forge
+- **Constat** : `architecture.md` construit E16 de bout en bout — colonne `target_confirmed_at` (§4.6), props de tuile, réponses §5.3 et §5.11, rendu « cible à reconfirmer » — alors que `roadmap.md:57` écrit : « Effet : E16 (cible à reconconfirm**er**) sort du MVP. » L'occurrence est unique dans la roadmap : il n'y a pas d'ambiguïté à lever, c'est une divergence.
+- **Récurrence** : INC-008 était le même motif en Phase 3, dans l'autre sens. Trois fois en quatre passages, ce n'est plus un incident : c'est la règle qui manque. `consistency-check` ne joint aucun livrable aux tableaux de jalon de la roadmap.
+- **Action corrective** : écart assumé **ou** correction de la roadmap, **avec re-validation**. Jamais en silence.
+- **Statut** : ouvert, en attente d'arbitrage
+
+### INC-011 — Corriger l'architecture a cassé 17 renvois dans 8 plans
+- **Origine** : Forge
+- **Constat** : l'amendement des deux causes racines critiques (INC-009) a **inséré deux endpoints** en § 5.9 et § 5.10, ce qui a décalé toute la numérotation § 5.11 → § 5.13 … § 5.20 → § 5.22. Dix-sept renvois de la forme `§ 5.15`, `§ 5.18`, `§ 5.20` dans **huit plans** pointent maintenant vers la mauvaise section : `error-handling` (4), `restriction-lignes` (3), `journal-acces` (4), `export-provenance` (4), `seuil-et-etat`, `partage-dashboard`. Aucune de ces lignes ne signale qu'elle est périmée.
+- **Pourquoi rien ne l'a vu** : un renvoi de section est un **pointeur** — exactement la forme que le skill sait déjà traiter (`derived_from`, `content_hash`, `state_frontmatter_in_sync`, la parité de surface, la citation verbatim). Mais aucun contrôle ne le résout : rien n'extrait les `§ X.Y` d'un artefact et ne vérifie que la cible existe.
+- **Aggravant, et c'est la leçon** : **insérer dans l'ordre renumérote tout le reste.** Le correctif sans risque aurait été d'ajouter les deux endpoints **en fin de § 5** (§ 5.21, § 5.22) et de ne toucher à aucun numéro existant. Un document que d'autres artefacts citent par numéro ne doit pas être renuméroté — il doit être étendu.
+- **Contournement** : aucun. Le lot est journalisé ; il sera résorbé à la Phase 5, où les plans sont de toute façon à reprendre contre l'architecture amendée.
+- **Action corrective** : jamais les plans (Phase 5). Le contrôle à construire est la **troisième famille de pointeurs** : `exigée → produite`, `produite → rendue`, et `citée → résolue`. Zéro inférence — on extrait la cible déclarée et on vérifie qu'elle existe, comme `derived_from`.
+- **Statut** : ouvert, hors périmètre de la Phase 4
+
+### INC-012 — Le correctif a introduit trois défauts, dont un qui rend le précédent inerte
+- **Origine** : Forge
+- **Constat** : seconde boucle FastTrack, `red-team` = **BLOCK** avec **6 critiques** (contre 2 à la première passe). **Trois sont introduits par mon propre amendement.**
+- **(i) La garde `published_at` est du code mort.** `lifecycle_needs_an_act()` commence par `IF NEW.status = OLD.status THEN RETURN NEW`, **avant** la seule vérification de `published_at`. Donc `UPDATE definition_version SET published_at = NULL` sur une version `published` — `status` inchangé — sort au premier `RETURN` et **délève silencieusement le verrou B26**. Le trigger est bien `BEFORE UPDATE OF status, published_at` : il se déclenche, puis ne fait rien. Le document affirme à deux endroits que ce refus a lieu « en base ».
+- **(ii) La garde B2 ne peut pas être créée.** `ALTER TABLE signature_event ADD CONSTRAINT signer_is_not_author CHECK (… actor_id <> (SELECT author_actor_id FROM definition_version …))`. **PostgreSQL refuse une sous-requête dans un `CHECK`** : la migration échoue à la création, et ADR-1 — dont c'est le seul producteur en base pour une version dont l'auteur est un tiers — perd sa porte. Il faut un `CREATE CONSTRAINT TRIGGER … DEFERRABLE`.
+- **(iii) « signable » n'est défini nulle part.** Le mot apparaît **deux fois, défini zéro fois**. Il est sur le **seul** chemin d'écriture du seuil (§5.4, corps de requête) alors que §5.4 et §5.5 créent toujours une version `draft`. Les deux lectures ont des conséquences opposées : si « signable » = « signée », `definition_threshold` n'est jamais remplie et **le `threshold` que je viens d'ajouter à tous les contrats de lecture vaut `null` en permanence** ; si « signable » = « assez complète pour être signée », le 409 `DEFINITION_NOT_SIGNED` de §5.22 est inatteignable. Le document ne dit pas lequel.
+- **Les trois autres critiques sont les absences d'écrivain d'origine, inchangées** : `actor.is_active` n'a ni endpoint ni tâche ni membre de contrat — donc les `200 officiality: "stale_owner"` que je viens d'ajouter lisent une colonne que personne ne met à `false`, et la remédiation B17 reste inerte ; aucun endpoint n'écrit `indicator.owner_actor_id`, alors que trois `409` prescrivent « nommez un propriétaire » ; le test « un acte de ce nom existe » ne teste ni l'annulation ni la matrice de transitions, donc `refused`/`revoked`/`published` ne sont pas terminaux.
+- **Leçon, et c'est la plus importante du dossier** : **corriger un écrivain manquant en écrivant le contrat du lecteur laisse l'écrivain manquant.** J'ai rendu le seuil lisible ; rien ne l'a rendu inscriptible. C'est exactement le même piège, et cela valide la reformulation du commanditaire — « une exigence sans producteur » : mon correctif portait sur le mauvais bout de la chaîne, et le fait qu'il rende le document plus cohérent en apparence est précisément ce qui l'a laissé passer.
+- **Statut** : ouvert, escalade
+
 ---
 
 ## Récurrences
@@ -154,6 +191,10 @@ generated_at: 2026-09-30
 | « une règle est écrite mais ses dépendants ne le sont pas » | 2 (INC-002, INC-006) | La révision d'un ID doit aller jusqu'aux user stories et au glossaire. Vérification manuelle, à chaque révision de règle. |
 | « une citation est vérifiée comme un souvenir, pas comme une mesure » | 3 (V2, « le gate tranche », B27) — `Forge Labs/INCIDENTS.md` § F-26 | Un pointeur ne coûte rien à écrire ni à vérifier, donc c'est l'endroit le moins cher où cacher une invention. Vérification par jointure : citation mot pour mot contre le texte de la règle. |
 | « l'ordre des phases n'était appliqué par rien » | 1 (INC-007), 2 effets (INC-007, INC-008) | Une règle énoncée sans garde-fou n'est pas une règle. Le contrôle a dû être ajouté avant que la règle cesse d'être respectée — et il a été écrit parce qu'un humain l'a demandé. |
+| « corriger le lecteur, laisser l'écrivain » | 1 (INC-012 iii) | Rendre lisible une valeur qu'aucun chemin n'écrit produit un document plus cohérent en apparence et toujours inerte. C'est le pire échec possible : il **ressemble** à une correction. |
+| « un pointeur que rien ne résout » | 4 (INC-009 ×3, INC-011) | Une exigence sans producteur, un rendu jamais produit, un job non stockable, un renvoi périmé : quatre formes du même trou. **Un contrôle qui marche est une résolution de pointeur, jamais une interprétation** — c'est ce qui les distingue des deux contrôles qui ont bruyé (parité de surface « tout énumérer », « valeur légale sans écrivain »). |
+| « une valeur légale sans écrivain » | 9 (INC-009) | 45 findings, dont `in_review`, `published_at`, `perimeter_empty`, la réaffectation B17, la réconciliation d'annuaire, `source_kind: journal`. Le motif dominant n'est pas l'oubli : c'est un enum ou une colonne sans producteur. Un contrôle qui demande « **qui écrit cette valeur ?** » aurait attrapé les deux causes racines critiques. |
+| « un livrable dérive d'un artefact approuvé » | 3 (INC-008, INC-010, + `benchmarks.md` en Phase 4) | Trois fois en quatre phases. La jointure contre les tableaux de jalon de la roadmap et contre le registre d'écarts de `benchmarks.md` est l'opérateur qui manque. |
 
 ---
 
