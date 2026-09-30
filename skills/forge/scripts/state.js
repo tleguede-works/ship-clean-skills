@@ -397,6 +397,17 @@ function cmdRegister(root, kind, key, relPath, type, opts) {
 
   const entry = existing || {};
   entry.path = relPath;
+  // Pour une slice et une fondation, le chemin du PLAN est `plan_path`. Tout le
+  // reste l'attend : `set-status` (le miroir), `collectStatusFiles`, `start`,
+  // `consistency`, `forge-guard paths`.
+  //
+  // `register` n'écrivait que `path`. Conséquence mesurée : `set-status` sur une
+  // slice ne trouvait pas de chemin, n'écrivait donc aucun front matter — et
+  // n'enregistrait pas de divergence non plus, puisque rien ne manquait à ses
+  // yeux. Le statut vivait dans l'état et le `.md` disait `draft` : un écart
+  // silencieux, et le contrôle de synchronisation ne le voyait pas parce qu'il
+  // regardait le même champ vide.
+  if (kind === 'slice' || kind === 'foundation') entry.plan_path = relPath;
   entry.type = type || (fm && fm.data.type) || key;
   entry.status = entry.status || fileStatus;
   entry.content_hash = L.contentHash(abs);
@@ -554,17 +565,38 @@ function cmdCompletePhase(root, phaseKey) {
 
 function cmdHash(root, key) {
   const state = loadState(root);
-  const entry = (state.deliverables || {})[key];
-  if (!entry) L.fail({ error: 'unknown_deliverable', key, known: Object.keys(state.deliverables || {}) });
+  // `hash` doit porter sur TOUT ce qui porte un `content_hash`, pas seulement les
+  // livrables. Les écrans et les plans de slice sont enregistrables au même titre,
+  // et leurs hashs sont vérifiés par `forge-guard` — donc ils doivent être
+  // remettables à jour par la même commande. Sinon la seule façon de corriger une
+  // dérive est de réenregistrer, ce qui n'est pas la commande documentée.
+  const buckets = [
+    ['deliverable', state.deliverables || {}],
+    ['screen', state.screens || {}],
+    ['slice', state.slices || {}],
+    ['foundation', state.foundations || {}]
+  ];
+  let kind = null;
+  let entry = null;
+  for (const [k, bucket] of buckets) {
+    if (bucket[key]) { kind = k; entry = bucket[key]; break; }
+  }
+  if (!entry) {
+    L.fail({
+      error: 'unknown_entry', key,
+      known: buckets.map(([k, b]) => ({ kind: k, keys: Object.keys(b) }))
+    });
+  }
 
-  const abs = L.toAbs(root, entry.path);
+  const relPath = entry.path || entry.plan_path;
+  const abs = L.toAbs(root, relPath);
   const hash = L.contentHash(abs);
-  if (hash === null) L.fail({ error: 'file_not_found', path: entry.path });
+  if (hash === null) L.fail({ error: 'file_not_found', path: relPath });
   entry.content_hash = hash;
   entry.updated_at = new Date().toISOString();
 
-  save(root, state, { type: 'hash', deliverable: key, content_hash: hash });
-  L.out({ command: 'hash', key, path: entry.path, content_hash: hash });
+  save(root, state, { type: 'hash', kind, entry: key, content_hash: hash });
+  L.out({ command: 'hash', kind, key, path: relPath, content_hash: hash });
 }
 
 /* ------------------------------------------------------------------ *
@@ -589,6 +621,13 @@ function collectStatusFiles(state) {
   return out;
 }
 
+function entryFor(state, item) {
+  const bucket = item.kind === 'deliverable' ? state.deliverables
+    : item.kind === 'screen' ? state.screens
+      : item.kind === 'slice' ? state.slices : state.foundations;
+  return (bucket || {})[item.key];
+}
+
 function cmdSync(root, fix) {
   const state = loadState(root);
   const items = collectStatusFiles(state);
@@ -597,6 +636,8 @@ function cmdSync(root, fix) {
   for (const item of items) {
     const abs = L.toAbs(root, item.relPath);
     if (!fs.existsSync(abs)) {
+      const entry = entryFor(state, item);
+      if (!entry || !entry.content_hash) continue;
       found.push({ ...item, fileStatus: null, reason: 'file_missing' });
       continue;
     }

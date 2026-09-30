@@ -470,7 +470,7 @@ test('le guard détecte une édition hors bande (dérive du hash)', () => {
   const res = run('forge-guard.js', ['state', p]);
   assert(res.code !== 0, 'le guard aurait dû détecter la dérive');
   const d = res.json.checks.find(c => c.check === 'content_hashes_current').drifted;
-  assert(d.some(x => x.deliverable === 'prd'), `dérive non détectée : ${JSON.stringify(d)}`);
+  assert(d.some(x => x.kind === 'deliverable' && x.artifact === 'prd'), `dérive non détectée : ${JSON.stringify(d)}`);
 });
 
 /* ------------------------------------------------------------------ *
@@ -1739,6 +1739,92 @@ test('une phase commencée sans livrable reste un échec', () => {
   const c = (res.json.checks || []).find(x => x.check === 'current_phase_has_deliverables');
   assert(c && c.status === 'fail',
     `une phase commencée et vide doit échouer : ${JSON.stringify(c)}`);
+});
+
+/* ------------------------------------------------------------------ *
+ * Un contrôle ne doit pas exiger ce que la phase courante n'a pas à produire
+ * ------------------------------------------------------------------ */
+
+section('Exigences hors phase');
+
+test('avant la Phase 5, un plan manquant n\'est pas un défaut', () => {
+  // Au gate de la Phase 4, `consistency-check all` echouait sur les dix plans
+  // qui n'existaient pas encore — pour la raison exacte qu'on etait en train de
+  // faire ce qu'on fait dans l'ordre prevu.
+  const project = freshProject('phases-plans');
+  run('state.js', ['register', project, 'slice', 'slice-alpha', '.forge/plans/slice-alpha.md']);
+  const res = run('consistency-check.js', ['reality', project]);
+  const c = res.json.checks.find(x => x.check === 'slice_plan_exists');
+  assert(c.status === 'pass', `un plan manquant avant la Phase 5 doit passer : ${c.status}`);
+  assert(c.plans_expected === false, 'le controle doit dire qu\'il n\'attend rien');
+});
+
+test('un plan ecrit puis disparu reste un defaut', () => {
+  const project = freshProject('phases-plan-disparu');
+  const abs = path.join(project, '.forge', 'plans', 'slice-beta.md');
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  writeDeliverable(project, '.forge/plans/slice-beta.md', { type: 'implementation-plan', body: 'Le plan.' });
+  run('state.js', ['register', project, 'slice', 'slice-beta', '.forge/plans/slice-beta.md']);
+  // Le plan a été écrit — le hash est donc enregistré — puis il disparaît.
+  fs.unlinkSync(abs);
+  const res = run('consistency-check.js', ['reality', project]);
+  const c = res.json.checks.find(x => x.check === 'slice_plan_exists');
+  assert(c.status === 'fail',
+    `un plan enregistre et disparu est une derive, pas un plan a ecrire : ${c.status}`);
+  assert(c.missing.some(m => m.slice === 'slice-beta'), 'le plan manquant doit etre nomme');
+});
+
+test('apres la Phase 5, un plan manquant redevient un defaut', () => {
+  const project = freshProject('phases-plans-apres');
+  run('state.js', ['register', project, 'slice', 'slice-gamma', '.forge/plans/slice-gamma.md']);
+  const state = readState(project);
+  state.phases['5_implementation_plan'].status = 'approved';
+  writeState(project, state);
+  const res = run('consistency-check.js', ['reality', project]);
+  const c = res.json.checks.find(x => x.check === 'slice_plan_exists');
+  assert(c.status === 'fail', 'une phase franchie exige ses livrables');
+  assert(c.plans_expected === true, 'le controle doit le dire');
+});
+
+test('avant la Phase 5, le lien ecran ↔ slice est saute', () => {
+  const project = freshProject('phases-ecrans');
+  writeDeliverable(project, '.forge/design/screens/accueil.md', { type: 'screen' });
+  run('state.js', ['register', project, 'screen', 'accueil', '.forge/design/screens/accueil.md']);
+  run('state.js', ['register', project, 'slice', 'slice-delta', '.forge/plans/slice-delta.md']);
+  const res = run('consistency-check.js', ['screens', project]);
+  const c = res.json.checks.find(x => x.check === 'screens_have_slices');
+  assert(c.status === 'skip',
+    `le lien ecran ↔ slice se verifie quand les plans existent : ${c.status}`);
+});
+
+test('le hash d\'un ecran est verifie, pas seulement celui d\'un livrable', () => {
+  // `state.js register` enregistre un `content_hash` pour les ecrans comme pour
+  // les livrables, mais le controle ne lisait que `deliverables`. Un ecran
+  // reecrit apres son enregistrement etait invisible : le hash enregistre etait
+  // perime, donc faux, et personne ne le savait.
+  const project = freshProject('phases-hash-ecran');
+  writeDeliverable(project, '.forge/design/screens/liste.md', { type: 'screen', body: 'Version initiale.' });
+  run('state.js', ['register', project, 'screen', 'liste', '.forge/design/screens/liste.md']);
+
+  let res = run('forge-guard.js', ['state', project]);
+  let c = res.json.checks.find(x => x.check === 'content_hashes_current');
+  assert(c.status === 'pass', 'un ecran intact ne doit pas etre signale');
+
+  const abs = path.join(project, '.forge', 'design', 'screens', 'liste.md');
+  fs.writeFileSync(abs, fs.readFileSync(abs, 'utf-8').replace('Version initiale.', 'Version reecrite.'));
+
+  res = run('forge-guard.js', ['state', project]);
+  c = res.json.checks.find(x => x.check === 'content_hashes_current');
+  assert(c.status === 'fail', 'un ecran reecrit hors bande doit etre signale');
+  assert(c.drifted.some(d => d.kind === 'screen' && d.artifact === 'liste'),
+    `la derive doit nommer l'ecran : ${JSON.stringify(c.drifted)}`);
+
+  // Et la commande documentee doit permettre de remettre le hash a jour.
+  const h = run('state.js', ['hash', project, 'liste']);
+  assert(h.code === 0, `state.js hash doit porter sur un ecran : ${h.stdout}${h.stderr}`);
+  res = run('forge-guard.js', ['state', project]);
+  c = res.json.checks.find(x => x.check === 'content_hashes_current');
+  assert(c.status === 'pass', 'apres hash, l\'ecran doit repasser au vert');
 });
 
 /* ------------------------------------------------------------------ *
