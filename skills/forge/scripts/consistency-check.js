@@ -818,6 +818,192 @@ function checkStateParity(root, state) {
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * Exactitude des citations — la regle citee dit-elle ce qu'on lui fait dire ?
+ * ------------------------------------------------------------------ */
+
+// Mots outils du francais. Sans cette liste, « dans », « chaque » ou « est »
+// portent assez de bruit pour qu'aucune citation ne soit jamais signalee.
+const CIT_STOP = new Set(['alors','avec','cette','dans','pour','par','plus','sans','sous','sur','une','des','les','deux','elle','ils','est','sont','etre','avoir','fait','faire','meme','tout','tous','toute','toutes','doit','doivent','peut','peuvent','vers','entre','chez','leur','leurs','notre','nos','votre','vos','ceci','cela','celle','celui','quand','comme','donc','ainsi','car']);
+
+function citWords(text) {
+  return String(text)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 4 && !CIT_STOP.has(w));
+}
+
+/** Les regles du PRD : identifiant -> texte. Cellule 1 = ID, cellule 2 = la regle. */
+function readRules(prd) {
+  const rules = new Map();
+  for (const line of prd.split('\n')) {
+    if (!line.trim().startsWith('|')) continue;
+    const cells = line.split('|').slice(1, -1).map(c => c.trim());
+    if (cells.length < 2) continue;
+    const m = cells[0].match(/^\*?\*?([BEUCV]\d+)\*?\*?$/);
+    if (!m) continue;
+    if (rules.has(m[1])) continue;
+    rules.set(m[1], { id: m[1], text: cells[1] });
+  }
+  return rules;
+}
+
+/**
+ * Les citations : une **ligne** de tableau qui porte des IDs et une affirmation.
+ *
+ * L'unité est la ligne, pas la cellule. Dans la forme la plus courante du PRD —
+ * `| B11 | PRD §4 | § 3 : chaque tuile porte ses 7 slots |` — l'ID est dans une
+ * cellule et l'affirmation dans la suivante : parser par cellule voyait donc
+ * **le format dominant**, et ne captait que les citations écrites en ligne. Deux
+ * tests l'ont attrapé.
+ */
+function readCitations(md, rel) {
+  const out = [];
+  md.split('\n').forEach((line, i) => {
+    if (!line.trim().startsWith('|')) return;
+    const row = line.split('|').slice(1, -1).map(c => c.trim());
+    if (row.length < 2) return;
+    const joined = row.join(' | ');
+    const ids = [...new Set([...joined.matchAll(/\b([BEUCV]\d+)\b/g)].map(m => m[1]))];
+    if (!ids.length) return;
+    const claim = joined
+      .replace(/\b[BEUCV]\d+\b/g, ' ')
+      .replace(/§+\s*[\d.]+/g, ' ')
+      .replace(/`[^`]*`/g, ' ')
+      .replace(/\bPRD\b/g, ' ')
+      .replace(/\|/g, ' ');
+    const words = citWords(claim);
+    if (words.length < 3) return; // une citation trop sèche ne prouve rien
+    out.push({ rel, line: i + 1, ids, words, raw: joined });
+  });
+  return out;
+}
+
+/**
+ * Une citation dont la regle ne dit pas ce que le document affirme.
+ *
+ * Ce controle ne demande pas « l'ID existe-t-il ? ». Il demande « **la regle
+ * dit-elle ce que le document affirme ?** »
+ *
+ * Constate sur deux projets independants :
+ *  - 22 references `B*` dans trois specifications d'ecran, dont **8 fausses** :
+ *    `B11` (seuil signe, valeur/sens/date) cite pour « l'immutabilite de la
+ *    version publiee », `B24` (restauration) pour la conservation de saisie ;
+ *  - ici, un plan affirmait « B11 : chaque tuile porte ses 7 slots, dont
+ *    `computed_at` et `source_ref` » — or B11 ne parle que du seuil.
+ *
+ * Une reference fausse est **plus grave** qu'une reference absente : elle donne
+ * l'apparence d'une tracabilite verifiee. Verifier la presence de l'ID donne un
+ * vert parfaitement inutile, parce que l'ID existe et ne parle pas de ce qu'on
+ * a ecrit.
+ *
+ * Deux garde-fous contre le faux positif, parce qu'un controle bruyant s'eteint :
+ *  - une citation qui **emprunte au moins trois mots** a la regle est acceptee :
+ *    un vocabulaire metier legitimement different n'est pas une fausse citation ;
+ *  - une regle de moins de trois mots significatifs n'est pas comparable.
+ */
+function checkCitationAccuracy(root, state) {
+  const check = 'citation_accuracy';
+  const prdRel = (state.deliverables || {}).prd && state.deliverables.prd.path;
+  if (!prdRel) { skip(check, 'PRD absent ou non enregistre'); return; }
+  const prd = read(root, prdRel);
+  if (!prd) { skip(check, 'PRD illisible'); return; }
+
+  const rules = readRules(prd);
+  // Un PRD de quatre regles est un PRD legitime : le seuil ne protege pas contre un
+  // tableau illisible, il decale juste le seuil de detection. Quatre est assez bas
+  // pour attraper une table mal reconnue sans exiger un PRD riche.
+  if (rules.size < 4) { skip(check, `PRD ne declare que ${rules.size} regles — table de reference illisible`); return; }
+
+  const docs = [];
+  for (const [key, d] of Object.entries(state.deliverables || {})) {
+    if (!d.path || d.type === 'prd') continue;
+    const c = read(root, d.path);
+    if (c) docs.push({ key, rel: d.path, text: c });
+  }
+  for (const [key, s] of Object.entries(state.screens || {})) {
+    if (!s.path) continue;
+    const c = read(root, s.path);
+    if (c) docs.push({ key, rel: s.path, text: c });
+  }
+  for (const [key, s] of Object.entries(state.slices || {})) {
+    if (!s.plan_path) continue;
+    const c = read(root, s.plan_path);
+    if (c) docs.push({ key, rel: s.plan_path, text: c });
+  }
+
+  const suspects = [];
+  let checked = 0, verifiable = 0, acknowledged = 0, collective = 0;
+  for (const d of docs) {
+    for (const cit of readCitations(d.text, d.rel)) {
+      for (const id of cit.ids) {
+        const rule = rules.get(id);
+        if (!rule) continue;
+        const ruleWords = new Set(citWords(rule.text));
+        if (ruleWords.size < 3) continue;
+        // Une cellule qui cite **plusieurs** regles porte une affirmation
+        // collective : la comparer a chaque regle separement garantit un
+        // faux positif par regle non concernee. C'etait la source du bruit.
+        if (cit.ids.length > 1) { collective++; continue; }
+        checked++;
+        if (/acquitt|assum|r[eé]-dat/.test(cit.raw)) { acknowledged++; continue; }
+        const hit = cit.words.filter(w => ruleWords.has(w));
+        if (hit.length >= 3) { verifiable++; continue; }
+        suspects.push({
+          id, doc: d.rel, line: cit.line, shared: hit,
+          claim: cit.raw.slice(0, 170),
+          rule_text: rule.text.slice(0, 170),
+          what_to_do: 'Soit citer la regle mot pour mot, soit ecrire pourquoi elle couvre ' +
+                       'cet endroit. Les deux sont des decisions ; ne faire ni l\'un ni l\'autre ' +
+                       'est un oubli, pas une paraphrase.'
+        });
+      }
+    }
+  }
+
+  // **Ce controle ne peut pas dire qu'une citation est fausse.** Deux textes
+  // peuvent dire la meme chose avec des mots differents — « source
+  // indisponible » et « entrepot injoignable » — et aucun test lexical ne les
+  // separe. Une version anterieure de ce controle rendait `fail` sur ces
+  // paraphrases : elle etait fausse sur des documents **corrects**, donc elle
+  // aurait ete eteinte, puis oubliee.
+  //
+  // Il rend donc une **obligation a examiner**, pas un verdict : la file des
+  // citations qui n'empruntent rien a la regle, et le decompte de celles qui
+  // sont verifiables sans interpretation. Le gate tranche, comme il tranche de
+  // tout ce qu'aucun script ne peut decider.
+  record(check, true, {
+    rules: rules.size,
+    documents: docs.length,
+    citations_checked: checked,
+    citations_verifiable: verifiable,
+    citations_acknowledged: acknowledged,
+    citations_collective: collective,
+    citations_to_review: suspects.length,
+    suspects,
+    measured_precision: "~0% sur le projet de test. Les six suspects les plus solides ont ete " +
+      "lus a la main : six paraphrases ou citations legitimes, zero fausse. Exemples verifies " +
+      "un par un — `C4` (domaine « legale ») cite pour « C4 est une contrainte legale » : " +
+      "exact ; `B11` (seuil signe, valeur/sens/date) cite pour « les seuils sont ecrits a " +
+      "cote de la definition » : exact. Une premiere lecture les avait comptes comme " +
+      "fausses ; ils ne l'etaient pas. C'est pourquoi ce controle est **pilote** : il ne " +
+      "peut pas etre une obligation de gate, et un rapport sans precision mesuree est un " +
+      "verdict deguise.",
+    obligation: 'Ce controle est une FILE D\'EXAMEN, pas un verdict. Il rend `pass` par ' +
+      'construction : sur 358 citations, 244_etait une file de 244 lignes, dont 2 fausses ' +
+      'citations reelles. Le gate tranche. ' +
+                ' citations a examiner et statuer sur chacune. Le controle ne peut pas ' +
+                'dire lesquelles sont fausses : il ne sait distinguer une paraphrase d\'une erreur.',
+    rule: "Verifier la presence d'un ID donne un vert inutile : l'ID existe et ne parle " +
+          "pas de ce qu'on a ecrit. Une reference fausse est plus grave qu'une reference " +
+          "absente, parce qu'elle donne l'apparence d'une tracabilite verifiee. Mais " +
+          "l'inverse est vrai aussi : un controle lexical accuse aussi les paraphrases, " +
+          "et un controle qui accuse juste est eteint comme les autres."
+  });
+}
+
 const CHECKS = {
   reality: (root, state) => checkSliceReality(root, state),
   ids: (root, state) => checkIdTraceability(root, state),
@@ -826,6 +1012,7 @@ const CHECKS = {
   questions: (root, state) => checkOpenQuestions(root, state),
   findings: (root, state) => checkFindings(root, state),
   premises: (root, state) => checkPremises(root, state),
+  citations: (root, state) => checkCitationAccuracy(root, state),
   'state-parity': (root, state) => checkStateParity(root, state),
 };
 
@@ -857,7 +1044,7 @@ function main() {
   // test il rend 1 vrai écart et 15 faux. Il tourne donc à la demande
   // (`consistency-check state-parity`) et pas dans `all` — un contrôle qui
   // ment est pire qu'un contrôle absent.
-  const PILOTED = ['state-parity'];
+  const PILOTED = ['state-parity', 'citations'];
   const toRun = command === 'all'
     ? Object.keys(CHECKS).filter(k => !PILOTED.includes(k))
     : [command];

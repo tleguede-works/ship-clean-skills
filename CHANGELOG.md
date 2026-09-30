@@ -27,6 +27,41 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — Les citations : une file d'examen honnête, et l'échec documenté
+
+`consistency-check citations` ne demande plus « l'ID existe-t-il ? » mais
+« **la règle dit-elle ce que le document affirme ?** » — la distinction que deux
+projets ont faite, dont un avec 8 fausses citations sur 22.
+
+**Mais la version lexicale ne fonctionne pas, et le lot le dit.** Sur le projet de
+test elle produit 283 suspects, et les six plus solides ont été lus à la main :
+**six paraphrases ou citations légitimes, zéro fausse**. Deux exemples vérifiés —
+`C4` (domaine « légale ») cité pour « C4 est une contrainte légale », et `B11`
+(seuil signé, valeur/sens/date) cité pour « les seuils sont écrits à côté de la
+définition ». Une première lecture les comptait comme fausses ; ils ne l'étaient
+pas.
+
+Aucune mesure lexicale ne sépare « l'entrepôt est injoignable » de « source
+indisponible ». Le contrôle rend donc une **file d'examen** avec sa précision
+mesurée écrite dans la sortie, et il ne fait **jamais** échouer. Il est **piloté**,
+hors de `all` : une obligation de gate sur 283 lignes serait une obligation que
+personne ne tiendrait.
+
+Deux bugs du parseur, trouvés par les tests :
+- l'unité était la **cellule**, alors que le format dominant (`| B11 | PRD §4 |
+  § 3 : … |`) met l'ID dans une cellule et l'affirmation dans la suivante : le
+  contrôle était aveugle au cas le plus fréquent ;
+- une cellule citant **plusieurs** règles (`B7, E9, E10`) était comparée à
+  chacune : un faux positif garanti par règle non concernée. 3 des 6 suspects.
+
+**La seule version sans faux positif est l'obligation de citer la règle mot pour
+mot** — une convention de gabarit, pas un contrôle. Elle sera traitée séparément :
+elle demande une migration des documents existants, pas un correctif.
+
++4 tests (149 → 153), dont un qui vérifie qu'une paraphrase totalement reformulée
+atterrit en file **sans faire échouer** — la limite est écrite comme test, parce
+que c'est elle qui motive le pilotage.
+
 ## [1.4.2] - 2026-09-30
 
 ### fix(forge) — Le périmètre d'un validateur, le caractère parasite, et la règle de l'auto-test
