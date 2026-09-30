@@ -418,9 +418,24 @@ Pour chaque slice, définis :
 
 #### 4.3 Graphe de dépendances
 
-1. Lance `node scripts/dependency-check.js check <anchor> --write` pour vérifier le graphe **et** persister `depends_on` / `depended_on_by` / `impl_wave` dans `state.json`.
-2. Identifie les dépendances entre slices, les dépendances circulaires (à corriger), l'ordre topologique.
-3. Détermine quelles slices peuvent être développées en parallèle.
+1. **Déclare** le graphe, slice par slice :
+   ```bash
+   node scripts/state.js dep <anchor> <slice|fondation> <a,b,c>
+   ```
+   `state.js dep` refuse une dépendance vers une slice inexistante, l'auto-dépendance, et tout ce qui fermerait un cycle. Un graphe faux ne se distingue pas d'un graphe incomplet : une dépendance morte ne sera jamais satisfaite, et rien ne le signale ensuite.
+2. Lance `node scripts/dependency-check.js check <anchor> --write` pour calculer `depended_on_by` et `impl_wave`.
+3. Identifie les dépendances circulaires, l'ordre topologique, et quelles slices peuvent être développées en parallèle.
+
+**Déclare ton plan de vagues s'il est plus fin que le minimum.** `dependency-check` calcule le minimum topologique. Un plan d'ordonnancement plus fin est légitime — deux personnes ne peuvent pas porter à la fois la politique RLS et la formule d'écart — mais il doit être écrit dans le front matter de l'architecture :
+
+```yaml
+impl_waves: 13
+impl_waves_rationale: >-
+  Plan d'ordonnancement, pas minimum topologique. Le graphe se réduit à 8 vagues ;
+  on en retient 13 parce que F4 et F9 ne doivent pas être portées par la même personne.
+```
+
+Sans cette déclaration, `writeBack` écrase `impl_wave` sans rien dire, et deux documents de la Phase 4 se contredisent avec la CI verte. Déclaré sans raison, l'écart **échoue** : un plan non justifié ne se distingue pas d'une erreur de comptage. Déclaré avec sa raison, il reste visible comme avertissement.
 
 #### 4.4 Génération du document d'architecture
 

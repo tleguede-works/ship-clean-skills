@@ -43,6 +43,76 @@ function buildDependencyGraph(state) {
   return { nodes, edges };
 }
 
+/**
+ * Le nombre de vagues DÉCLARÉ dans l'architecture.
+ *
+ * Source primaire : `impl_waves: N` dans le front matter — un champ
+ * machine-lisible. Repli : la forme « N vagues, de V0 à V(N-1) » du § graphe,
+ * parce que le style en clair est ce que les rédacteurs écrivent spontanément,
+ * et qu'un champ absent ne doit pas rendre la vérification impossible.
+ */
+/**
+ * Lit un scalaire plié YAML (`>-`, `>`, `|`) dans le front matter.
+ *
+ * Les raisons d'un écart sont longues, donc écrites en bloc plié. Un lecteur
+ * naïf — `match(/^champ:\s*(.+)$/m)` — remonte l'indicateur `>-` et pas le
+ * texte, ce qui fait passer une justification présente pour une
+ * justification absente. C'est exactement le défaut qu'un contrôle ne doit pas
+ * commettre : distinguer « il n'a pas expliqué » de « il a expliqué, mal lu ».
+ */
+function readFoldedScalar(fm, field) {
+  const lines = fm.split('\n');
+  const start = lines.findIndex(l => new RegExp('^' + field + ':').test(l));
+  if (start === -1) return null;
+  const inline = lines[start].slice(field.length + 1).trim();
+  if (inline && !/^[>|][-+]?$/.test(inline)) return inline;
+
+  const parts = [];
+  for (let i = start + 1; i < lines.length; i++) {
+    const l = lines[i];
+    if (!/^\s+\S/.test(l)) {
+      if (parts.length) parts.push('');
+      continue;
+    }
+    parts.push(l.trim());
+  }
+  const text = parts.join(' ').replace(/\s+/g, ' ').trim();
+  return text || null;
+}
+
+function readDeclaredWaves(projectPath) {
+  const archRel = 'architecture.md';
+  const p = path.join(projectPath, '.forge', archRel);
+  if (!fs.existsSync(p)) return null;
+  const text = fs.readFileSync(p, 'utf-8');
+
+  const end = text.indexOf('\n---', 3);
+  if (text.startsWith('---') && end > 0) {
+    const fm = text.slice(3, end);
+    const m = fm.match(/^impl_waves:\s*(\d+)/m);
+    if (m) {
+      // Un écart assumé se déclare comme tel, avec sa raison. Sinon « j'ai
+      // écrit 13 et l'outil en trouve 8 » reste un échec, et la seule façon de
+      // le faire disparaître est de corriger le document — donc de mentir.
+      const rationale = readFoldedScalar(fm, 'impl_waves_rationale');
+      return {
+        waves: parseInt(m[1], 10),
+        rationale: rationale ? rationale.trim() : null,
+        source: 'front matter .forge/architecture.md (impl_waves)'
+      };
+    }
+  }
+  const prose = text.match(/\*\*(\d+)\s+vagues\*\*/) || text.match(/^(\d+)\s+vagues\b/m);
+  if (prose) {
+    return {
+      waves: parseInt(prose[1], 10),
+      rationale: null,
+      source: '§ graphe de l\'architecture (texte)'
+    };
+  }
+  return null;
+}
+
 function findCycles(graph) {
   const cycles = [];
   const visited = new Set();
@@ -176,17 +246,57 @@ function check(projectPath, fullReport, doWrite) {
 
   const written = doWrite && cycles.length === 0 ? writeBack(projectPath, state, graph, waves) : null;
 
+  /* ---------------------------------------------------------------- *
+   * Le plan de vagues déclaré dans l'architecture.
+   *
+   * `writeBack` écrase `impl_wave` par le calcul. Si l'architecture annonce un
+   * plan de vagues différent, cet écart disparaît sans bruit : l'outil
+   * rapporte `pass: true`, et deux documents de la Phase 4 se contredisent
+   * alors que la CI est verte.
+   *
+   * Constaté sur un test grandeur nature : l'architecture annonçait 13 vagues
+   * (V0 à V12), le calcul en donne 8. Les deux peuvent être vrais — un plan
+   * d'ordonnancement peut être plus fin que le minimum du chemin critique —
+   * mais personne n'en était informé, et l'implémenteur lisait l'un pendant que
+   * `state.json` contenait l'autre.
+   * ---------------------------------------------------------------- */
+  const declared = readDeclaredWaves(projectPath);
+  const computed = waves.length;
+  const divergence = [];
+  if (declared && declared.waves !== computed) {
+    // Déclaré ET justifié → un avertissement visible, pas un échec. Le plan
+    // reste plus fin que le minimum, et c'est un choix assumé.
+    // Déclaré sans raison, ou trouvé dans la prose → un échec : un plan non
+    // justifié ne se distingue pas d'une erreur de comptage.
+    divergence.push({
+      what: 'impl_waves',
+      declared: declared.waves,
+      computed,
+      difference: declared.waves - computed,
+      declared_source: declared.source,
+      rationale: declared.rationale || null,
+      acknowledged: !!declared.rationale,
+      status: declared.rationale ? 'warn' : 'fail',
+      rule: 'Un plan d\'ordonnancement plus fin que le minimum du chemin critique est ' +
+            'légitime, mais il doit être DÉCLARÉ et JUSTIFIÉ : sinon deux documents de la ' +
+            'phase se contredisent et rien ne le signale.'
+    });
+  }
+
   const report = {
     total_nodes: Object.keys(graph.nodes).length,
     slices: Object.values(graph.nodes).filter(n => n.type === 'slice').length,
     foundations: Object.values(graph.nodes).filter(n => n.type === 'foundation').length,
     edges: graph.edges.length,
     waves: waves.map((w, i) => ({ wave: i, nodes: w, count: w.length })),
+    waves_computed: computed,
+    waves_declared: declared ? declared.waves : null,
+    divergence,
     cycles: cycles.map(c => c.join(' → ')),
     orphans: orphanNodes,
     missing_dependencies: missingDeps,
     written_back: !!written,
-    pass: cycles.length === 0 && missingDeps.length === 0
+    pass: cycles.length === 0 && missingDeps.length === 0 && !divergence.some(d => d.status === 'fail')
   };
 
   if (fullReport) {
@@ -198,6 +308,8 @@ function check(projectPath, fullReport, doWrite) {
       missing_deps: report.missing_dependencies,
       orphans: report.orphans,
       waves_count: report.waves.length,
+      waves_declared: report.waves_declared,
+      divergence: report.divergence,
       written_back: report.written_back
     }));
   }

@@ -658,8 +658,80 @@ function cmdSync(root, fix) {
  * check-stale
  * ------------------------------------------------------------------ */
 
-function cmdCheckStale(root, sliceName) {
+/**
+ * Déclarer les dépendances d'une slice ou d'une fondation.
+ *
+ * Le graphe de dépendances est l'entrée de `dependency-check`, qui calcule les
+ * vagues d'implémentation et détecte les cycles. Mais jusqu'ici, rien ne
+ * pouvait écrire cette entrée : il fallait éditer `state.json` à la main.
+ *
+ * Or `state-schema.md` affirme que `depends_on` est écrit par
+ * `dependency-check --write` — qui ne fait que le *calculer*. Le champ était
+ * donc censé apparaître tout seul, et son absence ne produisait aucun défaut :
+ * un graphe vide est un graphe valide.
+ *
+ * Conséquence, sur un test grandeur nature : la Phase 4 est la phase qui
+ * *produit* le découpage en slices, et son étape 3 consiste à « vérifier le
+ * graphe et persister depends_on ». Il n'y avait aucun moyen de le faire. La
+ * seule voie restante — éditer le JSON à la main — contredit la règle du skill
+ * qui fait de `state.json` une autorité machine.
+ */
+function cmdDep(root, key, depsArg) {
   const state = loadState(root);
+  const slice = (state.slices || {})[key];
+  const foundation = (state.foundations || {})[key];
+  const entry = slice || foundation;
+  if (!entry) {
+    L.fail({
+      error: 'unknown_slice',
+      key,
+      known: [...Object.keys(state.slices || {}), ...Object.keys(state.foundations || {})],
+      hint: `Déclare la slice d'abord : state.js register ${root} slice ${key} .forge/plans/${key}.md`
+    });
+  }
+
+  const list = (depsArg || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const known = new Set([
+    ...Object.keys(state.slices || {}),
+    ...Object.keys(state.foundations || {})
+  ]);
+  const unknown = list.filter(d => !known.has(d));
+  if (unknown.length) {
+    L.fail({
+      error: 'unknown_dependency',
+      key,
+      unknown,
+      known: [...known],
+      rule: 'Une dépendance vers une slice inexistante est un graphe faux, pas un graphe ' +
+            'incomplet : elle ne sera jamais satisfaite et rien ne le signalera.'
+    });
+  }
+  if (list.includes(key)) {
+    L.fail({ error: 'self_dependency', key, rule: 'Une slice ne peut pas dépendre d\'elle-même.' });
+  }
+  for (const d of list) {
+    const target = (state.slices || {})[d] || (state.foundations || {})[d];
+    if (target && Array.isArray(target.depends_on) && target.depends_on.includes(key)) {
+      L.fail({
+        error: 'circular_dependency', key, with: d,
+        rule: 'Cette dépendance refermerait un cycle. Corrige avant de persister.'
+      });
+    }
+  }
+
+  entry.depends_on = list;
+  entry.updated_at = new Date().toISOString();
+  audit(state, 'dependency_declared', `Dépendances de ${key} : ${list.join(', ') || '(aucune)'}`);
+  save(root, state, { type: 'dependency_declared', node: key, depends_on: list });
+
+  L.out({ command: 'dep', key, depends_on: list, kind: slice ? 'slice' : 'foundation' });
+}
+
+function cmdCheckStale(root, sliceName) {  const state = loadState(root);
   const slice = (state.slices || {})[sliceName];
   if (!slice) L.fail({ error: 'unknown_slice', slice: sliceName, known: Object.keys(state.slices || {}) });
 
@@ -1205,6 +1277,7 @@ const USAGE = {
   hash: 'state.js hash <root> <deliverable-key>',
   sync: 'state.js sync <root> [--fix]                       #.state.json = autorité',
   'check-stale': 'state.js check-stale <root> <slice>',
+    'dep': 'state.js dep <root> <slice|foundation> <a,b,c>   # déclare le graphe — à faire AVEC dependency-check --write',
   migrate: 'state.js migrate <root>                        # v1 → v2',
   'set-nav': 'state.js set-nav <root> <json>',
   finding: 'state.js finding <root> --domain=<règle> --severity=<s> --origin=<o> "<fait>" "<correction>"',
@@ -1231,6 +1304,7 @@ function main() {
       for (const f of flags) if (f.startsWith('--reference=')) refs.push(f.slice('--reference='.length));
       return cmdInit(positional[0], positional[1], refs);
     }
+    case 'dep': return cmdDep(positional[0], positional[1], positional[2]);
     case 'register': {
       // `--requires` et `--amended-by` sont des dépendances déclarées, pas des
       // options de confort : sans elles, un livrable approuvé peut reposer sur
