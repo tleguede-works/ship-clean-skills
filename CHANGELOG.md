@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-10-01
+
 ### fix(forge) — le contrat devient bloquant, et la règle honnête n'est pas « tout le monde »
 
 `contract_complete` passe de `warn` à `fail` — mais **seulement au-delà de la Phase 0**.
