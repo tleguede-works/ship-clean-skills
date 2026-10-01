@@ -3336,3 +3336,84 @@ indicateur qu'on peut éteindre. Et le geste qui l'éteint est souvent **le bon
 geste** — retirer une approbation prématurée, revenir en arrière, corriger une
 erreur. Le défaut apparaît donc au moment exact où l'agent fait ce qu'il faut, ce
 qui est la pire place possible pour un défaut.
+
+---
+
+## F-72 — les formats de mémoire n'étaient écrits nulle part, donc réécrits à chaque projet
+
+### Comparaison
+
+| | Référence (`bi-dashboard-platform`, archive du 2026-09-29) | `Atelier` après le premier PRA |
+|---|---|---|
+| `SESSION_LOG.md` | **8 champs nommés et ordonnés** | 4 puces libres : Fait / Resté ouvert / Appris / Renvoie à |
+| `DECISIONS.md` | `ADR-<NNN>`, **6 champs**, `Statut: Actif / Supersédé` | `Q-<NNN>`, questions ouvertes, **zéro décision fermée** |
+| `LEARNINGS.md` | une ligne par correctif, contraste + `domaine` + `Seen` | structure à 5 sous-champs, **zéro entrée** |
+
+Le projet de référence est **plus riche** que ce que le scaffold produit. Ce n'est pas
+une équivalence : c'est une perte.
+
+### Ce qui a été perdu, et ce que ça coûte
+
+**`REJECTED` a disparu du journal.** C'est le champ le plus cher : tout le reste
+décrit ce qui a été fait, lui empêche la session suivante de reproposer la même chose.
+Sur `Atelier`, les refus portaient : la comptabilité, l'encaissement par carte, la
+signature qualifiée, le SMS, le quatrième état de synchronisation, les six tranches non
+planifiées, et deux chemins d'agent inventés. Aucun n'avait où aller.
+
+**Aucune décision fermée.** `DECISIONS.md` est un registre **append-only de décisions
+closes**. Un fichier qui ne contient que des questions ouvertes n'a enregistré rien à
+quoi une session future soit liée.
+
+### La cause : le format était écrit, mais pas normatif
+
+`skills/project-rules-architect/provenance/synthesis-provenance.md` dit :
+
+> F `SESSION_LOG.md` (8-field format) → `SESSION_LOG.md` — *Kept as-is*
+> *Memory-file templates (emitted alongside the entry file)*
+
+`skills/project-rules-architect/` **n'a aucun répertoire `templates/`**. La provenance
+enregistre ce qui aurait dû être produit ; rien ne l'a été. Le `SKILL.md`, lui, décrit
+**ce que** chaque fichier contient, et jamais **sous quelle forme**.
+
+Donc chaque projet obtient son propre format, et le premier essai n'a pas eu de
+référence à copier.
+
+### Correction
+
+Quatre gabarits dans `skills/project-rules-architect/templates/memory/`, et une section
+normative dans `SKILL.md` qui dit que ce répertoire **est** la spécification.
+
+### Et ce que la correction a révélé : quatre motifs trop étroits
+
+En écrivant les quatre fichiers d'`Atelier` aux formats de référence, la machine a
+cessé de les lire. Pas parce qu'ils étaient mauvais — parce que **le lecteur est plus
+étroit que ce que le dépôt écrit** :
+
+| Ce que le dépôt écrit | Ce que le lecteur exigeait |
+|---|---|
+| `**Statut** : Open` (français, avec espace avant le deux-points) | `Status: Open` (anglais, sans espace) |
+| `- 2026-09-29 — …` (tiret cadratin) | `- 2026-09-29:` (deux-points) |
+| « Tu tranches quelque chose qu'une session future rediscuterait » | un adverbe : `quand`, `si`, `avant` |
+
+Résultat mesuré : `questions_open` **6 → 0**, `learnings` **0 sur 13**, `triggers_named`
+**3 → 1** — et les deux lignes comptées « sans déclencheur » étaient les deux
+meilleures.
+
+**Le jeton de statut avait déjà été élargi une fois**, pour la décoration
+(`**Status:**` contre `Status:`), avec le motif exact en commentaire : *« un motif plus
+étroit que ce que le document écrit »*. Il restait étroit pour la **langue**, puis pour
+la **typographie**. Trois rétrécissements successifs sur le même champ, et le champ
+avait été choisi par une convention **non écrite dans le document**.
+
+**Le lexique de déclencheur mesurait la mauvaise chose.** Il demandait un adverbe, alors
+que le meilleur déclencheur est une **condition**. « Corrections » est une
+description ; « la deuxième fois que tu te trompes » est un déclencheur ; ni l'une ni
+l'autre ne passe par un adverbe. La correction lit désormais la **colonne non vide d'une
+ligne de tableau**, ce qui est structurel et déterministe.
+
+### Le contre-témoin qui ne mordait pas
+
+Le test « une colonne non vide EST un déclencheur » passait déjà avant la correction —
+parce qu'une de ses trois lignes contenait `avant`. Sans la contre-épreuve **à deux
+cellules**, il n'aurait rien prouvé : il serait passe aussi si n'importe quelle ligne
+comptait.

@@ -3222,6 +3222,125 @@ test('un plan manquant ne fait pas échouer AVANT la Phase 5', () => {
   assert(c.status === 'pass', `un plan absent avant la Phase 5 est normal, il est : ${c.status}`);
 });
 
+test('le jeton de statut se lit en français, en anglais, et avec ou sans espace', () => {
+  // Trois rétrécissements successifs sur **le même champ**, tous prouvés par des
+  // documents réels :
+  //
+  //   1. décoration — `**Status:**` ne passait pas, seul `Status:` ;
+  //   2. langue     — `Statut :` ne passait pas, le motif ne portait que `Status:` ;
+  //   3. typographie — `**Statut** :` ne passait pas, le dépôt entier écrit une
+  //      espace avant le deux-points.
+  //
+  // Constaté sur `Atelier` : `questions_open` est passé de 6 à 0 après réécriture du
+  // fichier en français. Zéro question ouverte sur un projet qui en a quatre est un
+  // mensonge de la famille de F-48 : un motif plus étroit que ce que le document écrit.
+  //
+  // Un jeton que personne ne devine n'est pas un jeton : les six formes sont donc
+  // énumérées ici, et chacune doit être lue.
+  const project = freshProject('jeton-statut-bilingue');
+  fs.writeFileSync(path.join(project, 'DECISIONS.md'), [
+    '# DECISIONS.md', '',
+    '## Questions ouvertes', '',
+    '- **Statut** : Open', '- Statut : Open', '- Statut: Open', '',
+    '## Journal des décisions', '',
+    '## ADR-001: Une decision', '', '- **Statut** : Actif', '',
+    '## ADR-002: Une decision remplacee', '', '- **Status:** Superseded by ADR-001', ''
+  ].join('\n'));
+  fs.writeFileSync(path.join(project, 'AGENTS.md'), [
+    '# AGENTS.md', '', '| Fichier | Ce qu on y ecrit | Declencheur |', '|---|---|---|',
+    '| `SESSION_LOG.md` | le recit | quand |', '| `DECISIONS.md` | les decisions | quand |',
+    '| `LEARNINGS.md` | les correctifs | quand |', ''
+  ].join('\n'));
+  fs.writeFileSync(path.join(project, 'SESSION_LOG.md'), '# SESSION_LOG.md\n');
+  fs.writeFileSync(path.join(project, 'LEARNINGS.md'), '# LEARNINGS.md\n');
+  run('state.js', ['init', project, 'jeton']);
+
+  const res = run('state.js', ['start', project]);
+  const m = res.json.project_memory || {};
+  assert(m.adrs_open === 3, `les trois formes francaises doivent etre lues : ${JSON.stringify(m)}`);
+  assert(m.adrs_superseded === 1, `la forme anglaise doit etre lue : ${JSON.stringify(m)}`);
+  // `adrs` compte les **titres** `## ADR-<NNN>`, pas les statuts : les statuts
+  // incluent les questions ouvertes, les titres n'existent que pour les decisions
+  // fermees. Deux titres, donc deux — et les trois questions ouvertes ne doivent pas
+  // y etre comptees.
+  assert(m.adrs === 2, `deux titres ADR, pas plus : ${JSON.stringify(m)}`);
+});
+
+test('un declencheur sans adverbe est un declencheur', () => {
+  // Le lexique de cues ne contient que des adverbes : `quand`, `si`, `avant`,
+  // `une fois`. Or le meilleur déclencheur est une **condition**, et la ligne
+  // « tu tranches quelque chose qu'une session future rediscuterait » n'en contient
+  // aucun — alors que c'est exactement ce que la ligne doit dire.
+  //
+  // Constaté sur `Atelier` : `triggers_named` est passé de 3 à 1 après réécriture,
+  // et les deux lignes comptées « sans déclencheur » étaient les deux meilleures.
+  // Un lexique d'adverbes confond une description d'adverbe avec une absence de
+  // condition.
+  const project = freshProject('declencheur-sans-adverbe');
+  const table = [
+    '# AGENTS.md', '',
+    '| Fichier | Ce qu on y ecrit | Declencheur |', '|---|---|---|',
+    // Troisième cellule non vide, aucun adverbe du lexique.
+    '| `SESSION_LOG.md` | le recit de la session | Tu ouvres une session : tu ecris l entree avant de terminer |',
+    '| `DECISIONS.md` | les decisions fermees | Tu tranches quelque chose qu une session future rediscuterait |',
+    '| `LEARNINGS.md` | les correctifs | Tu te trompes une deuxieme fois sur la meme chose |',
+    ''
+  ].join('\n');
+  fs.writeFileSync(path.join(project, 'AGENTS.md'), table);
+  fs.writeFileSync(path.join(project, 'SESSION_LOG.md'), '# SESSION_LOG.md\n');
+  fs.writeFileSync(path.join(project, 'DECISIONS.md'), '# DECISIONS.md\n');
+  fs.writeFileSync(path.join(project, 'LEARNINGS.md'), '# LEARNINGS.md\n');
+  run('state.js', ['init', project, 'declencheur']);
+
+  const res = run('state.js', ['start', project]);
+  const m = res.json.project_memory || {};
+  assert(m.triggers_named === 3,
+    `une colonne non vide EST un declencheur : ${JSON.stringify(m)}`);
+  assert(m.memory_described_not_triggered === 0,
+    `aucun fichier ne doit rester sans declencheur : ${JSON.stringify(m)}`);
+
+  // Le contre-témoin : une ligne à **deux** cellules — description seule — ne doit
+  // pas être comptée. Sans lui, la colonne non vide ne prouverait rien, car le
+  // test passerait aussi si n'importe quelle ligne comptait.
+  fs.writeFileSync(path.join(project, 'AGENTS.md'), [
+    '# AGENTS.md', '',
+    '| Fichier | Ce qu on y ecrit |', '|---|---|',
+    '| `SESSION_LOG.md` | le recit de la session |',
+    '| `DECISIONS.md` | les decisions fermees |',
+    '| `LEARNINGS.md` | les correctifs |',
+    ''
+  ].join('\n'));
+  const res2 = run('state.js', ['start', project]);
+  const m2 = res2.json.project_memory || {};
+  assert(m2.triggers_named === 0,
+    `une description seule n'est pas un declencheur : ${JSON.stringify(m2)}`);
+  assert(m2.memory_indexed === 3,
+    `les trois fichiers restent indexes : ${JSON.stringify(m2)}`);
+});
+
+test('une entree de correctif est comptee avec un tiret cadratin', () => {
+  // Le gabarit et le document de reference ecrivent `- 2026-09-29 — …`, et le motif
+  // exigeait un deux-points. Aucun document du depot n'etait donc compte, et
+  // `learnings: 0` sur un fichier de quatorze corrections est un mensonge.
+  const project = freshProject('correctifs-comptees');
+  fs.writeFileSync(path.join(project, 'LEARNINGS.md'), [
+    '# LEARNINGS.md', '', '## Corrections', '',
+    '- 2026-09-29 — Ne pas ecrire un controle de caracteres en PowerShell : il renvoie 0.',
+    '  → domaine: workflow.md | Seen: un caractere parasite declare absent', '',
+    '- 2026-09-30: Ne pas valider une citation en testant que l identifiant existe.',
+    '  → domaine: workflow.md | Seen: 8 references fausses', '',
+    '- 2026-10-01 Ne pas croire un scan a zero sans l avoir vu accrocher.',
+    '  → domaine: testing.md | Seen: le fichier contenait U+1EE1', '',
+    '<!-- Une date citee en prose ne compte pas. -->',
+    '- une puce du 2026-10-01 qui n est pas une entree de correctif', ''
+  ].join('\n'));
+  run('state.js', ['init', project, 'correctifs']);
+  const res = run('state.js', ['start', project]);
+  const m = res.json.project_memory || {};
+  assert(m.learnings === 3,
+    `les trois separateurs doivent compter : ${JSON.stringify(m)}`);
+});
+
 test('une phase commencée sans livrable reste un échec', () => {
   const project = freshProject('phase-commencee');
   const state = readState(project);
