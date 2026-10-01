@@ -648,6 +648,26 @@ function cmdCompletePhase(root, phaseKey) {
     });
   }
 
+  // **Le contrat bloque la sortie de la Phase 0**, et c'est le bon moment.
+  //
+  // Sans cette règle, le contrôle `contract_complete` ne verrait l'absence qu'une fois
+  // la phase franchie : le projet ferait tout son travail, le gate passerait au vert,
+  // puis passerait au rouge **après** l'instant où l'agent aurait pu agir. Un défaut
+  // qui n'apparaît qu'une fois la fenêtre fermée est un défaut qu'on apprend à ignorer.
+  //
+  // Ici, l'absence est signalée au moment de **clore la phase** — c'est-à-dire quand le
+  // client signe. L'approbation reste la sienne : `draft` suffit pour franchir, parce
+  // qu'un contrat non signé est un travail en cours, et un contrat absent n'en est pas un.
+  if (phaseKey === '0_bootstrap' && !(state.deliverables || {}).contract) {
+    L.fail({
+      error: 'no_contract',
+      phase: phaseKey,
+      why: 'La Phase 0 se termine par un contrat : c\'est là que le client signe ce qui est livré, ce qui ne l\'est pas, et ce qui engage un achat. Sans lui, la promesse « après la signature, le client n\'intervient plus » n\'a personne derrière.',
+      hint: 'node "$FORGE/scripts/state.js" register ' + root + ' deliverable contract .forge/contract.md — puis set-status … approved quand le client a signé',
+      rule: 'Un contrôle qui n\'apparaît qu\'après la fenêtre d\'action est un contrôle qu\'on apprend à ignorer. Celui-ci tombe au moment de clore la phase.'
+    });
+  }
+
   state.phases[phaseKey].status = 'approved';
   state.phases[phaseKey].completed_at = new Date().toISOString();
   state.current_phase = idx < PHASE_KEYS.length - 1 ? String(idx + 1) : String(PHASE_KEYS.length);
