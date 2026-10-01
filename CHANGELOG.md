@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-10-01
+
 ### feat(forge) — le point de contact client : quatre champs obligatoires
 
 Le client signe le contrat, puis n'est plus interrompu que pour un **écart** ou une
