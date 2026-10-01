@@ -1280,6 +1280,126 @@ test('un projet SANS contrat passe, en signalant ce qui manque', () => {
     `l'avertissement doit dire quoi faire : ${JSON.stringify(check.next)}`);
 });
 
+test('NEGATIF — un point client sans les quatre champs est REFUSÉ', () => {
+  // La règle centrale : un client n'est interruptu que pour un écart ou une décision
+  // qui lui appartient, et un point de contact sans **prix** ni **échéance** n'est pas
+  // un point de contact. C'est une décision sans date qui ne reste pas en attente :
+  // elle se décide, et c'est Forge qui décide — donc le client perd le contrôle de
+  // son produit sans avoir jamais eu l'occasion de l'exercer, ce qui est invisible.
+  const project = freshProject('client-incomplet');
+
+  // Chaque champ manquant, isolément, doit suffire à faire échouer. On construit
+  // l'appel **sans** le champ, plutôt que de le retirer d'une liste : `splice` sur
+  // des paires `--drapeau valeur` compte mal dès qu'un drapeau prend la forme
+  // `--drapeau=valeur`, et le test échouait alors sur un découpage, pas sur la règle.
+  const COMPLETS = {
+    what: 'Quel hébergement ?',
+    price: 'A: 7,50 EUR/mois — B: 4 EUR/mois',
+    by: '2026-12-01',
+    if_no_answer: 'Option A, et l écart est signalé'
+  };
+  for (const manquant of ['what', 'price', 'by', 'if_no_answer']) {
+    const args = ['client', project, '--kind=decision'];
+    for (const [k, v] of Object.entries(COMPLETS)) {
+      if (k !== manquant) args.push(`--${k}=${v}`);
+    }
+    const res = run('state.js', args);
+    assert(res.code !== 0, `sans \`${manquant}\` le point doit être refusé`);
+    const j = JSON.parse(res.stdout.slice(0, res.stdout.lastIndexOf('}') + 1));
+    assert(j.error === 'incomplete_client_point', `le refus doit se nommer : ${JSON.stringify(j)}`);
+    assert((j.missing || []).includes(manquant),
+      `sans \`${manquant}\`, c'est \`${manquant}\` qui doit être nommé, pas ses voisins : ${JSON.stringify(j.missing)}`);
+    assert(j.why && j.why.length > 20, `le refus doit dire pourquoi : ${JSON.stringify(j.why)}`);
+    assert(/\$FORGE/.test(j.fix || ''), `le refus doit dire quoi faire : ${JSON.stringify(j.fix)}`);
+  }
+
+  // Un troisième motif n'existe pas : « j'aimerais qu'on regarde un truc » n'est ni
+  // un écart ni une décision, c'est une conversation, et elle n'a pas à être journalisée.
+  const bad = run('state.js', ['client', project, '--kind=question', '--what=x', '--price=y', '--by=2026-12-01', '--if_no_answer=z']);
+  const jb = JSON.parse(bad.stdout.slice(0, bad.stdout.lastIndexOf('}') + 1));
+  assert(jb.error === 'bad_kind', `un motif invérifiable doit être refusé : ${JSON.stringify(jb)}`);
+  assert(JSON.stringify(jb.allowed) === '["ecart","decision"]', `les deux motifs doivent être nommés : ${JSON.stringify(jb.allowed)}`);
+
+  // Et rien n'a été écrit : un refus qui écrit quand même laisse une trace qu'on
+  // retrouvera au `--list`, et le refus n'aura servi à rien.
+  const list = run('state.js', ['client', project, '--list']);
+  const lj = JSON.parse(list.stdout.slice(0, list.stdout.lastIndexOf('}') + 1));
+  assert(lj.points === 0, `un point refusé ne doit pas laisser de trace : ${lj.points} point(s)`);
+});
+
+test('POSITIF — un point client complet se crée, se répond, et se ferme', () => {
+  // Un contrôle qui ne sait que refuser ne prouve pas qu'une porte est correcte. Le
+  // cycle complet est ici parce que la propriété qui compte est « le client peut être
+  // rappelé », et une commande qui refuse tout ne prouve pas qu'on peut le rappeler.
+  const project = freshProject('client-complet');
+
+  const ask = run('state.js', ['client', project, '--kind=decision', '--what=Quel mode d hébergement ?',
+    '--price=A: 7,50 EUR/mois — B: 4 EUR/mois', '--by=2026-11-15', '--if_no_answer=A, et l écart est signalé']);
+  const j = JSON.parse(ask.stdout.slice(0, ask.stdout.lastIndexOf('}') + 1));
+  assert(j.point && j.point.id === 'C-001', `le point doit être créé et numéroté : ${JSON.stringify(j.point)}`);
+  assert(j.point.answered_at === null, 'un point créé n\'est pas répondu');
+
+  // Il apparaît dans `state.js start` — parce que `--list` n'est jamais lancé
+  // spontanément, donc un point que seul `--list` voit est un point que personne ne voit.
+  const start = run('state.js', ['start', project]);
+  const sj = JSON.parse(start.stdout.slice(0, start.stdout.lastIndexOf('}') + 1));
+  assert(sj.client_points.open === 1, `le point ouvert doit remonter : ${JSON.stringify(sj.client_points)}`);
+  assert(sj.next_actions.some(a => /client en attente/.test(a)), `l'action suivante doit nommer le point : ${JSON.stringify(sj.next_actions)}`);
+
+  const ans = run('state.js', ['client', project, '--answer', 'C-001', '--chosen=A']);
+  const aj = JSON.parse(ans.stdout.slice(0, ans.stdout.lastIndexOf('}') + 1));
+  assert(aj.point.answer === 'A' && aj.point.answered_at, 'la réponse doit être enregistrée');
+
+  // Un point ne se répond pas deux fois : sinon la réponse retenue est la dernière
+  // écrite, et personne ne sait laquelle des deux a fait foi.
+  const again = run('state.js', ['client', project, '--answer', 'C-001', '--chosen=B']);
+  assert(again.code !== 0, 'un point déjà répondu ne doit pas se ré pondre');
+
+  const after = run('state.js', ['start', project]);
+  const fj = JSON.parse(after.stdout.slice(0, after.stdout.lastIndexOf('}') + 1));
+  assert(fj.client_points.open === 0, `un point répondu ne doit plus être ouvert : ${JSON.stringify(fj.client_points)}`);
+});
+
+test('un point en RETARD remonte en tête, avec la clause à appliquer', () => {
+  // Le cas qui rend tout le dispositif worthwhile : sans réponse, Forge applique la
+  // clause. C'est écrit dans le point, pas décidé au moment venu — parce qu'au
+  // moment venu il n'y a personne pour le demander, et qu'un silence n'est pas une
+  // approbation.
+  const project = freshProject('client-retard');
+  run('state.js', ['client', project, '--kind=ecart', '--what=Le club veut payer en espèces',
+    '--price=A: module de paiement — B: hors périmètre', '--by=2020-01-01', '--if_no_answer=B, et l écart est signé au bilan']);
+  const res = run('state.js', ['start', project]);
+  const j = JSON.parse(res.stdout.slice(0, res.stdout.lastIndexOf('}') + 1));
+  assert(j.client_points.overdue.length === 1, `le retard doit être détecté : ${JSON.stringify(j.client_points)}`);
+  assert(j.client_points.items[0].overdue === true, 'le point doit être marqué en retard');
+  assert(/B, et l écart est signé au bilan/.test(j.client_points.next),
+    `la clause à appliquer doit être rappelée : ${JSON.stringify(j.client_points.next)}`);
+  // Et c'est la **première** action proposée, pas une ligne enfouie : une alerte qui
+  // arrive en sixième position d'une liste est une alerte qu'on ne lit pas.
+  const first = j.next_actions.find(a => /EN RETARD/.test(a));
+  assert(first && /B, et l écart est signé au bilan/.test(first),
+    `l'action en retard doit porter la clause : ${JSON.stringify(j.next_actions)}`);
+
+  // **Contre-témoin du contre-témoin, deuxième fois dans ce dossier.** Neutraliser la
+  // détection de retard fait passer ce test : il n'affirme qu'une seule chose, et
+  // cette chose-là survit. Le défaut que je cherchais — un point en retard que rien
+  // ne signale — est un défaut d'**absence**, et un test d'absence s'écrit sur le
+  // témoin **positif** : c'est-à-dire en exigeant qu'un point en retard soit
+  // détecté, ce que fait l'assertion ci-dessus… et qu'une liste vide satisfait aussi.
+  //
+  // Donc on vérifie l'absence **explicitement** : un point **non** échu ne doit pas
+  // être signalé. Sans cette seconde moitié, le test passe sur une porte morte.
+  const sane = freshProject('client-non-retard');
+  run('state.js', ['client', sane, '--kind=ecart', '--what=Un écart qui n’est pas encore dû',
+    '--price=A ou B', '--by=2999-01-01', '--if_no_answer=A']);
+  const ok = run('state.js', ['start', sane]);
+  const kj = JSON.parse(ok.stdout.slice(0, ok.stdout.lastIndexOf('}') + 1));
+  assert(kj.client_points.overdue.length === 0,
+    `un point qui n'est pas échu ne doit pas être signalé en retard : ${JSON.stringify(kj.client_points.overdue)}`);
+  assert(!kj.next_actions.some(a => /EN RETARD/.test(a)),
+    `une alerte en retard sans point en retard est un faux positif : ${JSON.stringify(kj.next_actions)}`);
+});
+
 test('les 5 nouvelles références existent et portent les règles essentielles', () => {
   for (const r of ['skill-boundaries', 'scenario-tests', 'test-strategies', 'research-protocol', 'migration-v1-v2']) {
     assert(fs.existsSync(path.join(SKILL_DIR, 'references', `${r}.md`)), `references/${r}.md manquant`);

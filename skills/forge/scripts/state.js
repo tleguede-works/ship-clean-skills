@@ -1361,6 +1361,38 @@ function cmdStart(rootArg) {
 
     project_memory: readSiblingMemory(root),
 
+    // Les points de contact ouverts, et **ceux dont l'échéance est passée**.
+    //
+    // Construit ici, et pas seulement dans `state.js client --list`, parce que
+    // `--list` n'est jamais lancé spontanément : c'est la commande que l'on pense à
+    // demander, donc celle que l'on oublie. Un point en retard qui n'apparaît que
+    // dans une commande optionnelle est un point en retard que personne ne voit, et
+    // l'échéance qu'il portait n'a servi à rien.
+    client_points: (() => {
+      const pts = ((state.client || {}).points || []);
+      const ouverts = pts.filter(p => !p.answered_at);
+      const overdue = ouverts.filter(p => p.by && new Date(p.by) < new Date());
+      return {
+        total: pts.length,
+        open: ouverts.length,
+        overdue: overdue.map(p => p.id),
+        items: ouverts.slice(0, 10).map(p => ({
+          id: p.id, kind: p.kind, what: p.what.slice(0, 120), by: p.by,
+          overdue: !!(p.by && new Date(p.by) < new Date()),
+          if_no_answer: p.if_no_answer
+        })),
+        // Un point en retard n'est pas une question à poser : c'est une décision
+        // que Forge doit appliquer, et le dire est la moitié du travail.
+        // Le `next` **cite la clause**, pas seulement l'identifiant. Nommer `C-001`
+      // oblige l'agent à relire le fichier pour savoir quoi faire — et au moment où
+      // le point est en retard, personne ne relit un fichier, on applique. La clause
+      // est l'information ; l'identifiant n'est que le moyen de la refermer ensuite.
+      next: overdue.length
+        ? `POINT CLIENT EN RETARD (${overdue.map(p => p.id).join(', ')}) — appliquer « ${overdue[0].if_no_answer} », puis : node "$FORGE/scripts/state.js" client <root> --answer ${overdue[0].id}`
+        : (ouverts.length ? `Point(s) client en attente : node "$FORGE/scripts/state.js" client <root> --list` : null)
+      };
+    })(),
+
     last_events: L.readLog(root).slice(-5).map(e => ({ ts: e.ts, type: e.type, message: e.message })),
 
     next_actions: [
@@ -1368,7 +1400,16 @@ function cmdStart(rootArg) {
       stale.length ? `Documents ${stale.length} en dérive de hash : node "$FORGE/scripts/forge-guard.js" hash-check ${root}` : null,
       undeclaredPremises.length ? `${undeclaredPremises.length} livrable(s) approuvé(s) sans prémisse déclarée — leur justification n'est pas vérifiable : node "$FORGE/scripts/consistency-check.js" premises ${root}` : null,
       unpromoted.length ? `${unpromoted.length} constat(s) non promu(s) — cf. references/skill-boundaries.md` : null,
-      (state.divergences || []).some(d => !d.resolved) ? 'Divergences état/front-matter ouvertes : node "$FORGE/scripts/forge-guard.js" sync ' + root + ' --fix' : null
+      (state.divergences || []).some(d => !d.resolved) ? 'Divergences état/front-matter ouvertes : node "$FORGE/scripts/forge-guard.js" sync ' + root + ' --fix' : null,
+      (() => {
+        const ouverts = ((state.client || {}).points || []).filter(p => !p.answered_at);
+        if (!ouverts.length) return null;
+        const enRetard = ouverts.filter(p => p.by && new Date(p.by) < new Date());
+        if (enRetard.length) {
+          return `${enRetard.length} point(s) client EN RETARD (${enRetard.map(p => p.id).join(', ')}) — le silence n'est pas une approbation : appliquer « ${enRetard[0].if_no_answer} »`;
+        }
+        return `${ouverts.length} point(s) client en attente — node "$FORGE/scripts/state.js" client ${root} --list`;
+      })()
     ].filter(Boolean)
   });
 }
@@ -1609,6 +1650,116 @@ function cmdStatus(root) {
 }
 
 /* ------------------------------------------------------------------ *
+ * client — un point de contact, et les quatre champs sans lesquels il n'est rien
+ * ------------------------------------------------------------------ */
+
+/**
+ * Un client n'est interruptu que pour deux motifs : un **écart** au contrat, ou une
+ * **décision qui lui appartient**. Ce sont les deux seuls types, et il n'y en a pas
+ * d'autre — « j'aimerais qu'on regarde un truc » n'est ni l'un ni l'autre, c'est une
+ * conversation, et elle n'a pas à être journalisée.
+ *
+ * ## Pourquoi quatre champs obligatoires, et pas deux
+ *
+ * | Champ | Son absence produit |
+ * |---|---|
+ * | `what` — quoi | une question sans objet, à laquelle on ne peut pas répondre |
+ * | `price` — ce que ça coûte, chaque option | le client ne peut **pas** choisir : il n'a pas les éléments |
+ * | `by` — échéance | la décision est prise par le plus proche, et le plus proche c'est Forge |
+ * | `if_no_answer` — ce qui se passe sans réponse | un silence, et `SKILL.md` § 35 interdit d'y lire une approbation |
+ *
+ * Le troisième est le plus important et le moins évident. Une décision sans échéance
+ * ne reste pas en attente : elle **se décide**, et c'est Forge qui décide, en
+ * l'écrivant dans le code. Le client perd alors le contrôle de son produit sans avoir
+ * jamais eu l'occasion de l'exercer — ce qui est la pire forme de l'échec, parce
+ * qu'elle est invisible : tout le monde a l'impression que le client a validé.
+ *
+ * Le quatrième existe pour une raison technique, pas seulement morale : Forge ne
+ * peut pas interpréter un silence comme une approbation. Donc un point de contact
+ * sans clause « sans réponse » **crée mécaniquement** une situation où la seule
+ * conduite conforme est de bloquer. Écrire la clause à l'avance, c'est éviter de
+ * bloquer six mois plus tard.
+ */
+const CLIENT_KINDS = ['ecart', 'decision'];
+
+function cmdClient(root, args) {
+  const state = loadState(root);
+  const { flags } = parseFlags(args);
+  const client = state.client || (state.client = { contract_status: null, points: [] });
+  const points = client.points || (client.points = []);
+
+  if (flags.list) {
+    const ouverts = points.filter(p => !p.answered_at);
+    return L.out({
+      command: 'client', points: points.length, open: ouverts.length,
+      items: points.map(p => ({
+        id: p.id, kind: p.kind, what: p.what, price: p.price, by: p.by,
+        if_no_answer: p.if_no_answer, asked_at: p.asked_at, answered_at: p.answered_at || null
+      })),
+      overdue: ouverts.filter(p => p.by && new Date(p.by) < new Date()).map(p => p.id),
+      next: ouverts.length
+        ? `Le plus ancien point en attente : ${ouverts[0].id} — sans réponse, ${ouverts[0].if_no_answer}`
+        : null
+    });
+  }
+
+  if (flags.answer) {
+    const p = points.find(x => x.id === flags.answer);
+    if (!p) L.fail({ error: 'unknown_client_point', id: flags.answer, known: points.map(x => x.id) });
+    if (p.answered_at) L.fail({ error: 'already_answered', id: p.id, answered_at: p.answered_at });
+    p.answered_at = new Date().toISOString();
+    p.answer = typeof flags.chosen === 'string' ? flags.chosen : null;
+    audit(state, 'client_answer', `${p.id} : ${p.answer || 'sans choix explicite'}`, { id: p.id, answer: p.answer });
+    L.appendLog(root, { type: 'client_answer', message: `${p.id} → ${p.answer || '—'}` });
+    L.writeState(root, state);
+    return L.out({ command: 'client', action: 'answer', point: p });
+  }
+
+  // --- création d'un point ---
+  const kind = typeof flags.kind === 'string' ? flags.kind : null;
+  if (!kind || !CLIENT_KINDS.includes(kind)) {
+    L.fail({
+      error: 'bad_kind', value: kind, allowed: CLIENT_KINDS,
+      why: 'Un client n\'est interruptu que pour un écart au contrat, ou pour une décision qui lui appartient. Un troisième motif n\'existe pas.',
+      hint: `--kind=ecart "…" | --kind=decision "…"`
+    });
+  }
+
+  const manquant = ['what', 'price', 'by', 'if_no_answer'].filter(k => flags[k] === undefined || flags[k] === true || String(flags[k]).trim() === '');
+  if (manquant.length) {
+    L.fail({
+      error: 'incomplete_client_point', kind, missing: manquant,
+      why: manquant.includes('by')
+        ? 'Une décision sans échéance ne reste pas en attente : elle se décide, et c\'est Forge qui décide. Le client perd le contrôle de son produit sans avoir eu l\'occasion de l\'exercer.'
+        : manquant.includes('price')
+          ? 'Le client ne peut pas choisir entre des options dont il ne connaît pas le prix.'
+          : manquant.includes('if_no_answer')
+            ? 'Sans cette clause, le point crée un silence — et Forge ne peut pas interpréter un silence comme une approbation. La seule conduite conforme serait de bloquer.'
+            : 'Un point de contact sans objet ne peut pas être traité.',
+      fix: `node "$FORGE/scripts/state.js" client <root> --kind=${kind} --what="…" --price="…" --by=AAAA-MM-JJ --if_no_answer="…"`
+    });
+  }
+
+  const id = `C-${String(points.length + 1).padStart(3, '0')}`;
+  const point = {
+    id,
+    kind,
+    what: String(flags.what).slice(0, 400),
+    price: String(flags.price).slice(0, 300),
+    by: String(flags.by).slice(0, 40),
+    if_no_answer: String(flags.if_no_answer).slice(0, 300),
+    asked_at: new Date().toISOString(),
+    answered_at: null,
+    answer: null
+  };
+  points.push(point);
+  audit(state, 'client_point', `${id} (${kind}) : ${point.what}`, { id, kind });
+  L.appendLog(root, { type: 'client_point', message: `${id} ${kind} — ${point.what}` });
+  L.writeState(root, state);
+  L.out({ command: 'client', action: 'ask', point });
+}
+
+/* ------------------------------------------------------------------ *
  * log
  * ------------------------------------------------------------------ */
 
@@ -1649,6 +1800,9 @@ const USAGE = {
   resolve: 'state.js finding <root> --resolve <id> --promoted-to=<règle>',
   status: 'state.js status <root>',
   log: 'state.js log <root> <type> <message> [k=v ...]',
+  client: 'state.js client <root> --kind=ecart|decision --what="…" --price="…" --by=AAAA-MM-JJ --if_no_answer="…"\n' +
+    '           # state.js client <root> --list   ·   --answer C-001 --chosen="…"\n' +
+    '           # les quatre champs sont obligatoires : un point sans date est pris par le plus proche',
   'fast-track': 'state.js fast-track <root> --enable [--scope plans|phases4-7] [--autonomy milestone|full] [--artifact <chemin>] [--attempt <slice>] [--checkpoint]\n' +
     '                              # --disable [--reason <texte>]  ·  la porte reste forge-guard fast-track',
   amend: 'state.js amend <root> <key> --reason <texte> [--changes <f>] [--allow-renumber --renumber-reason <texte>]'
@@ -1924,6 +2078,7 @@ function main() {
     case 'finding': return cmdFinding(positional[0], argv.slice(2));
     case 'status': return cmdStatus(positional[0]);
     case 'log': return cmdLog(positional[0], positional[1], positional[2], positional.slice(3));
+    case 'client': return cmdClient(positional[0], argv.slice(2));
     case 'fast-track': return cmdFastTrack(positional[0], argv.slice(2));
     default:
       L.fail({ error: 'unknown_command', command, usage: USAGE });
