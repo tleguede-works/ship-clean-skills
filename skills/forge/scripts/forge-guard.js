@@ -1133,15 +1133,29 @@ function checkContract(root) {
   const contract = (state.deliverables || {}).contract;
 
   if (!contract) {
-    // Le contrat est **nouveau**. Les projets qui existaient avant ne l'ont pas, et
-    // les faire échouer serait casser des projets verts pour un livrable qu'ils n'ont
-    // jamais eu l'occasion de produire. Il est donc `warn` — et `warn` est un signal,
-    // pas un pardon : il nomme ce qui manque, donc l'oubli est visible.
-    return record('contract_complete', true, {
-      state: 'absent',
-      warn: 'Aucun contrat de projet. Le client ne signe rien, donc rien ne garantit que les engagements engageants ont été annoncés avant la Phase 4.',
-      next: 'node "$FORGE/scripts/state.js" register <anchor> deliverable contract .forge/contract.md',
-      rule: "Le contrat est le seul artefact qui engage le client, et « il n'intervient plus après la signature » n'est vrai que si ce qui engage un achat est décidé avant."
+    // Le contrat est **nouveau**, et tous les projets ne l'ont pas produit. Ce qui
+    // décide n'est pas « a-t-il un contrat » mais « a-t-il **avance** sans en avoir
+    // un » : un projet encore en Phase 0 n'a pas fait son travail, et le faire
+    // echouer serait l'interrompre au milieu d'une tache normale.
+    //
+    // Un projet qui a franchi la Phase 0 sans contrat n'a pas un oubli : il a une
+    // promesse non tenue. Personne n'a signe, et le suivi le dira quand meme.
+    const phase = parseInt(state.current_phase, 10);
+    if (!Number.isFinite(phase) || phase <= 0) {
+      return record('contract_complete', true, {
+        state: 'absent',
+        phase: state.current_phase,
+        warn: 'Aucun contrat de projet, et la Phase 0 n\'est pas terminee : c\'est le travail en cours, pas un oubli.',
+        next: 'node "$FORGE/scripts/state.js" register <anchor> deliverable contract .forge/contract.md',
+        rule: 'Le contrat est le seul artefact qui engage le client. Tant qu\'il est en Phase 0, son absence est le travail a faire, pas une faute.'
+      });
+    }
+    return record('contract_complete', false, {
+      state: 'absent_past_phase_0',
+      phase: state.current_phase,
+      why: 'Le projet est en Phase ' + state.current_phase + ' et n\'a pas de contrat : il a franchi la Phase 0 sans l\'etape ou le client signe ce qui est livre, ce qui ne l\'est pas, et ce qui engage un achat.',
+      next: 'Produire le contrat depuis templates/contract.md.tmpl — ou node "$FORGE/scripts/state.js" contract-migrate <anchor>, qui le derive des decisions deja prises',
+      rule: "\u00ab Apres la signature, le client n\'intervient plus \u00bb est la promesse centrale du mode agence. Elle repose entierement sur un contrat signe avant que quoi que ce soit ne soit engage. Un projet qui a avance sans n\'a pas de client : il a un perimetre."
     });
   }
 
@@ -1208,12 +1222,31 @@ function checkContract(root) {
 
   // 3. Un engagement sans prix n'est pas un engagement annoncé, c'est un engagement
   //    subi. Le client ne peut pas valider un coût qu'il n'a pas vu.
+  // Un prix **inconnu** et un prix **oublié** sont le même défaut pour le client — il ne
+  // peut valider ni l'un ni l'autre — mais ce ne sont pas la même **action**. « Personne
+  // n'a chiffré » demande une recherche ; « la case est vide » demande de la remplir.
+  // La porte dit laquelle, parce qu'un message qui ne distingue pas les deux fait
+  // perdre au lecteur le temps de comprendre ce qu'il doit faire ensuite.
+  //
+  // Constaté sur les trois projets de laboratoire migrés : les trois ont déclaré
+  // « prix non chiffré dans le projet » sur tous leurs engagements. Ce n'est pas une
+  // erreur de rédaction : c'est **le trou que le contrat existe pour rendre visible**,
+  // et il était invisible parce qu'il n'y avait nulle part où l'écrire.
+  const PRIX_INCONNU = /(non\s+(chiffr|cit|d[ée]cid|estim)|inconnu|jamais\s+chiffr|à\s+chiffrer|a\s+chiffrer|\?)/i;
   for (const line of irrBefore.split('\n')) {
     if (!/^\s*\|/.test(line)) continue;
     const c = parseCommitment(line);
-    if (c && !c.hasPrice) {
-      problems.push({ block: 'Ce qui est irréversible', field: c.field, why: 'aucun prix ni durée — le client ne peut pas valider un coût qu\'il n\'a pas vu', evidence: line.trim().slice(0, 90) });
-    }
+    if (!c || c.hasPrice) continue;
+    const inconnu = c.cells.some(cell => PRIX_INCONNU.test(cell));
+    problems.push({
+      block: 'Ce qui est irréversible',
+      field: c.field,
+      why: inconnu
+        ? 'prix déclaré inconnu — le client ne peut pas valider un coût que personne n a chiffré'
+        : 'aucun prix ni durée — le client ne peut pas valider un coût qu\'il n\'a pas vu',
+      action: inconnu ? 'chiffrer l’engagement avant signature' : 'renseigner le prix ou la durée',
+      evidence: line.trim().slice(0, 90)
+    });
   }
 
   // 4. Le bloc « ce qui reviendra au client » doit porter une **date** par ligne.
@@ -1222,7 +1255,20 @@ function checkContract(root) {
   //    prétend éviter.
   const clientSection = raw.split(/^##\s+\d*\.?\s*Ce qui reviendra au client/im)[1] || '';
   const clientBefore = clientSection.split(/^##\s/im)[0] || '';
-  const rows = clientBefore.split('\n').filter(l => /^\s*\|/.test(l) && !/^\s*\|[\s\-:|]+\|\s*$/.test(l));
+  // La **ligne d'en-tete** est retiree avant de compter les echeances. Elle en porte
+  // le *nom* (« Échéance »), pas une valeur ; la compter comme une décision sans date
+  // produisait un défaut permanent sur un contrat correct — et un gate qui refuse
+  // toujours est un gate qu'on éteint. Constaté en migrant les projets de laboratoire :
+  // leurs contrats étaient complets, et la porte les refusait sur leur en-tête.
+  const allRows = clientBefore.split('\n').filter(l => /^\s*\|/.test(l) && !/^\s*\|[\s\-:|]+\|\s*$/.test(l));
+  // Le motif tolere l'accent **et son absence** : `Echeance` et `Échéance` designent la
+  // meme colonne, et un gate qui n'en reconnait qu'un des deux refute un contrat correct
+  // pour une raison de typographie. C'est la meme famille que F-48 et F-53 : un motif
+  // plus etroit que ce que les documents ecrivent est faux.
+  // Le motif cherche `echeance` dans **n'importe quelle cellule** de la ligne, pas
+  // seulement la premiere : dans `| Décision | Options | Échéance | Prix |` le mot est
+  // en troisieme position, et un motif ancre sur la premiere ne voit rien.
+  const rows = allRows.filter(l => !/e[\u0300-\u036f]?cheance/i.test(l));
   const dated = rows.filter(l => /\d{4}-\d{2}-\d{2}|avant le|au plus tard|échéance|\bd[ée]\b/i.test(l));
   if (rows.length && dated.length < rows.length) {
     problems.push({ block: 'Ce qui reviendra au client', why: `${rows.length - dated.length} ligne(s) sans échéance — une décision sans date est prise par le plus proche`, evidence: (rows.find(l => !dated.includes(l)) || '').trim().slice(0, 90) });

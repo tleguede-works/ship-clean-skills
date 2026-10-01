@@ -1283,7 +1283,7 @@ test('un projet SANS contrat passe, en signalant ce qui manque', () => {
   const check = (res.json.checks || []).find(c => c.check === 'contract_complete');
   assert(check && check.status === 'pass', 'un projet sans contrat ne doit pas échouer');
   assert(check.state === 'absent', `l'absence doit être nommée : ${check.state}`);
-  assert(/client ne signe rien|engagement/.test(check.warn + check.next),
+  assert(/Phase 0/.test(check.warn) && /register .*contract/.test(check.next),
     `le motif de l'avertissement doit être écrit : ${JSON.stringify(check)}`);
   assert(/register .*contract/.test(check.next),
     `l'avertissement doit dire quoi faire : ${JSON.stringify(check.next)}`);
@@ -1683,7 +1683,7 @@ test('complete-phase refuse une phase sans le livrable qu\'elle doit produire', 
   const project = freshProject('contrat-complete');
   // Cas reproduit sur un test grandeur nature : Phase 0 approuvée alors que
   // `conventions.md` n'a jamais été créé ni enregistré.
-  const res = run('state.js', ['complete-phase', project, '0_bootstrap']);
+  const res = closePhase0(project);
   assert(res.code !== 0, 'complete-phase a approuvé une phase vide');
   assert(res.json.error === 'phase_incomplete', `erreur inattendue : ${res.stdout}`);
   const missing = res.json.missing.map(m => m.key);
@@ -1825,7 +1825,7 @@ test('register REFUSE un artefact produit avant sa phase', () => {
     '---\nforge: true\nkind: deliverable\nkey: conventions\nstatus: draft\n---\n\n# Conventions\n');
   const reg = run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
   assert(reg.code === 0, `register a échoué : ${reg.stdout}${reg.stderr}`);
-  run('state.js', ['complete-phase', project, '0_bootstrap']);
+  assert(closePhase0(project).code === 0, 'complete-phase');
 
   // On est en phase 1. L'architecture appartient à la phase 4.
   const state = readState(project);
@@ -1852,7 +1852,7 @@ test('forge-guard constate un artefact en avance déjà écrit sur disque', () =
   fs.writeFileSync(path.join(project, '.forge', 'conventions.md'),
     '---\nforge: true\nkind: deliverable\nkey: conventions\nstatus: draft\n---\n\n# Conventions\n');
   run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
-  run('state.js', ['complete-phase', project, '0_bootstrap']);
+  assert(closePhase0(project).code === 0, 'complete-phase');
 
   fs.writeFileSync(path.join(project, '.forge', 'architecture.md'),
     '---\nforge: true\nkind: deliverable\nkey: architecture\nstatus: draft\n---\n\n# Architecture\n');
@@ -1883,7 +1883,7 @@ test('un artefact de la phase atteinte n\'est PAS signalé en avance', () => {
   fs.writeFileSync(path.join(project, '.forge', 'conventions.md'),
     '---\nforge: true\nkind: deliverable\nkey: conventions\nstatus: draft\n---\n\n# Conventions\n');
   run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
-  run('state.js', ['complete-phase', project, '0_bootstrap']);
+  assert(closePhase0(project).code === 0, 'complete-phase');
 
   fs.writeFileSync(path.join(project, '.forge', 'prd.md'),
     '---\nforge: true\nkind: deliverable\nkey: prd\nstatus: draft\n---\n\n# PRD\n');
@@ -1916,7 +1916,7 @@ test('une phase complète passe le contrat', () => {
     '---\nforge: true\nkind: deliverable\nkey: conventions\nstatus: draft\n---\n\n# Conventions\n');
   const reg = run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
   assert(reg.code === 0, `register a échoué : ${reg.stdout}${reg.stderr}`);
-  const res = run('state.js', ['complete-phase', project, '0_bootstrap']);
+  const res = closePhase0(project);
   assert(res.code === 0, `une phase complète a été refusée : ${res.stdout}`);
   const state = readState(project);
   assert(state.phases['0_bootstrap'].status === 'approved', 'la phase n\'a pas été approuvée');
@@ -2792,6 +2792,59 @@ test('state.js start liste les livrables approuvés sans prémisse déclarée', 
 
 section('Transition de phase');
 
+/**
+ * Ferme la Phase 0 en registering d'abord un contrat.
+ *
+ * Le contrat est un livrable de la Phase 0 : `complete-phase 0_bootstrap` le refuse.
+ * Les tests qui ferment cette phase sans contrat utilisent cette fonction, et
+ * le test `la Phase 0 ne se ferme pas sans contrat` couvre le refus lui-même.
+ */
+const CONTRAT_COMPLET = [
+      '## 1. Ce qui sera livré',
+      '',
+      '| Slice | Resultat |',
+      '|---|---|',
+      '| Reservation | Un adherent reserve lui-meme |',
+      '',
+      '## 2. Ce qui ne sera pas livré',
+      '',
+      '| Exclu | Pourquoi |',
+      '|---|---|',
+      '| Le paiement en especes | hors perimetre |',
+      '',
+      '## 3. Ce qui est irréversible',
+      '',
+      '| Engagement | Choix | Prix / duree | Reversible ? |',
+      '|---|---|---|---|',
+      '| Hebergement | mutualise | 5 EUR / mois | Non |',
+      '',
+      '## 4. Ce que Forge décidera seul',
+      '',
+      '| Decision | Pourquoi |',
+      '|---|---|',
+      '| Librairie | reversible |',
+      '',
+      '## 5. Ce qui reviendra au client',
+      '',
+      '| Decision | Options | Echeance | Prix selon l option |',
+      '|---|---|---|---|',
+  '| Paiement | Carte ou virement | 2026-11-01 | A : 0 EUR — B : 0 EUR |',
+  ''
+].join('\n');
+
+/**
+ * Ferme la Phase 0 en enregistrant d'abord un contrat.
+ *
+ * Un contrat **complet**, pas un fichier vide : `contract_complete` refuse un
+ * formulaire sans contenu, et c'est exactement ce qu'un helper produirait s'il se
+ * contentait d'ecrire un titre. Un helper qui triche fait echouer la porte qu'il essaie
+ * de laisser passer.
+ */
+function closePhase0(project) {
+  writeDeliverable(project, '.forge/contract.md', { type: 'contract', body: CONTRAT_COMPLET });
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+  return run('state.js', ['complete-phase', project, '0_bootstrap']);
+}
 test('après complete-phase, le contrat ne juge pas la phase qui n\'a pas commencé', () => {
   // `complete-phase` avance `current_phase` à la phase suivante. Cette phase
   // est alors « courante » mais pas commencée — et le contrôle annonçait que
@@ -2801,7 +2854,9 @@ test('après complete-phase, le contrat ne juge pas la phase qui n\'a pas commen
   writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body: '## Stack\n\nRien.\n' });
   run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
   run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
-  assert(run('state.js', ['complete-phase', project, '0_bootstrap']).code === 0, 'complete-phase');
+  // Le contrat est un livrable de la Phase 0 : sans lui, la phase ne se ferme pas.
+  // C'est ce qui fait que le contrôle ne tombe **pas** apres la fenetre d'action.
+  assert(closePhase0(project).code === 0, 'complete-phase');
 
   const res = run('forge-guard.js', ['state', project]);
   const c = (res.json.checks || []).find(x => x.check === 'current_phase_has_deliverables');
@@ -2810,6 +2865,29 @@ test('après complete-phase, le contrat ne juge pas la phase qui n\'a pas commen
     `une phase non commencée doit être sautée, pas refusée : ${JSON.stringify(c)}`);
   assert(/pas encore commencée/.test(c.reason || ''), `la raison doit être explicite : ${c.reason}`);
   assert(res.json.pass === true, 'la transition ne doit pas rendre le garde-fou rouge');
+});
+
+test('la Phase 0 ne se ferme pas sans contrat', () => {
+  // Le defaut que cette regle evite : sans elle, le projet ferait tout son travail, le
+  // gate passerait au vert, puis passerait au rouge **apres** l'instant ou l'agent
+  // aurait pu agir. Un defaut qui n'apparait qu'une fois la fenetre fermee est un
+  // defaut qu'on apprend a ignorer.
+  const project = freshProject('phase-0-sans-contrat');
+  writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body: '## Stack\n\nRien.\n' });
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  const refus = run('state.js', ['complete-phase', project, '0_bootstrap']);
+  assert(refus.code !== 0, 'la Phase 0 ne doit pas se fermer sans contrat');
+  const j = JSON.parse(refus.stdout.slice(0, refus.stdout.lastIndexOf('}') + 1));
+  assert(j.error === 'no_contract', `le refus doit se nommer : ${JSON.stringify(j)}`);
+  assert(/client signe/.test(j.why), `le refus doit dire pourquoi : ${j.why}`);
+  assert(/\$FORGE/.test(j.hint), `le refus doit dire quoi faire : ${j.hint}`);
+
+  // Et un contrat en `draft` suffit : un contrat non signe est un travail en cours.
+  // Ce qui est un travail en cours, c'est le contrat **absent**.
+  assert(closePhase0(project).code === 0,
+    'un contrat en brouillon est un travail en cours, pas une absence');
 });
 
 test('une phase commencée sans livrable reste un échec', () => {
@@ -3485,7 +3563,7 @@ test('citations : une citation qui ne dit pas la règle est mise en file', () =>
   });
   run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
 
-  // Faux、年：B4 est la date de calcul ; on l'emploie pour l'immuabilité.
+  // Faux : B4 est la date de calcul ; on l'emploie pour l'immuabilité.
   writeDeliverable(project, '.forge/roadmap.md', {
     type: 'roadmap',
     body: '# Roadmap\n\n| # | Point | Décision |\n|---|---|---|\n' +

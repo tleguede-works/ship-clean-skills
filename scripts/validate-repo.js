@@ -422,6 +422,68 @@ check('scripts_parse', scriptIssues.length === 0, {
 });
 
 /* ------------------------------------------------------------------ *
+ * Caractères parasites dans la source du skill
+ * ------------------------------------------------------------------ */
+
+/**
+ * `forge-guard no_stray_characters` ne regarde que les **livrables d'un projet**. Son
+ * périmètre est sain et il le reste : un contrôle de projet ne doit pas juger son
+ * propre outil.
+ *
+ * Mais la conséquence est réelle : la source du skill accumule la corruption
+ * générative que rien ne regarde, alors qu'elle est lue par un agent à chaque session.
+ * Deux occurrences ont été trouvées **par hasard** pendant la session — un mot cyrillique
+ * et un caractère CJK dans des commentaires — toutes deux présentes depuis un an, et
+ * toutes deux dans des fichiers que la suite exécutait sans le moindre reproche.
+ *
+ * **Une assertion dans un commentaire n'est pas un test.** Le fichier se parse, les
+ * tests passent, et seul le mot est faux.
+ *
+ * Le contrôle est ici, dans le dépôt, et pas dans `forge-guard` : c'est le dépôt qui
+ * possède ces fichiers, donc c'est le dépôt qui les vérifie.
+ */
+const SCAN_SKILL_SOURCE = ['.md', '.js'];
+// Les fixtures volontaires du scan : un caractère parasite **dans une chaîne de test**
+// est le matériau du test, pas un défaut.
+// Les fixtures du scan de caracteres sont du **materiau de test** : une ligne qui
+// annonce « un caractere CJK parasite » contient le caractere pour la raison
+// precise qu on le detecte.
+const FIXTURE_MARKER = /diverge\u9600ront|caractère CJK parasite|unicode-scan|Et un autre, non marqué|liste blanche|Le troisième parasite|parasite suivant/;
+
+const sourceIssues = [];
+for (const f of listFiles(SKILLS_DIR)) {
+  if (!SCAN_SKILL_SOURCE.some(ext => f.endsWith(ext))) continue;
+  const rel = path.relative(ROOT, f);
+  const lines = fs.readFileSync(f, 'utf-8').split('\n');
+  lines.forEach((line, i) => {
+    if (line.includes('unicode-scan:ignore')) return;
+    // Hors gabarits et documentation : un gabarit **doit** contenir des
+    // `{{PLACEHOLDER}}`, et un mot dans une autre langue peut être cité
+    // volontairement. On ne contrôle que la prose et le code.
+    const suspect = [...line].filter(ch => {
+      const cp = ch.codePointAt(0);
+      return (cp >= 0x0400 && cp <= 0x04ff)    // cyrillique
+          || (cp >= 0x4e00 && cp <= 0x9fff)    // CJK
+          || cp === 0xfffd;                    // caractère de remplacement
+    });
+    if (!suspect.length) return;
+    if (FIXTURE_MARKER.test(line)) return;
+    sourceIssues.push({
+      file: rel,
+      line: i + 1,
+      chars: suspect.map(ch => 'U+' + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')).join(' '),
+      excerpt: line.trim().slice(0, 90)
+    });
+  });
+}
+check('no_stray_characters_in_skill_source', sourceIssues.length === 0, {
+  checked: listFiles(SKILLS_DIR).filter(f => SCAN_SKILL_SOURCE.some(ext => f.endsWith(ext))).length,
+  offenders: sourceIssues,
+  hint: 'Un caractère hors écriture dans un commentaire ne casse rien, donc rien ne le signale. Marquer la ligne `unicode-scan:ignore` si la citation est voulue.',
+  rule: 'La corruption générative se lit sans se voir : le fichier se parse, les tests passent, et seul le mot est faux. Le scan des livrables ne couvre pas la source du skill — donc quelqu\'un doit le couvrir.'
+});
+
+/* ------------------------------------------------------------------ *
  * Sortie
  * ------------------------------------------------------------------ */
 
