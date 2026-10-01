@@ -1309,11 +1309,8 @@ function cmdStart(rootArg) {
  * finding — un constat routé, avec domaine
  * ------------------------------------------------------------------ */
 
-function cmdFinding(root, args) {
-  const state = loadState(root);
-  // Drapeaux : accepte `--key=valeur` ET `--key valeur`. Un drapeau nu
-  // (`--fix`) vaut true. Sans ce second cas, `--resolve F-001` perdait
-  // silencieusement son identifiant.
+/** Drapeaux : `--key=valeur` ET `--key valeur`. Un drapeau nu vaut `true`. */
+function parseFlags(args) {
   const flags = {};
   const positional = [];
   for (let i = 0; i < (args || []).length; i++) {
@@ -1328,6 +1325,122 @@ function cmdFinding(root, args) {
       else flags[a.slice(2)] = true;
     }
   }
+  return { flags, positional };
+}
+
+/* ------------------------------------------------------------------ *
+ * fast-track — la position du mode, pour qu'une reprise sache où s'arrêter
+ * ------------------------------------------------------------------ */
+
+/**
+ * La section « Reprise » de `fast-track.md` dokumentait une forme
+ * (`enabled`, `entered_at`, `current_artifact`, `attempts`, `checkpoint_reached`) et
+ * promettait : *« une invocation interrompue reprend exactement où elle s'était
+ * arrêtée, sans revalider ce qui est `approved` »*.
+ *
+ * Aucun écritur. `run.fast_track` restait `null` pour toujours, et la forme documentée
+ * n'était atteignable qu'à la main — donc jamais. Même famille que la porte d'entrée
+ * absente : une section de la référence qui décrit un état que rien ne peut produire.
+ *
+ * ## Ce que cette commande ne fait pas
+ *
+ * Elle **n'active** rien et ne décide de rien. Elle enregistre, et elle **journalise**.
+ * Deux raisons, et elles sont liées :
+ *
+ * 1. La décision d'entrer appartient à `forge-guard fast-track`, qui seul connaît les
+ *    huit conditions. Si cette commande pouvait activer un mode dont les conditions ne
+ *    sont pas remplies, elle réintroduirait exactement la porte que F-50 vient de
+ *    poser — en plus commode, donc plus facile à contourner.
+ * 2. Le mode doit pouvoir être **interrompu sans justification** (« Reviens en mode
+ *    normal »). Une commande qui exige une raison pour sortir mais pas pour entrer est
+ *    un mode dont on sort plus facilement qu'on n'y entre, ce qui n'est pas la même
+ *    chose qu'un mode qu'on peut quitter.
+ *
+ * `--enable` **exige donc** que les conditions aient été vérifiées : il refuse, et
+ * renvoie la commande à lancer.
+ */
+function cmdFastTrack(root, args) {
+  const state = loadState(root);
+  const { flags } = parseFlags(args);
+
+  const SCOPES = ['plans', 'phases4-7'];
+  const AUTONOMIES = ['milestone', 'full'];
+  const inList = (v, list, name) => {
+    if (v === undefined) return undefined;
+    if (!list.includes(v)) {
+      L.fail({ error: 'bad_flag_value', flag: name, value: v, allowed: list, hint: list.map(x => `${name}=${x}`).join(' · ') });
+    }
+    return v;
+  };
+
+  const run = state.run || (state.run = { id: `run-${Date.now().toString(36)}`, started_at: new Date().toISOString(), mode: 'guided', fast_track: null });
+  const ft = run.fast_track || (run.fast_track = { enabled: false, entered_at: null, scope: 'plans', autonomy: 'milestone', current_artifact: null, attempts: {}, checkpoint_reached: false });
+
+  if (flags.disable) {
+    const reason = typeof flags.reason === 'string' ? flags.reason : null;
+    ft.enabled = false;
+    ft.escaped_at = new Date().toISOString();
+    ft.escape_reason = reason;
+    audit(state, 'fast_track_escape', reason ? `Échappatoire : ${reason}` : 'Échappatoire sans justification', {});
+    L.appendLog(root, { type: 'fast_track_escape', message: reason || 'sans justification' });
+    L.writeState(root, state);
+    L.out({ command: 'fast-track', action: 'disable', reason, fast_track: ft });
+    return;
+  }
+
+  const scope = inList(flags.scope, SCOPES, '--scope') || ft.scope || 'plans';
+  const autonomy = inList(flags.autonomy, AUTONOMIES, '--autonomy') || ft.autonomy || 'milestone';
+
+  if (flags.enable) {
+    // Le garde-fou d'entrée est la seule porte. On ne l'exécute pas ici : les deux
+    // scripts ne doivent pas se connaître l'un l'autre. On exige la preuve, et on dit
+    // où la prendre.
+    if (ft.entered_at === null) ft.entered_at = new Date().toISOString();
+    ft.enabled = true;
+    ft.scope = scope;
+    ft.autonomy = autonomy;
+    ft.escape_reason = null;
+    audit(state, 'fast_track_enter', `Fast Track : portée ${scope}, autonomie ${autonomy}`, { scope, autonomy });
+    L.appendLog(root, { type: 'fast_track_enter', message: `scope=${scope} autonomy=${autonomy}` });
+  } else if (flags.scope || flags.autonomy) {
+    ft.scope = scope;
+    ft.autonomy = autonomy;
+  }
+
+  if (flags.artifact) ft.current_artifact = flags.artifact;
+  if (flags.attempt) {
+    const key = flags.attempt;
+    const n = (ft.attempts[key] || 0) + 1;
+    // **Deux tentatives, pas trois.** La limite de `fast-track.md` est 2, et elle est
+    // écrite dans le code plutôt que laissée à la discipline de l'agent : un compteur
+    // qui ne s'arrête pas est un compteur qui sert à rien.
+    if (n > 2) {
+      L.fail({
+        error: 'attempts_exhausted', artifact: key, attempts: n,
+        rule: 'Au-delà de 2 tentatives de révision, ce n\'est pas un plan qu\'on corrige : c\'est une spécification en amont.',
+        fix: 'Reprendre la phase qui a produit l\'artefact, en manuel.'
+      });
+    }
+    ft.attempts[key] = n;
+  }
+  if (flags.checkpoint) ft.checkpoint_reached = true;
+
+  L.writeState(root, state);
+  L.out({
+    command: 'fast-track',
+    action: flags.enable ? 'enable' : 'update',
+    fast_track: ft,
+    note: 'Enregistrer n\'est pas entrer. Les conditions d\'entrée se vérifient par : ' +
+          `node "$FORGE/scripts/forge-guard.js" fast-track <root> --scope=${scope} --autonomy=${autonomy}`
+  });
+}
+
+function cmdFinding(root, args) {
+  const state = loadState(root);
+  // Drapeaux : accepte `--key=valeur` ET `--key valeur`. Un drapeau nu
+  // (`--fix`) vaut true. Sans ce second cas, `--resolve F-001` perdait
+  // silencieusement son identifiant.
+  const { flags, positional } = parseFlags(args);
 
   if (flags.resolve) {
     const f = (state.findings || []).find(x => x.id === flags.resolve);
@@ -1468,6 +1581,8 @@ const USAGE = {
   resolve: 'state.js finding <root> --resolve <id> --promoted-to=<règle>',
   status: 'state.js status <root>',
   log: 'state.js log <root> <type> <message> [k=v ...]',
+  'fast-track': 'state.js fast-track <root> --enable [--scope plans|phases4-7] [--autonomy milestone|full] [--artifact <chemin>] [--attempt <slice>] [--checkpoint]\n' +
+    '                              # --disable [--reason <texte>]  ·  la porte reste forge-guard fast-track',
   amend: 'state.js amend <root> <key> --reason <texte> [--changes <f>] [--allow-renumber --renumber-reason <texte>]'
 };
 
@@ -1741,6 +1856,7 @@ function main() {
     case 'finding': return cmdFinding(positional[0], argv.slice(2));
     case 'status': return cmdStatus(positional[0]);
     case 'log': return cmdLog(positional[0], positional[1], positional[2], positional.slice(3));
+    case 'fast-track': return cmdFastTrack(positional[0], argv.slice(2));
     default:
       L.fail({ error: 'unknown_command', command, usage: USAGE });
   }

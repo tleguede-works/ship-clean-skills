@@ -839,6 +839,18 @@ Chaque agent a un **contrat d'entrée** (les seuls fichiers à lire) et un **con
 
 Les scripts déterministes passent **avant** les agents : un script détecte en une seconde ce qu'un agent met trois lectures à trouver.
 
+**La porte d'entrée est exécutable, et elle refuse en nommant** :
+
+```bash
+node "$FORGE/scripts/forge-guard.js" fast-track <anchor> \
+     [--scope plans|phases4-7] [--autonomy milestone|full]
+```
+
+Elle n'est pas dans `forge-guard all` — `benchmarks` est de phase 3 et `test_plan` de
+phase 6, donc elle ferait échouer tout projet ordinaire. Mais elle ne se contourne pas
+parce qu'on l'a oubliée : `state.js status` affiche si le mode est actif, et
+`state.js fast-track --attempt` **s'arrête à la troisième tentative**.
+
 Protocole complet, conditions d'entrée, limites et échappatoires : **`references/fast-track.md`**.
 
 ---

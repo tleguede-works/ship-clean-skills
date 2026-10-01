@@ -16,7 +16,8 @@
  *               `derived_from` n'est pas vide, aucune case « À DÉCIDER » bloquante
  *   sync        state.json (autorité) vs front matter (miroir) — avec --fix
  *   placeholders  aucun gabarit {{NON_RESOLU}} résiduel dans un livrable
- *   all         tout ce qui précède, dans l'ordre d'un gate de phase
+ *   fast-track   les conditions d'entrée du mode Fast Track, et le refus nommé
+ *   all         tout ce qui précède — sauf fast-track, qui se demande (voir § CLI)
  *
  * Zéro dépendance. Lecture seule par défaut : alone, seul `sync --fix` écrit.
  */
@@ -1047,6 +1048,234 @@ function checkHashDrift(root) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Fast Track — les conditions d'entrée
+ * ------------------------------------------------------------------ */
+
+/**
+ * Le mode avait une **table de huit conditions d'entrée** et une promesse :
+ * *« Si une condition échoue, Fast Track **refuse de démarrer** et dit laquelle. »*
+ *
+ * Aucune des deux n'était implémentée. `run.fast_track` n'existait que comme `null`
+ * dans l'initialisation de `state.json`, et les trois commandes que la référence
+ * proposait pour « vérifier d'un coup » — `state.js start`, `forge-guard all`,
+ * `consistency-check all` — **ne testent aucune des huit** : elles disent si le
+ * projet est sain, pas s'il est prêt pour Fast Track. Un projet dont les neuf
+ * écrans sont en `draft` les passe toutes les trois.
+ *
+ * C'est la forme de défaut la plus coûteuse du dossier, et la plus simple : une porte
+ * écrite en prose, que rien n'exécute. Elle ne se voit pas parce qu'un mode activé à
+ * la main « fonctionne » — jusqu'au jour où il valide des plans contre des livrables
+ * en `draft`, ce que rien n'interdit et rien ne signale.
+ *
+ * ## Pourquoi ce contrôle est son **propre sous-commande**, et pas dans `all`
+ *
+ * Deux des huit conditions portent sur des livrables de phase 3 et de phase 6
+ * (`benchmarks`, `test_plan`). Les mettre dans `all` ferait échouer **tout** projet
+ * ordinaire à la phase 4, donc ils n'y sont pas.
+ *
+ * Mais un contrôle qu'il faut **demander** est un contrôle qui peut être oublié — et
+ * c'est le même piège que l'autre, en miroir : vert parce que personne n'a regardé.
+ * D'où la règle : `fast-track` **échoue bruyamment** et nomme chaque condition
+ * non remplie, et il ne se contente jamais de passer par défaut quand il est appelé.
+ * Demander, c'est obtenir une réponse ; ne pas demander, c'est ne pas être en Fast
+ * Track, ce que `state.js status` affiche.
+ */
+
+/**
+ * Exécute un contrôle existant et récupère son verdict **sans** l'enregistrer.
+ *
+ * Le verdict se lit dans l'**enregistrement**, jamais dans la valeur de retour.
+ *
+ * Constaté en écrivant cette fonction : `checkPaths` et `checkStrays` ne `return`ent
+ * rien — elles appellent `record()` et c'est tout. Lire la valeur de retour donnait
+ * `undefined`, donc « échec », donc Fast Track refusait un projet parfaitement sain en
+ * annonçant *« aucun livrable égaré »* alors qu'il n'y en a aucun. Un contrôle qui
+ * lit un canal que la fonction ne remplit pas ne contrôle rien : il signale le vide
+ * comme un défaut, ce qui est la pire des deux erreurs — un défaut annoncé à tort se
+ * apprend, et le vrai défaut passe ensuite pour un bruit.
+ */
+function capture(name, fn) {
+  const before = results.checks.length;
+  fn();
+  const entries = results.checks.slice(before);
+  results.checks.length = before;
+  const failed = entries.filter(e => e.status === 'fail');
+  return {
+    name,
+    pass: failed.length === 0,
+    entry: failed[0] || entries[entries.length - 1] || { check: name, status: 'fail', reason: 'le contrôle n\'a rien enregistré' }
+  };
+}
+
+/**
+ * Le statut d'un livrable, et **la raison** quand il n'est pas `approved`.
+ *
+ * Un livrable absent se distingue d'un livrable en `draft` : le premier est un
+ * livrable jamais écrit, le second un livrable écrit et non validé. Les deux bloquent
+ * Fast Track, mais dire lequel est la moitié du travail — « le design system n'est pas
+ * approuvé » ne dit pas s'il manque ou s'il attend une relecture.
+ */
+function deliverableCondition(state, key, label, problems) {
+  const d = (state.deliverables || {})[key];
+  if (!d) {
+    problems.push({ condition: label, met: false, detail: `livrable \`${key}\` jamais enregistré` });
+    return;
+  }
+  if (d.status !== 'approved') {
+    problems.push({ condition: label, met: false, detail: `\`${key}\` est \`${d.status}\`, pas \`approved\`` });
+  }
+}
+
+/**
+ * « Tous les écrans sont approved » — avec **zéro écran**, la phrase est vraie.
+ *
+ * C'est la non-vacuité, et elle a déjà coûté une release entière sur
+ * `token-classes` : un contrôle qui lit un ensemble vide lit une propriété du vide,
+ * pas du projet. Un projet sans écran n'est pas un projet dont les écrans sont
+ * approuvés, c'est un projet qui n'a pas de design — et c'est précisément le projet
+ * où Fast Track n'a rien à valider.
+ */
+function screensCondition(state, problems) {
+  const screens = Object.entries(state.screens || {});
+  if (screens.length === 0) {
+    problems.push({
+      condition: 'Tous les écrans sont approved',
+      met: false,
+      detail: 'aucun écran enregistré — « tous approuvés » est vrai sur un ensemble vide'
+    });
+    return;
+  }
+  const pending = screens.filter(([, s]) => s.status !== 'approved');
+  if (pending.length) {
+    problems.push({
+      condition: 'Tous les écrans sont approved',
+      met: false,
+      detail: `${pending.length}/${screens.length} en attente : ${pending.slice(0, 6).map(([k, s]) => `${k} (${s.status})`).join(', ')}${pending.length > 6 ? ', …' : ''}`
+    });
+  }
+}
+
+/**
+ * Le scénario de cycle complet, pour `phases4-7` seulement.
+ *
+ * ## Ce que cette condition ne peut pas prouver, et pourquoi elle le dit
+ *
+ * `references/test-strategies.md` § checklist porte la case « le domaine étant
+ * temporel, il existe au moins un scénario de cycle complet ». Une case de checklist
+ * n'est pas un fait lisible par un script : c'est une **affirmation de l'agent** qui
+ * l'a cochée.
+ *
+ * Ce contrôle vérifie donc ce qui est vérifiable — le `test_plan` existe, il est
+ * `approved`, et le document **déclare** un scénario de cycle — et il **nomme** la
+ * limite dans sa sortie. Le mot « déclare » est le mot important : ce qui est vérifié
+ * est la **présence** d'une déclaration, pas sa justesse. Un scénario de cycle
+ * complet écrit pour la mauvaise propriété passe ici.
+ *
+ * C'est la limite générale de Fast Track, écrite dans sa propre référence : *« une
+ * porte vérifie la présence et la conformité, pas la justesse »*. La propped up par
+ * un mot dans la sortie vaut mieux que la même limite cachée derrière un `pass: true`.
+ */
+function cycleScenarioCondition(root, state, problems) {
+  const tp = (state.deliverables || {})['test_plan'];
+  if (!tp) {
+    problems.push({ condition: 'Stratégie de test (phases4-7)', met: false, detail: 'aucun `test_plan` enregistré' });
+    return;
+  }
+  if (tp.status === 'not_started') {
+    problems.push({ condition: 'Stratégie de test (phases4-7)', met: false, detail: '`test_plan` est `not_started`' });
+    return;
+  }
+  if (tp.status !== 'approved') {
+    problems.push({ condition: 'Stratégie de test (phases4-7)', met: false, detail: `\`test_plan\` est \`${tp.status}\`, pas \`approved\`` });
+    return;
+  }
+  const abs = L.toAbs(root, tp.path || '.forge/test-plan.md');
+  if (!fs.existsSync(abs)) {
+    problems.push({ condition: 'Stratégie de test (phases4-7)', met: false, detail: `\`${tp.path}\` est enregistré mais absent du disque` });
+    return;
+  }
+  const declares = /^#{2,4}\s.*cycle\s+complet/im.test(fs.readFileSync(abs, 'utf-8'));
+  if (!declares) {
+    problems.push({
+      condition: 'Stratégie de test (phases4-7)',
+      met: false,
+      detail: `\`${tp.path}\` ne déclare aucun scénario de cycle complet`
+    });
+  }
+}
+
+function checkFastTrack(root, flags) {
+  const state = loadStateOrFail(root);
+
+  // Les deux réglages sont **indépendants** et choisis à l'activation, pas un
+  // commutateur unique : c'est la première phrase de `fast-track.md`. Un défaut qui
+  // prend `--scope phases4-7` sans autonomie prend un mode que personne n'a choisi.
+  const flagValue = (name, allowed, fallback) => {
+    const hit = flags.find(f => f === `--${name}` || f.startsWith(`--${name}=`));
+    if (!hit) return fallback;
+    const value = hit.includes('=') ? hit.split('=')[1] : (flags[flags.indexOf(hit) + 1] || '');
+    if (!allowed.includes(value)) {
+      L.fail({ error: 'bad_flag_value', flag: `--${name}`, value, allowed, hint: allowed.map(a => `--${name}=${a}`).join(' · ') });
+    }
+    return value;
+  };
+  const scope = flagValue('scope', ['plans', 'phases4-7'], 'plans');
+  const autonomy = flagValue('autonomy', ['milestone', 'full'], 'milestone');
+
+  const problems = [];
+
+  // --- conditions d'état : cinq livrables ---
+  deliverableCondition(state, 'prd', '`prd` est approved', problems);
+  deliverableCondition(state, 'conventions', '`conventions` est approved', problems);
+  deliverableCondition(state, 'design_system', '`design_system` est approved', problems);
+  screensCondition(state, problems);
+  deliverableCondition(state, 'benchmarks', '`benchmarks` est approved', problems);
+
+  // --- conditions croisées : celles que deux autres scripts savent déjà ---
+  const paths = capture('paths', () => checkPaths(root));
+  if (!paths.pass) {
+    const n = paths.entry.check || 'paths';
+    problems.push({ condition: 'Aucun livrable égaré', met: false, detail: `${n} : ${(paths.entry.offenders || paths.entry.missing || []).length} entrée(s) — ${n === 'no_stray_deliverables' ? 'livrable Forge hors .forge/' : 'chemin non canonique ou fichier absent'}` });
+  }
+  const strays = capture('strays', () => checkStrays(root, false));
+  if (!strays.pass) {
+    const s = (strays.entry.strays || []).map(x => x.path || x).slice(0, 4);
+    problems.push({ condition: 'Aucun livrable égaré', met: false, detail: `${strays.entry.check} : ${strays.entry.strays ? strays.entry.strays.length : 0} égaré(s)${s.length ? ` — ${s.join(', ')}` : ''}` });
+  }
+
+  const sansDomaine = (state.findings || []).filter(f => f.status !== 'resolved' && !f.domain);
+  if (sansDomaine.length) {
+    problems.push({
+      condition: 'Aucun constat sans domaine',
+      met: false,
+      detail: `${sansDomaine.length} constat(s) sans domaine : ${sansDomaine.map(f => f.id).join(', ')}`
+    });
+  }
+
+  // --- condition de portée : `phases4-7` seulement ---
+  if (scope === 'phases4-7') cycleScenarioCondition(root, state, problems);
+
+  // Les contrôles empruntés ont pu basculer `results.pass` ; la réponse du mode est
+  // celle de **ses** conditions, rien d'autre.
+  results.pass = problems.length === 0;
+
+  record('fast_track_ready', problems.length === 0, {
+    scope,
+    autonomy,
+    conditions_checked: 7 + (scope === 'phases4-7' ? 1 : 0),
+    problems,
+    limits: [
+      'La présence d\'un scénario de cycle complet est vérifiée ; sa justesse ne l\'est pas.',
+      'Les huit conditions portent sur l\'État et sur la propreté du dossier, pas sur la qualité des plans.'
+    ],
+    rule: "Le mode avait une table de huit conditions et une promesse de refus, sans code derrière. " +
+          "Un mode dont la porte n'existe que dans la prose est un mode qui valide des plans contre des " +
+          "livrables en `draft` — et `state.js start`, `forge-guard all` et `consistency-check all` " +
+          "valident tous les trois un tel projet, parce qu'ils répondent à une autre question."
+  });
+}
+
+/* ------------------------------------------------------------------ *
  * CLI
  * ------------------------------------------------------------------ */
 
@@ -1069,6 +1298,7 @@ const CHECKS = {
   facts: (root) => checkFacts(root),
   'hash-check': (root) => checkHashDrift(root),
   anchor: (root) => checkAnchor(root),
+  'fast-track': (root, flags) => checkFastTrack(root, flags),
   all: (root, flags) => {
     checkAnchor(root);
     checkPaths(root);
@@ -1107,8 +1337,11 @@ function main() {
         facts: 'forge-guard facts <root>',
         'hash-check': 'forge-guard hash-check <root>',
         anchor: 'forge-guard anchor [start]',
+        'fast-track': 'forge-guard fast-track <root> [--scope plans|phases4-7] [--autonomy milestone|full]',
         all: 'forge-guard all <root> [--fix] [--relocate]',
-        note: 'Tous les contrôles de `state` sont aussi dans `all`.'
+        note: 'Tous les contrôles de `state` sont aussi dans `all`. ' +
+              '`fast-track` n\'y est PAS : deux de ses conditions portent sur des livrables de phase 3 et 6, ' +
+              'qui feraient échouer tout projet ordinaire. Il se demande — et quand on le demande, il échoue et nomme chaque condition non remplie.'
       }
     });
   }
