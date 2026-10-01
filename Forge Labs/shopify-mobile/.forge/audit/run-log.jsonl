@@ -157,3 +157,6 @@
 {"ts":"2026-09-30T21:18:20.931Z","type":"register","deliverable":"design_system","path":".forge/design/design-system.md","kind":"deliverable"}
 {"ts":"2026-09-30T21:18:49.516Z","type":"register","deliverable":"architecture","path":".forge/architecture.md","kind":"deliverable"}
 {"ts":"2026-09-30T21:19:00.360Z","type":"status_change","kind":"deliverable","key":"architecture","from":"approved","to":"approved","mirrored":{"mirrored":true,"changed":false,"path":".forge/architecture.md","status":"approved"}}
+{"ts":"2026-10-01T00:04:17.822Z","type":"fast_track_enter","message":"scope=plans autonomy=milestone"}
+{"ts":"2026-10-01T00:04:18.038Z","type":"fast_track_escape","message":"le commanditaire veut relire le plan lui-meme"}
+{"ts":"2026-10-01T00:04:22.366Z","type":"fast_track_escape","message":"conditions d'entree non remplies : 4 sur 8"}
