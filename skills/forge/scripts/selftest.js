@@ -1046,13 +1046,122 @@ test('forge-exit échoue sur une slice sans plan', () => {
 
 section('Nouveaux livrables et agents');
 
+test('Forge sait QUAND appeler project-rules-architect, et ce qu\'il ne doit PAS écrire', () => {
+  // Les deux appels sont le seul mécanisme de la synergie. S'ils ne sont que dans la
+  // prose, ils n'existent pas — c'est la leçon de F-50, appliquée à une porte qui
+  // n'est pas un gate mais une consigne. On vérifie donc trois choses distinctes,
+  // parce que trois forgetting différents produisent la même synergie absente :
+  // ne pas savoir QUAND appeler, ne pas savoir QUOI transmettre, et écrire
+  // soi-même dans les fichiers de l'agent.
+  const s = fs.readFileSync(path.join(SKILL_DIR, 'SKILL.md'), 'utf-8');
+
+  // 1. QUAND : les deux moments sont nommés, et pas le même moment.
+  //    L'assertion est **ancrée sur l'étape numérotée de la Phase 0**, pas sur le
+  //    document. Un test qui cherche un mot dans tout le fichier trouve la section
+  //    qui *parle* de l'appel et conclude que l'appel est prescrit — c'est le piège
+  //    du contre-témoin de F-49, rejoué : le test passait avec l'instruction retirée.
+  const phase0 = s.slice(s.indexOf('### Phase 0 — Bootstrap'), s.indexOf('## Les deux appels'));
+  assert(/^\s*\d+\.\s.*project-rules-architect.*socle de contexte/im.test(phase0),
+    'l\'appel 1 doit être une ÉTAPE de la Phase 0, pas une section qui en parle');
+  const anchor2 = s.search(/jeu de règles/i);
+  assert(anchor2 !== -1, 'l\'appel 2 doit être nommé');
+  assert(/architecture`?\s*(?:est\s+)?`?approved/.test(s),
+    'l\'appel 2 doit être conditionné par `architecture approved` — avant, la stack n\'est pas décidée');
+
+  // 2. QUOI : le mode scaffold est demandé explicitement, et son refus de produire
+  //    des règles est écrit — sinon l'agent appelle PRA et reçoit un jeu de règles
+  //    dès l'appel 1, ce qui est la confusion exacte qu'on veut éviter.
+  assert(/mode scaffold|mode « socle de contexte »/i.test(s),
+    'l\'agent doit demander le mode scaffold, sinon il obtient un jeu de règles trop tôt');
+  assert(/Aucune règle|aucune règle/i.test(s),
+    'l\'interdiction pour l\'appel 1 de produire des règles doit être transmise');
+
+  // 3. CE QUE FORGE N'ÉCRIT PAS. C'est la contrainte la plus coûteuse à violer en
+  //    silence : écrire dans la mémoire ne casse rien, et un fichier qui existe
+  //    encore et paraît plausible est le pire état possible.
+  const memoire = ['AGENTS.md', 'SESSION_LOG.md', 'DECISIONS.md', 'LEARNINGS.md'];
+  for (const f of memoire) assert(s.includes(f), `SKILL.md doit nommer \`${f}\` pour que l'agent sache qu'il ne l'écrit pas`);
+  assert(/Écrire dans `AGENTS\.md`|n'en écrit jamais/i.test(s),
+    'l\'interdiction d\'écrire dans la mémoire doit être explicite, pas implicite');
+
+  // Et le pendant côté rules : Forge ne fabrique pas son propre jeu de règles.
+  assert(/AGENTS\.md/.test(s) && /câbl|branch|branché/i.test(s),
+    'Forge doit savoir que le jeu de règles vient de l\'appel 2, câblé');
+});
+
+test('la mémoire du projet est lue sous les MAJUSCULES, et ses déclencheurs sont comptés', () => {
+  // `project_memory` a répondu `present: false` sur les trois projets de laboratoire
+  // pendant toute la vie du skill, parce que personne n'avait jamais appelé
+  // `project-rules-architect`. Puis, le premier appel ayant produit les quatre
+  // fichiers, il a **continué** de répondre `false` : je les avais écrits en
+  // minuscules. Un fichier `AGENTS.md` et un fichier `agent.md` ne sont pas le même
+  // fichier sur un système de fichiers sensible à la casse, et un lecteur qui cherche
+  // le mauvais nom répond « pas de mémoire » sur un projet qui en a une — la pire
+  // des réponses, parce qu'elle est fausse sans être suspecte.
+  const project = freshProject('memoire-majuscules');
+  const w = (name, body) => fs.writeFileSync(path.join(project, name), body);
+  w('AGENTS.md', '# A\n\n| Fichier | Ce qu il contient |\n|---|---|\n' +
+    '| `SESSION_LOG.md` | ce qui s est passé |\n' +
+    '| `DECISIONS.md` | ce qui a été décidé |\n' +
+    '| `LEARNINGS.md` | les corrections |\n');
+  w('SESSION_LOG.md', '# S\n\n## Sessions\n\n### 2026-10-01 — une\n\nx\n\n### 2026-10-02 — deux\n\ny\n');
+  // La forme **réelle** produite par le socle est `Status: Open` en clair, sans
+  // puce et sans gras. C'est contre elle que le motif doit être éprouvé : un fixture
+  // écrit en `**Status:** Open` est lu par les deux motifs, et le contre-témoin ne
+  // casse donc rien — c'est-à-dire qu'il ne prouve rien.
+  w('DECISIONS.md', '# D\n\n## Q-001\n\nStatus: Open\n\n## Q-002\n\nStatus: Open\n\n## Q-003\n\n- **Status:** Open\n');
+  w('LEARNINGS.md', '# L\n\n## Correctifs\n\n— (aucun pour l instant)\n');
+
+  const res = run('state.js', ['start', project]);
+  const m = res.json.project_memory;
+  assert(m.present === true, 'quatre fichiers en majuscules doivent être détectés');
+  assert(m.memory_indexed === 3, `les trois fichiers doivent être indexés : ${m.memory_indexed}`);
+  // **Contre-témoin de ma propre erreur** : sans déclencheur, le compte est zéro.
+  // C'est ce qui distingue un index d'une mémoire utilisable.
+  assert(m.triggers_named === 0,
+    `un index sans condition ne déclenche rien : ${m.triggers_named} — et c'est le défaut qu'on cherche`);
+  assert(m.sessions === 2,
+    `les entrées en ### sous ## Sessions doivent compter : ${m.sessions} — un motif qui ne lit que ## répond 0 sur un journal rempli`);
+  assert(m.questions_open === 3,
+    `les questions ouvertes doivent compter dans les DEUX formes, claire et grasse : ${m.questions_open} — ` +
+    `un motif qui n'en lit qu'une renvoie un nombre faux sans signaler qu'il est faux`);
+
+  // Le même projet, avec les déclencheurs.
+  w('AGENTS.md', '# A\n\n| Fichier | Ce qu il contient |\n|---|---|\n' +
+    '| `SESSION_LOG.md` | ce qui s est passé |\n' +
+    '| `DECISIONS.md` | ce qui a été décidé |\n' +
+    '| `LEARNINGS.md` | les corrections |\n\n' +
+    '### `SESSION_LOG.md` — quand la session se termine\n\n**Déclencheur :** quand tu ne peux plus avancer.\n\n' +
+    '### `DECISIONS.md` — quand une voie est écartée\n\n**Déclencheur :** quand tu engages un choix.\n\n' +
+    '### `LEARNINGS.md` — quand tu refais une erreur\n\n**Déclencheur :** la deuxième fois.\n');
+  const avec = run('state.js', ['start', project]).json.project_memory;
+  assert(avec.triggers_named === 3,
+    `trois déclencheurs distincts doivent être reconnus : ${avec.triggers_named}`);
+  assert(avec.memory_described_not_triggered === 0,
+    `décrit et déclenché doivent coïncider : ${avec.memory_described_not_triggered}`);
+
+  // Et le contretémoin du contretémoin : en minuscules, plus rien n'est vu.
+  for (const f of ['AGENTS.md', 'SESSION_LOG.md', 'DECISIONS.md', 'LEARNINGS.md']) fs.renameSync(path.join(project, f), path.join(project, f.toLowerCase()));
+  const minuscules = run('state.js', ['start', project]).json.project_memory;
+  assert(minuscules.present === false,
+    'des noms en minuscules ne sont pas la convention : le lecteur doit dire qu il n y a pas de mémoire, pas inventer');
+});
+
 test('les 5 nouvelles références existent et portent les règles essentielles', () => {
   for (const r of ['skill-boundaries', 'scenario-tests', 'test-strategies', 'research-protocol', 'migration-v1-v2']) {
     assert(fs.existsSync(path.join(SKILL_DIR, 'references', `${r}.md`)), `references/${r}.md manquant`);
   }
   const b = fs.readFileSync(path.join(SKILL_DIR, 'references', 'skill-boundaries.md'), 'utf-8');
-  assert(b.includes('DECISIONS.md') && b.includes('LEARNINGS.md'), 'la frontière doit nommer les fichiers du voisin');
-  assert(b.includes('sans domaine'), 'l\'obligation de domaine doit être énoncée');
+  // Le contrat a été réécrit : les quatre fichiers de mémoire appartiennent à l'agent,
+  // pas à project-rules-architect. Ce test vérifie que le document **nomme** le
+  // contrat réel — c'est un filet, pas une preuve. La preuve est le projet de
+  // laboratoire : deux appels réellement exécutés, quatre fichiers produits, et
+  // aucune ligne écrite par Forge.
+  for (const f of ['AGENTS.md', 'SESSION_LOG.md', 'DECISIONS.md', 'LEARNINGS.md']) {
+    assert(b.includes(f), `la frontière doit nommer \`${f}\` : l'agent en est le propriétaire`);
+  }
+  assert(b.includes('Forge n\'en écrit aucun'), 'l\'interdiction d\'écriture doit être explicite');
+  assert(/n'est jamais l'appelé|jamais l'appelé/.test(b), 'la direction des appels doit être écrite');
   const s = fs.readFileSync(path.join(SKILL_DIR, 'references', 'scenario-tests.md'), 'utf-8');
   assert(s.includes('n\'écrit jamais ce que l\'application écrit'), 'l\'interdiction d\'auto-écriture manque');
   assert(s.includes('horloge'), 'l\'obligation d\'horloge injectée manque');

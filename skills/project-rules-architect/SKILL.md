@@ -26,36 +26,46 @@ hypothetical ones. Don't re-derive them.
 ## Working alongside a planning skill
 
 If the project also runs a planning skill (Forge, or any equivalent that owns a
-`.forge/` directory), the two must not both claim ownership of the same facts.
-Two memory systems with no stated boundary produce competing sources of truth,
-and the drift is silent.
+`.forge/` directory), this skill is called **twice**, and by the planning skill
+both times. It is a callee. It never routes.
+
+| Call | When | What it emits |
+|---|---|---|
+| **Context scaffold** | at project start, before the stack is known | the four context files, and nothing else |
+| **Rule set** | after the planning skill has fixed the stack and what the project is about | `AGENTS.md` + the rules, wired to the target |
+
+**The scaffold's four files are the project's cross-session memory, and neither
+skill writes to them afterwards.** The agent maintains them: it appends a session
+entry, records a decision, logs a correction. Neither Forge nor this skill edits
+them after the scaffold call, and neither keeps a second copy of their contents.
+
+The reason is not tidiness. A memory file is the one artefact whose value is
+**cumulative across sessions**, so it is the one artefact two writers destroy
+most easily: one appends, the other overwrites, and the loss is invisible because
+the file still exists and still looks plausible.
 
 | This skill owns | The planning skill owns |
 |---|---|
-| `AGENTS.md`, `{{rules dir}}/*.md` — what to follow | `.forge/*.md` — what to build |
-| `DECISIONS.md` — why a choice was made | `state.json` — status, paths, IDs, hashes |
-| `LEARNINGS.md` — what broke, and its correction | `.forge/audit/` — incidents of the planning process |
-| `SESSION_LOG.md` — what happened | — |
-| manifest versions — the resolved truth | — |
+| the shape of `AGENTS.md`, `SESSION_LOG.md`, `DECISIONS.md`, `LEARNINGS.md`, once | the product, the stack, the architecture, the plan |
+| `AGENTS.md`, `{{rules dir}}/*.md` — what to follow | `.forge/*.md` — what to build, and where the project is |
+| the wiring file (`opencode.json`, `.cursor/`, …) | `state.json` — status, paths, IDs, hashes |
+| — | `.forge/audit/` — incidents of the planning process |
 
-**The rule: a business or technical fact lives in a file this skill owns.**
-The planning skill's state file holds a pointer, not a copy. A state file
-containing prose is not a state file — it is an undisciplined document, and it
-is neither sortable nor indexable, and it is wrong without any signal.
+**The rule: a fact lives in exactly one file, and a decision has an owner.** The
+planning skill's state file holds a pointer, not a copy. A state file containing
+prose is not a state file — it is an undisciplined document, and it is neither
+sortable nor indexable, and it is wrong without any signal.
 
 **Two consequences for this skill's own work:**
 
-- **Corrections carry a domain.** Anything logged as a correction names the rule
-  file it will be promoted into. A correction with no target cannot be promoted.
-  See `postmortems.md` Case 5.
-- **Re-invocation may be triggered by the other skill.** If the planning skill
-  holds this project's state, it is the natural caller for a promotion pass: it
-  is the component that observes corrections accumulating. If this skill is run
-  once at setup and never again, a documented promotion path is inert.
-
-Do not create a second decision store, a second corrections log, or a second
-version table. If the other skill's state file needs to point at a rule, add the
-pointer there; do not copy the rule.
+- **A correction names its destination.** Anything logged in `LEARNINGS.md` says
+  which rule file it will be promoted into. A correction with no target cannot be
+  promoted. See `postmortems.md` Case 5.
+- **The two calls are independent, and neither implies the other.** A project can
+  have a scaffold and no rules — that is the normal state between the two calls,
+  and it is not a half-finished rule set. Conversely a project can have rules and
+  no scaffold, which is the ordinary case for anyone using this skill standalone.
+  Neither gap is a defect to be reported.
 
 ---
 
@@ -93,7 +103,11 @@ draft, not the principle.
    entry file, referenced by everyone else.
 
 4. **Start from a skeleton, grow from corrections — for FRESH rule sets only,
-   and there are three situations, not two.**
+   and there are four situations, not two.**
+   - **Context scaffold** (asked for by name, before the stack is known): emit
+     the memory and context structure and **stop**. No rules, no rule set, no
+     stack probe. See § The context scaffold below — this is the mode a planning
+     skill calls first, and getting it wrong in either direction is expensive.
    - **Bootstrap** (no existing rules): ship a lean, correct skeleton plus a
      living-learnings section. Don't enumerate every hypothetical rule on day
      one — that's the randomness problem, guessing at situations that haven't
@@ -150,6 +164,81 @@ draft, not the principle.
    over-budget set passes it. Measure the total separately, in Step 3b, or not
    at all.
 
+## The context scaffold
+
+A planning skill calls this mode **before the stack is decided**. It is a
+short-circuit: emit the four context files, emit no rules, stop.
+
+| Emits | Never emits |
+|---|---|
+| `AGENTS.md` — the context the agent needs before it can act, **and the trigger for each of the three files below** | any rule file |
+| `SESSION_LOG.md` — what happened, appended per session | `.opencode/rules/` |
+| `DECISIONS.md` — decisions taken, and **open questions** as questions | a stack choice |
+| `LEARNINGS.md` — corrections, each naming where it will be promoted | a probe result |
+
+### The two halves of the index, and the one that is usually missing
+
+`AGENTS.md` carries a table with a row per file. Each row needs **two** things,
+and they are not the same thing:
+
+| Half | The question it answers | Missing it means |
+|---|---|---|
+| **Description** | *what goes in this file?* | the file is a mystery |
+| **Trigger** | *what makes me write to it, and when?* | the file stays empty forever |
+
+A row with a description and no trigger is the most natural mistake to make,
+because the table looks complete. It is not: it is an index of four containers
+and no instruction to fill them, and the result is a memory that is created,
+structurally sound, correctly named, and **permanently empty** — which is worse
+than no memory, because it looks like progress.
+
+The trigger is a **condition, not a category**. "Corrections" is a description.
+"*When* you get something wrong twice" is a trigger. Every one of the three
+needs one, and it has to be a moment the agent can recognise on its own, without
+re-reading the file to work out whether the moment has arrived.
+
+`AGENTS.md` itself needs no trigger: it is loaded, so it is the thing that fires
+the other three.
+
+**Why the scaffold holds questions and not decisions.** This is Principle 2
+applied to time rather than to location: a decision recorded before the stack is
+known is not a decision, it is a guess wearing a decision's clothes. PRA's own
+rule — *a claim you can't source becomes a question, a proposed ADR, or an
+unconfirmed entry, never a rule with a hedge* — is the same rule. So `DECISIONS.md`
+opens with the questions the project cannot answer yet, and the first entry under
+`Status:` is `Open`.
+
+**Why the scaffold is not the rule set.** The rule set arrives later, once the
+stack is known, and it is generated against that stack. A scaffold that already
+contained rules would either have to be rewritten wholesale or — worse — survive
+alongside them and be loaded twice. One owner per fact, and at this point the
+facts are questions.
+
+**Who writes to these files afterwards: not this skill, and not the planning
+skill.** They are the project's cross-session memory. The agent maintains them.
+This skill's job is done when the four files exist and are structurally sound —
+headings present, one canonical spot for a correction in each.
+
+**Verify before declaring done**, because the failure is silent and a scaffold
+that is wrong looks exactly like a scaffold that is empty:
+
+1. All four files exist, at the project root, with their headings.
+2. **`AGENTS.md` names each of the three files twice: once for what it holds, and
+   once for the condition that makes you write to it.** A description with no
+   trigger is a container with no instruction to fill it.
+3. `LEARNINGS.md` has exactly one place to append a correction — the audit
+   already fails a set that offers two, because the stale half is the one an
+   agent reads.
+4. `DECISIONS.md` entries carry a `Status:` line. The scaffold's own entry is
+   `Open`.
+5. No file contains a rule, a threshold, a command, or a version pin. If it does,
+   the scaffold has become a second rule set.
+6. **Every cross-reference between the four files uses the exact uppercase name.**
+   `AGENTS.md` refers to `DECISIONS.md`, never to `decisions.md` — on a
+   case-sensitive filesystem the lowercase name resolves to nothing, and the
+   reference fails silently at the moment somebody follows it, which is months
+   later. Check the prose, not only the table: the two leak separately.
+
 ## The template library
 
 `references/templates/` — three tiers. **You select from it; you never copy it
@@ -185,9 +274,15 @@ agent reads, and this one has no recurring value.
 
 ### Step 1 — Probe, then interview
 
-**Run the detection probe first** (`stack-detection.md`). Read the manifests,
-match the table, produce a proposed template set. Don't ask what the repository
-already says.
+**If the caller asked for the context scaffold, stop here** and run
+§ The context scaffold. Do not probe, do not interview, do not produce a stack.
+Probing on a project whose stack has not been decided produces a manifest match
+and a table of domain rows that have nothing to match — a confident-looking
+report about nothing, which is the mode's entire purpose to avoid.
+
+Otherwise, run the detection probe first (`stack-detection.md`). Read the
+manifests, match the table, produce a proposed template set. Don't ask what the
+repository already says.
 
 **Then ask only the gaps the probe can't close.** Usually one or two questions:
 
@@ -387,20 +482,26 @@ Reading the wrong subset is how two runs of the same task produce different
 output. **Read exactly this table, and nothing else** unless the mode changes or
 a row says "on demand".
 
-| File | Bootstrap | Consolidation | Adoption |
-|---|---|---|---|
-| `SKILL.md` | ✔ | ✔ | ✔ |
-| `postmortems.md` | **✔** | ✔ | ✔ |
-| `stack-detection.md` | ✔ | ✔ | ✔ |
-| `documentation-sources.md` | ✔ | ✔ | ✔ |
-| `target-formats.md` | ✔ | ✔ | ✔ |
-| `research-summary.md` | ✔ | — | — |
-| `existing-project-protocol.md` | — | — | ✔ |
-| `audit-checklist.md` | Step 5 | Step 5 | Step 5 |
-| `rule-file-template.md` | on demand | on demand | on demand |
-| `architecture-decision-guide.md` | on demand | on demand | on demand |
-| `mdc-frontmatter-spec.md` | Cursor only | Cursor only | Cursor only |
-| `provenance/synthesis-provenance.md` | **never** | **never** | **never** |
+| File | Context scaffold | Bootstrap | Consolidation | Adoption |
+|---|---|---|---|---|
+| `SKILL.md` | ✔ | ✔ | ✔ | ✔ |
+| `postmortems.md` | — | **✔** | ✔ | ✔ |
+| `stack-detection.md` | — | ✔ | ✔ | ✔ |
+| `documentation-sources.md` | — | ✔ | ✔ | ✔ |
+| `target-formats.md` | — | ✔ | ✔ | ✔ |
+| `research-summary.md` | — | ✔ | — | — |
+| `existing-project-protocol.md` | — | — | — | ✔ |
+| `audit-checklist.md` | § verify above | Step 5 | Step 5 | Step 5 |
+| `rule-file-template.md` | — | on demand | on demand | on demand |
+| `architecture-decision-guide.md` | — | on demand | on demand | on demand |
+| `mdc-frontmatter-spec.md` | — | Cursor only | Cursor only | Cursor only |
+| `provenance/synthesis-provenance.md` | **never** | **never** | **never** | **never** |
+
+**The scaffold reads almost nothing, on purpose.** Four files are written from
+one decision — where does a correction go, and where does a question go — and
+every reference it read is a chance to import a rule by accident. `postmortems.md`
+is skipped because contamination is a risk when you are *emitting* project content,
+and this mode emits none.
 
 **`postmortems.md` is unconditional.** Copying a template into a project *is* a
 cross-project transplant — the exact operation Case 2 is about — so the

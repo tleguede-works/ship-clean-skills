@@ -27,7 +27,7 @@ const STATUSABLE_KINDS = ['deliverable', 'screen', 'slice', 'foundation', 'phase
 
 // Le contrat de phase vit dans forge-lib : forge-guard.js doit voir exactement
 // la même règle, sinon le contrôle et le gate peuvent diverger — et c'est le
-// contrôle qui ПREDIT le désaccord.
+// contrôle qui PRÉDIT le désaccord.
 const PHASE_KEYS = L.PHASE_KEYS;
 const missingRequirements = L.missingPhaseRequirements;
 
@@ -1139,6 +1139,18 @@ function readSiblingMemory(root) {
 
   const memory = { present: false, files: {} };
 
+  // **Les quatre noms sont en MAJUSCULES** : `AGENTS.md`, `SESSION_LOG.md`,
+  // `DECISIONS.md`, `LEARNINGS.md`. C'est la convention de PRA depuis le début, et
+  // une convention_seule est un motif — les quatre se lisent d'un coup d'œil, et
+  // `AGENTS.md` se distingue des `.opencode/rules/*.md` qui sont en minuscules.
+  //
+  // J'ai abaissé ces quatre noms en minuscules en croyant corriger un lecteur mort,
+  // et c'était l'inverse : c'est **moi** qui l'avais tué. Un fichier `AGENTS.md` et un
+  // `AGENTS.md` ne sont pas le même fichier sur un système de fichiers sensible à la
+  // casse, et un lecteur qui cherche le mauvais nom renvoie `present: false` sur un
+  // projet dont la mémoire existe — la pire des réponses, parce qu'elle est fausse
+  // sans être suspecte. Constaté à l'exécution de l'appel 1, sur les quatre fichiers
+  // réellement produits.
   const agents = read('AGENTS.md');
   if (agents) {
     memory.present = true;
@@ -1147,17 +1159,73 @@ function readSiblingMemory(root) {
     memory.dod_items = dod ? (dod[1].match(/^\d+\.\s/gm) || []).length : 0;
     const escalation = agents.match(/## Escalation Rules([\s\S]*?)\n## /);
     memory.escalation = !!escalation;
+    // **Les déclencheurs.** Une mémoire que rien ne déclenche est un décor : le
+    // fichier existe, il est structuré, et il reste vide parce que personne ne sait
+    // QUAND y écrire.
+    //
+    // Compter les **mentions** ne prouverait rien : l'index décrit déjà les trois
+    // fichiers, donc `mentions: 3` est compatible avec un scaffold entièrement
+    // dépourvu de déclencheur — c'est-à-dire avec la défaillance exacte qu'on cherche
+    // à voir. Ce qu'on compte, c'est la **co-occurrence** d'un nom de fichier et d'un
+    // cue de condition dans la même ligne : la description et le déclencheur sur la
+    // même ligne, ce qui est la forme que le mode scaffold produit.
+    //
+    // Limite assumée : c'est un contrôle de **présence**, pas de justesse. Un cue mal
+    // choisi passe. Il attrape l'oubli — la ligne du tableau qui dit ce que contient
+    // un fichier sans jamais dire ce qui y écrit — et l'oubli est le cas réel.
+    const CUES = /\b(quand|lorsque|à chaque|au début|à la fin|après|avant|si|dès|une fois|every|when|after|before|on each)\b/i;
+    const MEMORY_FILES = ['SESSION_LOG.md', 'DECISIONS.md', 'LEARNINGS.md'];
+    memory.memory_indexed = MEMORY_FILES.filter(f => agents.includes(f)).length;
+    memory.triggers_named = MEMORY_FILES.filter(f =>
+      agents.split('\n').some(line => line.includes(f) && CUES.test(line))).length;
+    // Le compte et le déclencheur ne se déduisent pas l'un de l'autre : un fichier
+    // décrit sans être jamais nommé ailleurs est le cas « présent, jamais écrit ».
+    memory.memory_described_not_triggered = memory.memory_indexed - memory.triggers_named;
+  }
+
+  const sessionLog = read('SESSION_LOG.md');
+  if (sessionLog) {
+    memory.files.SESSION_LOG_MD = true;
+    // `#{2,3}` et non `##` : le journal place ses entrées en `###` sous une section
+    // `## Sessions`, et un compteur qui ne lit que `##` répond **0 sur un journal
+    // rempli**. Constaté le jour où le tout premier événement a été écrit : deux
+    // entrées, zéro comptée, et la réponse « aucune session » est un mensonge
+    // courant parce qu'elle ressemble à un projet qui démarre.
+    //
+    // C'est la quatrième fois de cette session qu'un motif trop étroit lit un
+    // document comme vide. Le meme predicat doit accepter ce que l'auteur écrit
+    // réellement, ou il ne mesure rien.
+    memory.sessions = (sessionLog.match(/^#{2,3}\s+\d{4}-\d{2}-\d{2}/gm) || []).length;
   }
 
   const decisions = read('DECISIONS.md');
   if (decisions) {
     memory.files.DECISIONS_MD = true;
     const entries = decisions.match(/^## ADR-\d+/gm) || [];
-    const open = (decisions.match(/^- \*\*Status:\*\* Open/gm) || []).length;
-    const superseded = (decisions.match(/^- \*\*Status:\*\* Superseded/gm) || []).length;
+
+    // **Un seul motif pour le champ `Status`, deux usages.** Le comptage des ADR et le
+    // comptage des questions ouvertes lisent le même champ du même fichier : leur
+    // donner deux motifs, c'est leur permettre de diverger sans que rien ne le dise.
+    //
+    // Le second supposait `Status: Open` en clair pendant que le premier supposait
+    // `**Status:** Open` en gras. Sur le fichier réellement produit par le socle, qui
+    // écrit la forme claire, le second répondait **0 sur dix questions ouvertes** — et
+    // « zéro question ouverte » sur un projet qui en a dix est un mensonge de la
+    // famille de F-48 : un motif plus étroit que ce que le document écrit.
+    //
+    // Le motif tolère les deux formes et **ancre sur la valeur** (`Open`, `Closed`)
+    // plutôt que sur la décoration, pour qu'un document écrit dans l'une ou dans
+    // l'autre forme soit lu pareil.
+    const STATUT = /\*{0,2}Status:\*{0,2}\s*(\w+)/g;
+    const statuts = [...decisions.matchAll(STATUT)].map(m => m[1].toLowerCase());
     memory.adrs = entries.length;
-    memory.adrs_open = open;
-    memory.adrs_superseded = superseded;
+    memory.adrs_open = statuts.filter(v => v === 'open').length;
+    memory.adrs_superseded = statuts.filter(v => v === 'superseded').length;
+    // Le socle n'écrit pas d'ADR : il écrit des **questions ouvertes**, parce que la
+    // stack n'est pas décidée. Compter les deux séparément évite de lire « aucune
+    // décision » là où il y a dix questions en attente — et « rien à décider » est
+    // précisément l'état normal d'un projet qui démarre.
+    memory.questions_open = memory.adrs_open;
     // Un décompte écrit en dur dans l'entry file devient faux : le signaler.
     const claimed = agents && agents.match(/(\w+|\d+)\s+(?:entries are closed|ADR)/i);
     if (claimed) memory.adrs_claimed_in_agents_md = true;

@@ -245,11 +245,65 @@ But : établir le contexte du projet et générer la base des conventions avant 
    - Contraintes techniques ou d'hébergement
    - Outils obligatoires ou exclus
 4. **Crée `.forge/`** : `node "$FORGE/scripts/state.js" init <anchor> "<Nom>" --reference <projet de référence si applicable>`.
-5. Génère `.forge/conventions.md` depuis `templates/conventions.md.tmpl`. Les sections non encore décidées (ex. state management, E2E framework) sont marquées `À DÉCIDER EN PHASE 4`.
-6. Enregistre le livrable : `state.js register <anchor> deliverable conventions .forge/conventions.md`.
-7. Résume à l'utilisateur ce qui a été détecté et demande confirmation.
+5. **Invoque `project-rules-architect` en mode « socle de contexte »** — voir § Les deux appels. Un seul livrable attendu : `AGENTS.md`, `SESSION_LOG.md`, `DECISIONS.md`, `LEARNINGS.md`, à la racine de l'anchor.
+6. Génère `.forge/conventions.md` depuis `templates/conventions.md.tmpl`. Les sections non encore décidées (ex. state management, E2E framework) sont marquées `À DÉCIDER EN PHASE 4`.
+7. Enregistre le livrable : `state.js register <anchor> deliverable conventions .forge/conventions.md`.
+8. Résume à l'utilisateur ce qui a été détecté et demande confirmation.
 
 **Ne commence jamais à parler du produit avant d'avoir établi ce contexte.** Les choix techniques contraignent les possibilités produit, et inversement.
+
+> **Le socle de contexte ne contient aucune règle.** Entre l'appel 1 et l'appel 2, le projet a une mémoire et pas de jeu de règles : c'est l'état normal, pas un travail à moitié fait. Si l'appel 1 te renvoie un `AGENTS.md` ou un `.opencode/rules/`, le mode scaffold a été court-circuité — il s'arrête avant la sonde de stack.
+
+---
+
+## Les deux appels à `project-rules-architect`
+
+Forge est l'appelant, deux fois, à deux moments fixés. **Jamais l'appelé.**
+
+| Appel | Quand | Tu transmets | Tu récupères |
+|---|---|---|---|
+| **1 — socle de contexte** | Phase 0, étape 5 | le nom du produit, ce que l'utilisateur a déjà dit | les quatre fichiers de mémoire, en place |
+| **2 — jeu de règles** | quand `architecture` est `approved` | la stack décidée, les conventions retenues, le périmètre MVP | `AGENTS.md` + les règles, câblées |
+
+### Appel 1 — le socle de contexte
+
+Invoque `project-rules-architect` et demande **explicitement le mode scaffold** :
+
+> *« Pose la structure de contexte pour ce projet : `AGENTS.md`, `SESSION_LOG.md`,
+> `DECISIONS.md`, `LEARNINGS.md`. Aucune règle, aucun `AGENTS.md`, aucune sonde de
+> stack — la stack n'est pas décidée. »*
+
+Ce qui doit revenir : **quatre fichiers à la racine de l'anchor**, avec leurs
+titres, et rien d'autre. Un retour qui contient des règles est un mauvais retour.
+
+### Appel 2 — le jeu de règles
+
+Au moment où `architecture` passe `approved`, et **pas avant** :
+
+> *« Voici la stack décidée et le périmètre de ce projet. Établis le jeu de règles
+> et câble-le sur l'outil cible. »*
+
+Transmets, depuis `.forge/architecture.md` et `.forge/conventions.md` : la stack
+avec ses versions exactes, les conventions retenues, le périmètre, et les questions
+ouvertes qui ne doivent **pas** devenir des règles.
+
+**Pourquoi pas avant.** Les règles se génèrent *contre* la stack. Les produire
+avant que la stack soit décidée, c'est deviner — et une règle devinée a
+l'autorité d'une règle et la fiabilité d'une supposition, donc l'agent l'applique.
+
+### Ce que Forge ne fait jamais avec ces fichiers
+
+| ❌ Jamais | ✅ À la place |
+|---|---|
+| Écrire dans `AGENTS.md`, `SESSION_LOG.md`, `DECISIONS.md`, `LEARNINGS.md` | Rien. C'est la mémoire de l'agent, tenue par lui. |
+| Créer son propre `AGENTS.md` ou `.opencode/rules/` | Le jeu de règles, produit par l'appel 2. |
+| Copier une règle dans `conventions.md` | Un fait de stack, transmis à l'appel 2. |
+
+Une mémoire écrite par deux writers perd des données **sans laisser de trace** :
+l'un ajoute, l'autre écrase, et le fichier existe toujours et paraît plausible.
+C'est la raison du contrat, pas une précaution de propreté.
+
+État réel de la mémoire : `state.js start` le rapporte dans `project_memory`.
 
 **`conventions.md` est un document vivant.** Il démarre avec ce qui est connu en Phase 0, s'enrichit en Phase 4 (architecture : choix de validation library, state management), et peut être amendé à tout moment. Les plans d'implémentation (Phase 5) y font référence ; toute modification ultérieure de `conventions.md` invalide les plans qui en dépendent — lance `state.js check-stale` après chaque amendement.
 

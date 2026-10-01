@@ -16,6 +16,7 @@ Run first. It is a probe, not a question.
 
 | Signal | Mode |
 |---|---|
+| The caller asked for the context scaffold — a planning skill that has not decided the stack yet | **Context scaffold** — `SKILL.md` § The context scaffold. Short-circuits before the probe. |
 | No `AGENTS.md`, no `CLAUDE.md`, no `.opencode/`, no `.cursor/rules/`, no `.github/copilot-instructions.md`, no `CLAUDE.local.md` | **Bootstrap** — the project is empty of instructions. `SKILL.md` §Bootstrap |
 | Any of the above present, or instruction files present but empty or a stub | **Adoption** — this protocol |
 

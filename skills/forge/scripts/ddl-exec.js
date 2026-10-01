@@ -603,7 +603,7 @@ async function checkExecute(root) {
       // **Ne pas synthétiser une table que le document déclare lui-même.**
       //
       // `execute` créait chaque table du tableau de colonnes avant de jouer le DDL.
-      // C'était un的service du script, utile quand une architecture décrit ses tables en
+      // C'était un service du script, utile quand une architecture décrit ses tables en
       // prose et n'écrit que des contraintes — mais alors `completeness`, qui exige un
       // `CREATE TABLE` dans le DDL, disait que ces tables **n'existaient pas**. Les
       // deux contrôles lisaient le même document et se contredisaient, et le second
