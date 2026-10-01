@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-01
+
 ### feat(forge) — le contrat de projet : rendre vérifiable « le client n'intervient plus »
 
 Le modèle d'une agence : **le client signe un contrat, puis il n'est plus interrompu que
