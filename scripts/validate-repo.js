@@ -21,9 +21,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
+const os = require('os');
 
 const ROOT = path.resolve(__dirname, '..');
 const SKILLS_DIR = path.join(ROOT, 'skills');
+const SCRIPTS_DIR = path.join(SKILLS_DIR, 'forge', 'scripts');
 
 /** Contrat Agent Skills : identifiant portable, dérivé du CHEMIN du fichier. */
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -481,6 +484,94 @@ check('no_stray_characters_in_skill_source', sourceIssues.length === 0, {
   offenders: sourceIssues,
   hint: 'Un caractère hors écriture dans un commentaire ne casse rien, donc rien ne le signale. Marquer la ligne `unicode-scan:ignore` si la citation est voulue.',
   rule: 'La corruption générative se lit sans se voir : le fichier se parse, les tests passent, et seul le mot est faux. Le scan des livrables ne couvre pas la source du skill — donc quelqu\'un doit le couvrir.'
+});
+
+/* ------------------------------------------------------------------ *
+ * Les indices actionnables pointent vers des commandes qui existent
+ * ------------------------------------------------------------------ */
+
+/**
+ * Chaque `next`, `fix` et `hint` d'un controle est une **promesse au lecteur** : quand
+ * un gate refuse, il dit quoi faire. Si la commande citée n'existe pas, le lecteur
+ * tape, obtient `unknown_command`, et **apprend que le skill ne sait pas ce qu'il
+ * demande**.
+ *
+ * Constaté sur un gate écrit dix minutes plus tôt : le message proposait
+ * `state.js contract-migrate`, une commande que j'avais nommée sans jamais l'écrire.
+ * Le gate refusait donc correctement — et envoyait vers le vide.
+ *
+ * **Une erreur de mode d'emploi dans un message de secours est plus grave qu'un défaut
+ * de contrôle** : le contrôle au moins a raison de refuser, et son message le contredit.
+ *
+ * On vérifie deux choses, pas une : que la commande **existe**, et qu'elle
+ * **s'exécute** sans triechouer sur son propre mode d'emploi. Une commande qui refuse
+ * tout est aussi inutile qu'une commande absente.
+ */
+// Le nom de sous-commande est **ancre en fin** (?!\\w) : sans cela, une citation vers
+// une commande qui n'existe pas est tronquee a un prefixe valide, et le controle
+// passe au vert. C'est un motif trop laxiste — le meme defaut que F-48 et F-53,
+// mais dans l'autre sens : la encore un motif trop permissif fait qu'un controle
+// ne voit pas le defaut qu'il existe pour voir.
+const SUB_COMMAND_RE = /node "?\$FORGE\/scripts\/([\w.-]+)\.js"?\s+([\w-]+)(?!\w)((?:\s+[^\s`"']+)*)/g;
+// Signaux d invocation erronee. Un refus metier — pas de state.json, pas de design
+// systeme, pas de slice — n est PAS un defaut d indice : le contexte du temoin n est
+// pas la cible du message.
+const SIGNATURE_INVOCATION = ['unknown_command', 'bad_flag', 'bad_flag_value', 'is not a function', 'Unknown flag'];
+// `bad_kind` est **exclu** : `state.js client` sans drapeau refuse avec `bad_kind`,
+// et c'est un refus metier — la commande existe, elle demande simplement son motif.
+// L inclure declarait sain un indice vers une commande inexistante, parce qu elle
+// partage le mot « bad ». C est le genre de signal trop large qui rend un controle
+// aveugle au point de ne plus rien voir : mieux vaut une liste etroite qu une liste
+// qui catches tout.
+
+const citations = new Map();
+for (const f of listFiles(SCRIPTS_DIR)) {
+  if (!f.endsWith('.js')) continue;
+  const src = fs.readFileSync(f, 'utf-8');
+  for (const m of src.matchAll(SUB_COMMAND_RE)) {
+    const key = m[1] + ' ' + m[2];
+    if (!citations.has(key)) citations.set(key, { script: m[1], sub: m[2], rest: (m[3] || '').trim(), cited_by: new Set() });
+    citations.get(key).cited_by.add(path.relative(ROOT, f));
+  }
+}
+
+// Un projet temoin minimal : conventions approuvees, rien d autre.
+const temoinDir = fs.mkdtempSync(path.join(os.tmpdir(), 'forge-hint-audit-'));
+const temoinState = (...args) => execFileSync('node', [path.join(SCRIPTS_DIR, 'state.js'), ...args], { cwd: temoinDir, stdio: 'pipe' });
+try {
+  temoinState('init', '.', 'Temoin');
+  fs.mkdirSync(path.join(temoinDir, '.forge'), { recursive: true });
+  fs.writeFileSync(path.join(temoinDir, '.forge', 'conventions.md'),
+    '---\ntype: conventions\nstatus: approved\nderived_from: []\n---\n\n## Stack\n\nRien.\n');
+  temoinState('register', '.', 'deliverable', 'conventions', '.forge/conventions.md');
+  temoinState('set-status', '.', 'deliverable', 'conventions', 'approved');
+} catch { /* le projet temoin reste utilisable meme incomplet */ }
+
+const hintIssues = [];
+for (const [key, c] of citations) {
+  const scriptPath = path.join(SCRIPTS_DIR, c.script + '.js');
+  if (!fs.existsSync(scriptPath)) {
+    hintIssues.push({ command: key, problem: 'script absent', cited_by: [...c.cited_by] });
+    continue;
+  }
+  // On n execute que la forme nue `script sous-commande` : les drapeaux d un message
+  // sont ecrits pour un contexte precis, et les executer ici reviendrait a exiger
+  // d un garde-fou qu il fonctionne sur un projet temoin. Ce qui est verifie, c est
+  // que la commande repond — pas qu elle aboutit.
+  let out = '';
+  try {
+    out = execFileSync('node', [scriptPath, c.sub, '.'], { cwd: temoinDir, encoding: 'utf-8', stdio: 'pipe' });
+  } catch (e) { out = (e.stdout || '') + (e.stderr || ''); }
+  const mauvaise = SIGNATURE_INVOCATION.find(sig => out.includes(sig));
+  if (mauvaise) {
+    hintIssues.push({ command: key, problem: 'repond ' + mauvaise, cited_by: [...c.cited_by] });
+  }
+}
+check('hints_point_to_real_commands', hintIssues.length === 0, {
+  checked: citations.size,
+  offenders: hintIssues,
+  hint: 'Un indice qui cite une commande inexistante apprend au lecteur que le skill ne sait pas ce qu il demande — et le refus avait raison.',
+  rule: 'Chaque next/fix/hint est une promesse. Verifier que la commande existe ET qu elle repond : une commande qui refuse tout est aussi inutile qu une commande absente.'
 });
 
 /* ------------------------------------------------------------------ *
