@@ -27,6 +27,33 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### feat(forge) — le point de contact client : quatre champs obligatoires
+
+Le client signe le contrat, puis n'est plus interrompu que pour un **écart** ou une
+**décision qui lui appartient**. Deux motifs, et pas d'autre.
+
+`state.js client` refuse tout point qui n'a pas `what`, `price`, `by` et
+`if_no_answer`. Le troisième est le moins évident et le plus important : **une décision
+sans échéance ne reste pas en attente, elle se décide** — et c'est Forge qui décide, en
+l'écrivant dans le code. Le client perd le contrôle de son produit sans avoir jamais eu
+l'occasion de l'exercer, ce qui est invisible : tout le monde a l'impression qu'il a
+validé.
+
+Le quatrième est technique avant d'être moral. Forge ne peut pas interpréter un silence
+comme une approbation ; un point sans clause « sans réponse » crée donc mécaniquement
+une situation où la seule conduite conforme est de bloquer.
+
+Un point en retard est remonté **par `state.js start`**, en tête des actions, avec la
+clause à appliquer — pas seulement l'identifiant. `--list` n'est jamais lancé
+spontanément : c'est la commande que l'on pense à demander, donc celle que l'on oublie.
+
+**Et un contre-témoin qui ne s'applique pas.** En vérifiant le mien, j'ai découvert que
+ma neutralisation ne remplaçait rien : la chaîne cherchée n'existait pas. Le test passait
+donc toujours, et j'en concluais à tort que la règle était solide. Il faut **compter les
+occurrences trouvées** avant de conclure qu'une mutation a été appliquée.
+
+`213 → 216` tests.
+
 ## [1.11.0] - 2026-10-01
 
 ### feat(forge) — le contrat de projet : rendre vérifiable « le client n'intervient plus »
