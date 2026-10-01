@@ -1532,7 +1532,45 @@ function cmdFastTrack(root, args) {
     }
     ft.attempts[key] = n;
   }
-  if (flags.checkpoint) ft.checkpoint_reached = true;
+  // Le checkpoint n'est plus un booléen nu : il dit **lequel**, et il **prouve** qu'il
+  // a eu lieu.
+  //
+  // ## Pourquoi un booléen ne suffisait pas
+  //
+  // `checkpoint_reached: true` affirmait qu'un humain avait validé, sans dire **quel**
+  // document il avait validé, ni sur quoi. Un gate qui ne dit pas ce qu'il vérifie ne
+  // peut pas être audité : le seul moyen de savoir s'il a bien tourné est de croire
+  // celui qui l'a écrit. C'est un gate auto-certifié — la faute qu'un agent client
+  // commettrait s'il approuvait.
+  //
+  // ## Pourquoi c'est le CONTRAT, et pas une validation de phase
+  //
+  // Le contrat liste déjà les exclusions et les engagements irréversibles — c'est-à-dire
+  // exactement ce qu'un checkpoint de sortie doit vérifier. Le faire approuver deux
+  // fois, une fois par phase et une fois comme checkpoint, serait demander au client
+  // la même signature deux fois, et il donnerait la même réponse aux deux : celle
+  // qu'on lui demande de donner le moins possible.
+  if (flags.checkpoint) {
+    const contract = (state.deliverables || {}).contract;
+    if (!contract || contract.status !== 'approved') {
+      L.fail({
+        error: 'no_contract_to_checkpoint',
+        fast_track: ft.enabled,
+        why: 'Le checkpoint de sortie de Fast Track EST le contrat signé. Sans contrat approuvé, il n\'y a rien qu\'un humain ait validé — seulement une affirmation.',
+        fix: 'node "$FORGE/scripts/state.js" register <anchor> deliverable contract .forge/contract.md — puis set-status … approved'
+      });
+    }
+    // Le hash fige ce qui a été signé. Un contrat modifié après coup ne rend pas ce
+    // checkpoint faux rétroactivement : il rend **le nouveau** contrat non signé, et
+    // c'est `no_content_drift` qui le dira.
+    const abs = L.toAbs(root, contract.path || L.CANONICAL_LAYOUT.contract);
+    ft.checkpoint_reached = true;
+    ft.checkpoint = {
+      at: new Date().toISOString(),
+      on: contract.path || L.CANONICAL_LAYOUT.contract,
+      contract_hash: fs.existsSync(abs) ? L.contentHash(abs) : null
+    };
+  }
 
   L.writeState(root, state);
   L.out({

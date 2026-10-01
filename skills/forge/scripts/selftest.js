@@ -1178,16 +1178,19 @@ test("NEGATIF — le contrat se fait créditer d'une couverture qu'il n'a pas", 
 
   // Volontairement incomplet : pas de bloc « Ce qui ne sera pas livré », l'engagement
   // « Fournisseur identité » est absent du contrat, « Hébergement » est présent mais
-  // sans prix, et la décision client n'a pas de date.
+  // sans prix, et la décision client n'a pas de date. **Les cellules portent des mots**
+  // pour que ces quatre défauts restent les seules causes de l'échec — sinon la
+  // détection de gabarit non rempli masquerait les quatre autres, et le test
+  // continuerait de passer pour la mauvaise raison.
   w('.forge/contract.md', '---\ntype: contract\nstatus: draft\n---\n\n# Contrat\n\n' +
-    '## 1. Ce qui sera livré\n\n| Slice | Résultat |\n|---|---|\n| a | b |\n\n' +
+    '## 1. Ce qui sera livré\n\n| Slice | Résultat |\n|---|---|\n| Réservation | L adhérent réserve un créneau |\n\n' +
     '## 3. Ce qui est irréversible\n\n| Engagement | Choix | Prix / durée |\n|---|---|---|\n' +
     '| Hébergement | OVH | |\n' +
     '| Exécution de fond | Cron interne | 0 € / mois |\n\n' +
     '## 4. Ce que Forge décidera seul\n\n| Décision | Pourquoi |\n|---|---|\n' +
     '| Librairie | réversible |\n\n' +
     '## 5. Ce qui reviendra au client\n\n| Décision | Options |\n|---|---|\n' +
-    '| Paiement | A ou B |\n');
+    '| Paiement | Carte ou virement |\n');
   run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
 
   const res = run('forge-guard.js', ['contract', project]);
@@ -1219,8 +1222,14 @@ test('POSITIF — un contrat complet passe, et le prouve', () => {
   run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
   run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
 
+  // Les cellules portent des **mots**, pas des lettres. La version précédente de ce
+  // fixture utilisait `a | b | c` — c'est-à-dire un formulaire vide qui passait la
+  // porte. Constaté le jour où la porte a appris à regarder le contenu : un test
+  // positif écrit avec des valeurs de remplissage prouve que la porte est verte, pas
+  // qu'elle protège.
   w('.forge/contract.md', '---\ntype: contract\nstatus: approved\n---\n\n# Contrat\n\n' +
-    '## 1. Ce qui sera livré\n\n| Slice | Résultat | Pour qui |\n|---|---|---|\n| a | b | c |\n\n' +
+    '## 1. Ce qui sera livré\n\n| Slice | Résultat | Pour qui |\n|---|---|---|\n' +
+    '| Réservation | Un adhérent réserve un créneau lui-même | L’adhérent |\n\n' +
     '## 2. Ce qui ne sera pas livré\n\n| Exclu | Pourquoi | Réexamen |\n|---|---|---|\n' +
     '| Le mode hors-ligne | hors périmètre | V2 |\n\n' +
     '## 3. Ce qui est irréversible\n\n| Engagement | Choix | Prix / durée | Réversible ? |\n|---|---|---|---|\n' +
@@ -1398,6 +1407,201 @@ test('un point en RETARD remonte en tête, avec la clause à appliquer', () => {
     `un point qui n'est pas échu ne doit pas être signalé en retard : ${JSON.stringify(kj.client_points.overdue)}`);
   assert(!kj.next_actions.some(a => /EN RETARD/.test(a)),
     `une alerte en retard sans point en retard est un faux positif : ${JSON.stringify(kj.next_actions)}`);
+});
+
+test('client-liaison existe, a deux modes, et ne rend JAMAIS de verdict', () => {
+  // Dix agents, tous ingénieurs : ils cherchent ce qui est faux, incomplet ou
+  // non testable. Aucun ne cherche ce qui est **incompréhensible** — et un document
+  // peut être parfaitement correct et illisible pour son destinataire. Aucun des dix
+  // ne le verrait jamais, parce qu'ils lisent tous la langue de son auteur.
+  //
+  // Le second point est le plus grave : un sous-agent qui approuve remplace le
+  // client par un faux client, et le gate devient auto-certifié. C'est la faute la
+  // plus coûteuse possible ici, parce qu'elle ne se voit pas — un gate auto-certifié
+  // est un gate qui a l'air de fonctionner.
+  const p = path.join(SKILL_DIR, 'agents', 'client-liaison.md');
+  assert(fs.existsSync(p), 'agents/client-liaison.md manquant');
+
+  const t = fs.readFileSync(p, 'utf-8');
+
+  // 1. Deux modes, et ce sont les deux bons.
+  const fm = t.match(/^---\n([\s\S]*?)\n---/);
+  assert(fm, 'front matter manquant');
+  const modes = (fm[1].match(/modes:\s*\[([^\]]+)\]/) || [])[1] || '';
+  const liste = modes.split(',').map(m => m.trim()).filter(Boolean).sort();
+  assert(JSON.stringify(liste) === JSON.stringify(['check', 'stress']),
+    `les deux modes doivent être check et stress : ${modes}`);
+
+  // 2. Il ne rend **aucun** verdict d'approbation. Ni PASS, ni `approuvé`, ni
+  //    `valide` — et on vérifie l'absence par des motifs, parce qu'un mot qui
+  //    n'apparaît pas ne se compte pas.
+  for (const interdit of [/\bPASS\b/, /verdict\s*:\s*["']?(PASS|OK|approved)/i, /tu\s+approubes/i, /\bapprouvé\s+ce\s+document/i]) {
+    assert(!interdit.test(t), `un agent client ne rend pas de verdict d'approbation (motif : ${interdit})`);
+  }
+
+  // 3. Il rend des **questions**, pas un jugement. C'est son métier entier.
+  assert(/tu ne rends jamais de verdict/i.test(t), "l\'interdiction de rendre un verdict doit être écrite en toutes lettres");
+  assert(/questions/.test(t), 'la sortie du client-liaison est une liste de questions');
+
+  // 4. Il ne lit ni le code ni l'architecture — c'est sa valeur, pas une limite.
+  assert(/tu ne lis pas le code/i.test(t),
+    "la restriction de périmètre doit être écrite : un document client écrit par quelqu'un qui a lu l architecture contient toujours de l architecture");
+
+  // 5. `readable` est la seule réponse binaire admise, et elle porte la bonne
+  //    question. Le motif tolère le retour à la ligne : la phrase est dans le
+  //    document, coupée par la mise en page, et un test qui exige la phrase d'une
+  //    seule ligne échoue sur de la typographie — ce qui est une façon très
+  //    convaincante de ne rien vérifier du tout.
+  const plat = t.replace(/\s+/g, ' ');
+  assert(/readable/.test(t) && /sans poser de question/.test(plat),
+    "la sortie doit répondre à « ce client peut-il signer sans poser de question »");
+});
+
+test('le checkpoint Fast Track EST le contrat signé — pas un booléen', () => {
+  // `checkpoint_reached: true` affirmait qu'un humain avait validé, sans dire **quel**
+  // document, ni sur quoi. Un gate qui ne dit pas ce qu'il vérifie ne peut pas être
+  // audité : le seul moyen de savoir s'il a tourné est de croire celui qui l'a écrit.
+  // C'est un gate auto-certifié — exactement la faute qu'un agent client commettrait
+  // s'il approuvait.
+  const project = freshProject('fasttrack-checkpoint');
+
+  // Sans contrat approuvé, le checkpoint est REFUSÉ : il n'y a rien qu'un humain
+  // ait validé, seulement une affirmation.
+  run('state.js', ['fast-track', project, '--enable']);
+  const sans = run('state.js', ['fast-track', project, '--checkpoint']);
+  assert(sans.code !== 0, 'sans contrat signé, le checkpoint doit être refusé');
+  const sj = JSON.parse(sans.stdout.slice(0, sans.stdout.lastIndexOf('}') + 1));
+  assert(sj.error === 'no_contract_to_checkpoint', `le refus doit se nommer : ${JSON.stringify(sj)}`);
+  assert(/contrat/.test(sj.why), `le refus doit dire pourquoi : ${sj.why}`);
+
+  // Un contrat en `draft` ne suffit pas : c'est la signature qui compte, pas le fichier.
+  const rel = '.forge/contract.md';
+  fs.mkdirSync(path.join(project, '.forge'), { recursive: true });
+  fs.writeFileSync(path.join(project, rel), '---\ntype: contract\nstatus: draft\n---\n\n# C\n');
+  run('state.js', ['register', project, 'deliverable', 'contract', rel]);
+  const draft = run('state.js', ['fast-track', project, '--checkpoint']);
+  assert(draft.code !== 0, 'un contrat en brouillon ne signe rien');
+
+  // Approuvé : le checkpoint dit **quel** document, **quand**, et **quel hash**.
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+  const ok = run('state.js', ['fast-track', project, '--checkpoint']);
+  assert(ok.code === 0, `avec un contrat approuvé, le checkpoint passe : ${ok.stdout.slice(0, 200)}`);
+  const ft = JSON.parse(ok.stdout.slice(0, ok.stdout.lastIndexOf('}') + 1)).fast_track;
+  assert(ft.checkpoint_reached === true, 'le checkpoint doit être atteint');
+  assert(ft.checkpoint && ft.checkpoint.on === rel, `le checkpoint doit dire QUEL document : ${JSON.stringify(ft.checkpoint)}`);
+  assert(ft.checkpoint.at, 'le checkpoint doit dire QUAND');
+  assert(/^sha256:/.test(ft.checkpoint.contract_hash || ''),
+    `le checkpoint doit porter le hash de ce qui a été signé : ${JSON.stringify(ft.checkpoint)}`);
+
+  // Et le hash ne vaut que s'il **détecte** une modification ultérieure. Sans cette
+  // moitié, le champ pourrait être un décor — écrit une fois, jamais relu.
+  //
+  // **Attention, et c'est la partie qui compte.** La première version de ce test
+  // comparait `state.json` à la sortie de la commande, et **les deux ne peuvent pas
+  // différer** : la commande écrit le fichier qu'on relit ensuite. L'assertion était
+  // donc vraie par construction — un test qui ne peut pas échouer, écrit pour prouver
+  // qu'un champ est vivant. Elle est remplacée ici par la seule comparaison qui peut
+  // échouer : le hash **avant** et **après** modification du contrat.
+  const relire = () => {
+    const s = readState(project);
+    return s.run.fast_track.checkpoint.contract_hash;
+  };
+  const avant = relire();
+  assert(/^sha256:/.test(avant), `le hash doit être un hash, pas un décor : ${avant}`);
+
+  // Le contrat change **après** signature. Le hash enregistré **ne bouge pas** : il
+  // est figé au moment de la signature, et c'est exactement ce qu'il doit faire — le
+  // checkpoint atteste de ce qui a été signé, pas de ce qui est écrit aujourd'hui.
+  //
+  // (Première version de cette assertion : elle exigeait que les deux hash diffèrent.
+  // Elle échouait, et le test avait raison de ne pas être écrit ainsi — l'assertion
+  // portrait du **hash courant** du contrat, pas celui de la signature.)
+  fs.appendFileSync(path.join(project, rel), '\nUne ligne ajoutée après signature.\n');
+  const apres = relire();
+  assert(avant === apres,
+    `le hash du checkpoint est figé à la signature : il ne doit pas bouger quand le fichier change : ${avant} / ${apres}`);
+
+  // C'est `no_content_drift` qui voit la modification — donc les deux contrôles ne
+  // se recouvrent pas : l'un atteste la signature, l'autre signale l'édition.
+  const drift = run('forge-guard.js', ['hash-check', project]);
+  const hc = (drift.json.checks || []).find(c => c.check === 'no_content_drift');
+  assert(hc && hc.status === 'fail',
+    `un contrat modifié hors bande doit être signalé en dérive : ${JSON.stringify(hc)}`);
+});
+
+test('NEGATIF — un contrat aux cinq titres et au contenu VIDE est refusé', () => {
+  // Trouvé en exécutant `client-liaison` sur un vrai contrat, en bac à sable. Le
+  // contrat avait ses cinq blocs, des titres corrects, et rien dedans :
+  // `| Slice | Résultat | | a | b |`. Et `state.json` disait `approved`, avec un hash
+  // enregistré et `checkpoint_reached: true` — **le mécanisme avait signé un
+  // formulaire vide à la place du client, et comptait sa décision comme prise.**
+  //
+  // Le diagnostic de l'agent client est ce qui rend le défaut si facile à manquer :
+  // *les cinq titres sont exactement les cinq questions du client. Un lecteur pressé
+  // voit cinq sections qui lui posent déjà les bonnes questions, et conclut qu'elles
+  // sont traitées.* **La structure rend le document plus dur à critiquer qu'un
+  // document vide** : un fichier sans rien aurait fait demander « est-ce qu'il existe ? ».
+  const project = freshProject('contrat-vide');
+  const rel = '.forge/contract.md';
+  fs.mkdirSync(path.join(project, '.forge'), { recursive: true });
+
+  // Les cinq blocs, les bons titres, les tableaux présents — et un gabarit.
+  fs.writeFileSync(path.join(project, rel), '---\ntype: contract\nstatus: approved\n---\n\n# Contrat\n\n' +
+    '## 1. Ce qui sera livré\n\n| Slice | Résultat |\n|---|---|\n| a | b |\n\n' +
+    '## 2. Ce qui ne sera pas livré\n\n| Exclu | Pourquoi |\n|---|---|\n| x | y |\n\n' +
+    '## 3. Ce qui est irréversible\n\n| Engagement | Choix | Prix / durée | Réversible ? |\n|---|---|---|---|\n' +
+    '| Hébergement | OVH | 7,50 € / mois | Non |\n\n' +
+    '## 4. Ce que Forge décidera seul\n\n| Décision | Pourquoi |\n|---|---|\n| Librairie | réversible |\n\n' +
+    '## 5. Ce qui reviendra au client\n\n| Décision | Options | Échéance | Prix selon l\'option |\n|---|---|---|---|\n' +
+    '| Paiement | A ou B | 2026-11-01 | A : 0 € |\n');
+  run('state.js', ['register', project, 'deliverable', 'contract', rel]);
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+
+  const res = run('forge-guard.js', ['contract', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'contract_complete');
+  assert(check && check.status === 'fail',
+    `un formulaire vide ne peut pas être signé : ${JSON.stringify(check && check.problems)}`);
+  assert(res.code !== 0, 'le refus doit se voir au code de sortie');
+  const why = JSON.stringify(check.problems);
+  assert(/lettre est un gabarit/.test(why),
+    `le gabarit non rempli doit être nommé : ${why}`);
+  // Le formulaire de ce test a des **lignes**, il est donc gâché plutôt qu'inconnu :
+  // c'est le cas le plus trompeur, parce qu'un tableau vide se voit. On vérifie donc
+  // séparément le cas vraiment vide, où le bloc n'a aucune ligne de contenu.
+  const vide = freshProject('contrat-bloc-vide');
+  fs.writeFileSync(path.join(vide, rel), '---\ntype: contract\nstatus: approved\n---\n\n# C\n\n' +
+    '## 1. Ce qui sera livré\n\n| Slice | Résultat |\n|---|---|\n\n' +
+    '## 2. Ce qui ne sera pas livré\n\n| Exclu | Pourquoi |\n|---|---|\n' +
+    '| Le paiement en espèces | hors périmètre |\n\n' +
+    '## 3. Ce qui est irréversible\n\n| Engagement | Choix | Prix / durée | Réversible ? |\n|---|---|---|---|\n' +
+    '| Hébergement | OVH | 7,50 € / mois | Non |\n\n' +
+    '## 4. Ce que Forge décidera seul\n\n| Décision | Pourquoi |\n|---|---|\n| Librairie | réversible |\n\n' +
+    '## 5. Ce qui reviendra au client\n\n| Décision | Options | Échéance | Prix selon l\'option |\n|---|---|---|---|\n' +
+    '| Paiement | Carte ou virement | 2026-11-01 | A : 0 € — B : 0 € |\n');
+  run('state.js', ['register', vide, 'deliverable', 'contract', rel]);
+  run('state.js', ['set-status', vide, 'deliverable', 'contract', 'approved']);
+  const r2 = run('forge-guard.js', ['contract', vide]);
+  const c2 = (r2.json.checks || []).find(c => c.check === 'contract_complete');
+  assert(c2.status === 'fail', 'un bloc sans aucune ligne de contenu doit échouer');
+  assert(/formulaire, pas un contrat/.test(JSON.stringify(c2.problems)),
+    `le bloc vide doit être nommé : ${JSON.stringify(c2.problems)}`);
+
+  // Et le même contrat, **rempli**, passe. Sans cette moitié, on ne sait pas si la
+  // porte refuse tout ou si elle refuse ce document.
+  fs.writeFileSync(path.join(project, rel), '---\ntype: contract\nstatus: approved\n---\n\n# Contrat\n\n' +
+    '## 1. Ce qui sera livré\n\n| Slice | Résultat |\n|---|---|\n' +
+    '| Réservation | Un adhérent réserve un créneau lui-même |\n\n' +
+    '## 2. Ce qui ne sera pas livré\n\n| Exclu | Pourquoi |\n|---|---|\n' +
+    '| Le paiement en espèces | hors périmètre |\n\n' +
+    '## 3. Ce qui est irréversible\n\n| Engagement | Choix | Prix / durée | Réversible ? |\n|---|---|---|---|\n' +
+    '| Hébergement | OVH | 7,50 € / mois | Non |\n\n' +
+    '## 4. Ce que Forge décidera seul\n\n| Décision | Pourquoi |\n|---|---|\n| Librairie | réversible |\n\n' +
+    '## 5. Ce qui reviendra au client\n\n| Décision | Options | Échéance | Prix selon l\'option |\n|---|---|---|---|\n' +
+    '| Paiement | Carte ou virement | 2026-11-01 | A : 0 € — B : 0 € |\n');
+  const ok = run('forge-guard.js', ['contract', project]);
+  const checkOk = (ok.json.checks || []).find(c => c.check === 'contract_complete');
+  assert(checkOk.status === 'pass',
+    `le même contrat, rempli, doit passer : ${JSON.stringify(checkOk.problems)}`);
 });
 
 test('les 5 nouvelles références existent et portent les règles essentielles', () => {

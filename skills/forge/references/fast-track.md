@@ -92,6 +92,36 @@ la cacher derrière un `pass: true`.
 
 **Un seul checkpoint humain** à la sortie de la Phase 5. En portée `phases4-7`, un checkpoint **par jalon** pendant la Phase 7.
 
+### Le checkpoint est le contrat signé — et il ne peut pas être une affirmation
+
+`--checkpoint` exige un **`contract` approuvé**, et enregistre **quel** document a été
+signé, **quand**, et **le hash de son contenu à cet instant** :
+
+```json
+"checkpoint": {
+  "at": "2026-10-01T09:48:20.643Z",
+  "on": ".forge/contract.md",
+  "contract_hash": "sha256:b57fa286cf5d"
+}
+```
+
+**Pourquoi ce n'est plus un booléen.** `checkpoint_reached: true` affirmait qu'un humain
+avait validé, sans dire quel document ni sur quoi. Un gate qui ne dit pas ce qu'il
+vérifie ne peut pas être audité : le seul moyen de savoir s'il a bien tourné est de
+croire celui qui l'a écrit. C'est un gate **auto-certifié** — la faute qu'un agent client
+commettrait s'il approuvait, et qu'on ne peut pas commettre soi-même.
+
+**Pourquoi c'est le contrat, et pas une validation de phase.** Le contrat liste déjà les
+exclusions et les engagements irréversibles — exactement ce qu'un checkpoint de sortie
+doit vérifier. Le faire signer deux fois, une fois par phase et une fois comme
+checkpoint, serait demander au client la même signature deux fois ; il donnerait la même
+réponse aux deux, celle qu'on lui demande de donner le moins possible.
+
+**Le hash est figé, et c'est voulu.** Modifier le contrat après signature ne change pas
+le hash enregistré : le checkpoint atteste de **ce qui a été signé**, pas de ce qui est
+écrit aujourd'hui. C'est `no_content_drift` qui signale l'édition — les deux contrôles ne
+se recouvrent pas.
+
 ### Phase 7 sous Fast Track
 
 L'implémentation n'est pas validée par des agents qui relisent le code. Elle est validée par **des portes exécutables**, parce qu'un agent qui relit du code Million de lignes ne prouve rien, et qu'une porte qui sort 0 si.
@@ -317,4 +347,4 @@ Ces entrées alimentent `audit-report.js`, qui calcule le taux de `REVISE` par p
 - [ ] `forge-guard.js all` ne signale rien.
 - [ ] Tous les artefacts sont `approved` dans `state.json` **et** dans leur front matter.
 - [ ] Le checkpoint humain a été atteint et les validations journalisées.
-- [ ] `run.fast_track.checkpoint_reached` est vrai.
+- [ ] `run.fast_track.checkpoint_reached` est vrai, **et `run.fast_track.checkpoint` porte le contrat, sa date et son hash** — un booléen seul n'atteste de rien.

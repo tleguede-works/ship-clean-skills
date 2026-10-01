@@ -248,9 +248,30 @@ But : établir le contexte du projet et générer la base des conventions avant 
 5. **Invoque `project-rules-architect` en mode « socle de contexte »** — voir § Les deux appels. Un seul livrable attendu : `AGENTS.md`, `SESSION_LOG.md`, `DECISIONS.md`, `LEARNINGS.md`, à la racine de l'anchor.
 6. Génère `.forge/conventions.md` depuis `templates/conventions.md.tmpl`. Les sections non encore décidées (ex. state management, E2E framework) sont marquées `À DÉCIDER EN PHASE 4`.
 7. Enregistre le livrable : `state.js register <anchor> deliverable conventions .forge/conventions.md`.
-8. Résume à l'utilisateur ce qui a été détecté et demande confirmation.
+8. Génère `.forge/contract.md` depuis `templates/contract.md.tmpl`, **passe-le dans `client-liaison --check`**, corrige ce qu'il signale, et fais-le **signer** :
+   ```bash
+   node "$FORGE/scripts/state.js" register <anchor> deliverable contract .forge/contract.md
+   node "$FORGE/scripts/state.js" set-status <anchor> deliverable contract approved
+   ```
+9. Résume à l'utilisateur ce qui a été détecté et demande confirmation.
 
 **Ne commence jamais à parler du produit avant d'avoir établi ce contexte.** Les choix techniques contraignent les possibilités produit, et inversement.
+
+### Après la signature, vous n'êtes plus interruptu que pour deux choses
+
+C'est l'engagement du contrat, et il n'est pas symbolique : **tout ce qui engage un
+achat est décidé avant la signature**, ou le contrat est refusé par `forge-guard
+contract`. Donc ensuite :
+
+| Motif | Comment |
+|---|---|
+| un **écart** au contrat | `state.js client --kind=ecart …` |
+| une **décision** qui vous appartient | `state.js client --kind=decision …` |
+
+Les quatre champs sont obligatoires — `what`, `price`, `by`, `if_no_answer` — et la
+commande **refuse** un point qui n'en a pas. Une décision sans échéance ne reste pas en
+attente : elle se décide, et c'est Forge qui décide. Passé la date, Forge applique la
+clause « sans réponse » et vous le signale au bilan suivant.
 
 > **Le socle de contexte ne contient aucune règle.** Entre l'appel 1 et l'appel 2, le projet a une mémoire et pas de jeu de règles : c'est l'état normal, pas un travail à moitié fait. Si l'appel 1 te renvoie un `AGENTS.md` ou un `.opencode/rules/`, le mode scaffold a été court-circuité — il s'arrête avant la sonde de stack.
 
@@ -925,8 +946,34 @@ Chaque agent est un **contrat** : un rôle, une liste d'inputs, une procédure, 
 | `premise-challenger` | 1–4 | **challenge** | **Met en cause les hypothèses de l'utilisateur** — idée de départ, fonctionnalités demandées, MVP |
 | `scenario-tester` | 6–8 | produce, review | Tests par scénario métier : cycles de vie, horloge, invariants |
 | `forge-implementer` | 7, 8 | produce | Implémentation, TDD, validation |
+| `client-liaison` | 0, 4, 5, 7, 8 | **check, stress** | **Ce que le client ne comprendra pas** — questions sans réponse, pas de verdict |
 
 `premise-challenger` est le seul agent qui ne relit pas les documents de Forge : il relit **ce que vous voulez**, et il dit quand une idée est mauvaise, déjà résolue, disproportionnée ou mal placée. Il est déclenché à la fin des Phases 1, 2 et 3, et **systématiquement** quand vous ajoutez une fonctionnalité en cours de route. Un seul verdict `critical` bloque jusqu'à votre réponse.
+
+### `client-liaison` — le seul agent qui parle au client
+
+Les dix autres sont des ingénieurs : ils cherchent ce qui est **faux**, **incomplet** ou
+**non testable**. `client-liaison` cherche ce qui est **incompréhensible**, et c'est un
+métier distinct. Un document peut être parfaitement correct et illisible pour son
+destinataire — et aucun des dix autres ne le verra jamais, parce qu'ils lisent tous la
+langue de son auteur.
+
+| Mode | Question | Sortie |
+|---|---|---|
+| `check` | Ce client peut-il signer sans poser de question ? | les questions auxquelles le document ne répond pas |
+| `stress` | Que dirait un client informé, et que Forge n'a pas écrit ? | l'objection principale, et le prix du silence |
+
+**Il ne rend jamais de verdict.** Un sous-agent qui approuve remplace le client par un
+faux client, et le gate devient auto-certifié — la faute la plus coûteuse possible ici,
+parce qu'elle ne se voit pas. Il rend des **questions** ; le client décide.
+
+Il ne lit ni le code, ni les plans, ni l'architecture. Cette restriction n'est pas une
+précaution : c'est son métier. Un document client écrit par quelqu'un qui a lu
+l'architecture contient **toujours** de l'architecture. Sa valeur est entièrement dans le
+fait qu'il ne l'a pas lue.
+
+À utiliser sur le **contrat** (Phase 0), sur chaque **bilan d'écart**, et sur le point
+d'étape qui précède l'implémentation.
 
 **Sans sous-agents disponibles** : charge les instructions de l'agent pertinent pour la phase en cours et applique la rotation de posture. Fast Track n'est alors **pas disponible** — c'est le mode Guided qui prend le relais.
 
