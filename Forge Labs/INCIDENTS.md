@@ -2391,3 +2391,115 @@ correctif neutralisé**. Il asserait `status === 'pass'`, un statut qui est vrai
 Phase 4 **quels que soient** les lignes trouvées. Un test qui passe avec le correctif
 annulé ne prouve pas le correctif — il prouve qu'il tourne. Corrigé, il regarde
 `expected` et `offenders`, et il échoue bien quand le correctif est enlevé.
+
+---
+
+## F-50 — les conditions d'entrée de Fast Track n'existaient que dans la prose
+
+Deuxième tentative de FastTrack, sur Onduleur dont la Phase 4 est entièrement verte. Le
+mode refuse de démarrer : 4 conditions sur 8 manquent (`conventions` et `design_system`
+en `draft`, **9 écrans sur 9** en `draft`, `benchmarks` jamais écrit).
+
+**Le refus était le mien.** Le skill n'avait rien à dire.
+
+### Le défaut
+
+`fast-track.md` § Conditions d'entrée pose une **table de huit conditions**, puis écrit :
+
+> *Vérification d'un coup :*
+> ```bash
+> node "$FORGE/scripts/state.js" start <anchor>
+> node "$FORGE/scripts/forge-guard.js" all <anchor>
+> node "$FORGE/scripts/consistency-check.js" all <anchor>
+> ```
+> *Si une condition échoue, Fast Track **refuse de démarrer** et dit laquelle.*
+
+**Aucune des trois commandes ne teste une seule des huit.** Elles répondent à une
+autre question : *le projet est-il sain ?* — pas *le projet est-il prêt pour Fast
+Track ?*. Le dossier ci-dessus passe les trois : il est parfaitement sain, et ses
+écrans sont tous en brouillon. `run.fast_track` n'existait que comme `null` dans
+l'initialisation de `state.json`.
+
+C'est la forme de défaut la plus simple et la plus coûteuse du dossier : **une porte
+écrite en prose, que rien n'exécute.** Elle ne se voit pas parce qu'un mode activé à la
+main « fonctionne » — jusqu'au jour où il valide quinze plans contre des livrables en
+`draft`, ce que rien n'interdit et rien ne signale.
+
+Et un défaut jumeau, plus bas dans le même fichier : la section « Reprise » documentait
+une forme (`entered_at`, `current_artifact`, `attempts`, `checkpoint_reached`) et
+promettait *« une invocation interrompue reprend exactement où elle s'était arrêtée »*.
+Le schéma l'acceptait, aucun écritur ne le produisait. **Une section de référence qui
+décrit un état que rien ne peut produire est la même porte absente, en plus discret.**
+
+### Ce que le correctif refuse de faire
+
+**Il n'est pas dans `forge-guard all`.** `benchmarks` est un livrable de phase 3 et
+`test_plan` de phase 6 : dans `all`, la porte ferait échouer tout projet ordinaire à la
+phase 4. Mais un contrôle qu'il faut demander est un contrôle qu'on peut oublier — le
+même piège en miroir. D'où : **quand on le demande, il échoue et nomme chaque
+condition**, et `state.js status` affiche si le mode est actif.
+
+**`state.js fast-track --enable` n'entre pas dans le mode, il l'enregistre.** Les deux
+scripts ne doivent pas se connaître, donc `--enable` n'appelle pas la porte — et alors
+il **renvoie à la porte dans sa sortie**, parce qu'un `--enable` qui passe pendant que
+la porte refuse est un contournement plus commode que la porte, ce qui est pire que
+l'absence de porte.
+
+**`--attempt` s'arrête à 2** dans le code, pas dans la discipline de l'agent. Un
+compteur qui ne s'arrête pas est un compteur qui ne sert à rien. Et `--disable`
+n'exige **pas** de raison : le mode doit pouvoir être interrompu sans justification,
+et une commande qui exige une raison pour sortir mais pas pour entrer n'est pas un
+mode qu'on peut quitter.
+
+### La limite, nommée dans la sortie plutôt que cachée
+
+`test-strategies.md` porte la case « le domaine étant temporel, il existe au moins un
+scénario de cycle complet ». Une case de checklist n'est pas un fait lisible par un
+script : c'est une **affirmation de l'agent qui l'a cochée**. Le contrôle vérifie ce qui
+est vérifiable — le `test_plan` existe, il est approuvé, le document **déclare** un
+scénario de cycle — et il écrit le mot **« déclare »** dans sa sortie, avec la limite :
+présence vérifiée, justesse non. Un scénario écrit pour la mauvaise propriété passe
+ici, et la sortie le dit.
+
+### Un bug de plus dans le correctif, trouvé par le contre-témoin
+
+`capture()` lisait la **valeur de retour** de `checkPaths` et `checkStrays`. Or ces deux
+fonctions ne `return`ent rien : elles appellent `record()`. La lecture renvoyait
+`undefined`, donc « échec », donc Fast Track refusait un projet sain en annonçant
+*« aucun livrable égaré »* alors qu'il n'y en a aucun.
+
+Un contrôle qui lit un canal que la fonction ne remplit pas ne contrôle rien : il
+signale le vide comme un défaut. Et un défaut annoncé à tort est **plus** dangereux
+qu'un défaut manqué, parce qu'un défaut annoncé à tort s'apprend, et que le vrai défaut
+passe ensuite pour du bruit.
+
+### Contre-témoins
+
+Six.
+
+- **Négatif** : `conventions` et `design_system` en `draft` → refus, **les deux
+  conditions nommées**, et **code de sortie non nul** — parce qu'un refus qu'on ne voit
+  qu'à la lecture d'un JSON est un refus qu'un script peut ignorer.
+- **Positif** : un dossier prêt passe, en `plans` et en `milestone`, **et le prouve**.
+  Un contrôle qui ne sait que refuser ne prouve pas qu'une porte est correcte, il prouve
+  qu'elle existe.
+- **Non-vacuité** : *« tous les écrans sont approved »* est **faux sur zéro écran**. Un
+  projet sans écran passe la phrase, parce qu'elle est vraie sur l'ensemble vide — et
+  c'est un projet où Fast Track n'a rien à valider. Même famille que `token-classes` : un
+  contrôle qui lit un ensemble vide lit le vide, pas le projet.
+- **Portée** : `phases4-7` exige le `test_plan` et compte **huit** conditions, `plans` en
+  compte sept. Une portée qui l'exigerait en `plans` casserait tout le monde ; une qui
+  ne l'exigerait pas en `phases4-7` laisserait implémenter sans stratégie de test.
+- **Reprise** : la position survit, le compteur **reste à 2 après le refus**, la sortie
+  n'exige pas de justification.
+- **Séparation** : `--enable` enregistre et **renvoie à la porte** ; la porte refuse le
+  dossier vide en nommant au moins cinq conditions.
+
+Et le contre-témoin du contre-témoin, une troisième fois dans ce dossier : la première
+neutralisation (`results.pass = true`) **ne cassait rien**, parce que `main()` recalcule
+le code de sortie depuis `results.checks` et que la ligne en question était donc
+inoffensive. Neutraliser la porte, ce n'est pas toucher à la première ligne qui y
+ressemble : c'est toucher à celle qui décide. Vérifié en neutralisant
+`record('fast_track_ready', …)`, qui casse alors **trois** tests.
+
+208 tests.
