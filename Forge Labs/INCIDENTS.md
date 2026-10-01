@@ -2955,3 +2955,63 @@ de test contient un caractère parasite *pour la raison précise qu'on le détec
 ignorer est juste ; les ignorer **trop largement** ne l'est pas. Le marqueur est donc
 restreint à des formulations précises — et cette restriction est elle-même un motif trop
 étroit qui se signalerait au premier faux positif.
+
+---
+
+## F-65 — un gate qui envoie vers une commande inexistante
+
+Le plan était terminé. J'ai fait l'audit que je n'avais jamais fait : **est-ce que chaque
+`next`, `fix` et `hint` cite une commande qui existe ?**
+
+Un `contract-migrate` sortait d'un gate écrit dix minutes plus tôt. La commande
+n'existait pas — je l'avais **nommée sans jamais l'écrire**. Le gate refusait donc
+correctement, et son message envoyait vers le vide.
+
+> **Une erreur de mode d'emploi dans un message de secours est plus grave qu'un défaut
+> de contrôle.** Le contrôle au moins a raison de refuser ; son message le contredit.
+> Et l الهد Doctr — la seconde, lheatmap n'apporte rien — le lecteur tape, obtient
+> `unknown_command`, et **apprend que le skill ne sait pas ce qu'il demande**.
+
+Écarté en une ligne, et remplacé par une citation vérifiée.
+
+## F-66 — l'audit que j'ai écrit ne mordait pas, et je l'ai cru deux fois
+
+Le contrôle permanent (`hints_point_to_real_commands`) exécute chaque citation dans un
+projet témoin et exige qu'elle **réponde**. La première version ne faisait que vérifier
+l'existence du script — insuffisant : une commande qui refuse tout est aussi inutile
+qu'une commande absente.
+
+Et j'ai annoncé deux fois que ce contre-témoin « ne mordait pas », en conclut que mon
+regex était trop laxiste, et **corrigé le motif**. Les deux fois, j'avais tort, et la
+cause était la même dans les deux cas :
+
+> **Le `"$FORGE"` de ma commande shell était mangé par le shell**, donc la chaîne que
+> Python cherchait n'existait pas dans le fichier — et `str.count` renvoyait **zéro**.
+
+Concrètement : j'ai tenté de casser `node "$FORGE/scripts/forge-guard.js" sync`, une
+citation **qui n'existe pas dans `forge-guard.js`** — le fichier n'en cite que deux, et
+elles portent sur `state.js`. Mes deux « contre-témoins » n'avaient rien muté du tout,
+et le contrôle était probablement correct depuis le début.
+
+Le vrai signal que j'ai laissé passer : `occurrences reelles: 0`, affiché par le script
+lui-même, et que j'ai lu sans le traiter.
+
+**Compter les mutations appliquées n'est pas une précaution, c'est la seule chose qui
+distingue un contre-témoin d'un rituel.** C'est la troisième fois de ce dossier que la
+discipline se retourne contre moi — et la deuxième fois en moins d'une heure.
+
+Le contre-témoin correct, sur une citation réelle (`state.js register` →
+`state.js registr`), mord : `unknown_command`, avec le fichier citant nommé.
+
+## Un signal trop large, et ce qu'il apprenait
+
+`bad_kind` figurait dans la liste des erreurs d'invocation. Il ne l'est pas :
+`state.js client` **sans drapeau** refuse avec `bad_kind`, et c'est un refus métier — la
+commande existe, elle demande son motif. L'inclure déclarait sain un indice vers une
+commande inexistante, **parce qu'elle partage le mot « bad »**.
+
+Même famille que F-48 et F-53, mais dans l'autre sens : un motif trop permissif fait
+qu'un contrôle ne voit pas le défaut qu'il existe pour voir. Mieux vaut une liste étroite
+qu'une liste qui attrape tout.
+
+220 tests, inchangés — le contrôle vit dans `validate-repo`, hors du harnais `selftest`.
