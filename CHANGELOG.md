@@ -27,6 +27,44 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### feat(forge) — l'agent client, et le checkpoint qui devient le contrat signé
+
+**`client-liaison`** est le onzième agent, et le seul qui ne soit pas ingénieur. Les dix
+autres cherchent ce qui est **faux**, **incomplet** ou **non testable** ; celui-ci
+cherche ce qui est **incompréhensible**. Deux modes : `check` (ce client peut-il signer
+sans poser de question ?) et `stress` (que dirait un client informé, et que Forge n'a pas
+écrit ?). Il ne rend **jamais** de verdict — un sous-agent qui approuve remplace le
+client par un faux client, et le gate devient auto-certifié. Il ne lit ni le code ni
+l'architecture, et cette restriction est son métier.
+
+**Le checkpoint de sortie de Fast Track est le contrat signé.** `checkpoint_reached:
+true` affirmait qu'un humain avait validé, sans dire quel document : un gate qui ne dit
+pas ce qu'il vérifie ne peut pas être audité. `--checkpoint` exige désormais un contrat
+approuvé et enregistre le document, la date et le hash de ce qui a été signé. Le hash
+est figé à dessein ; c'est `no_content_drift` qui signale l'édition.
+
+### fix(forge) — un formulaire vide a été signé à la place du client
+
+Trouvé en exécutant `client-liaison` sur un vrai contrat, en bac à sable. Le contrat
+avait ses cinq blocs, des titres corrects, et rien dedans — et `state.json` disait
+`approved`, avec un hash enregistré et `checkpoint_reached: true`.
+
+Le diagnostic est ce qui rend le défaut si facile à manquer : *les cinq titres sont
+exactement les cinq questions du client. Un lecteur pressé voit cinq sections qui lui
+posent déjà les bonnes questions, et conclut qu'elles sont traitées.* **La structure rend
+le document plus difficile à critiquer qu'un document vide** — un fichier sans rien aurait
+fait demander « est-ce qu'il existe ? ».
+
+`contract_complete` vérifie donc le **contenu** : un bloc sans ligne de contenu est un
+défaut, et une valeur d'une lettre en est un autre. Vérifier la présence d'un formulaire
+sans vérifier son contenu n'est pas une porte.
+
+**Et les deux fixtures du test de contrat utilisaient `a | b | c`** — c'est-à-dire un
+formulaire vide qui passait la porte. Un test positif écrit avec des valeurs de
+remplissage prouve que la porte est verte, pas qu'elle protège.
+
+`216 → 219` tests.
+
 ## [1.12.0] - 2026-10-01
 
 ### feat(forge) — le point de contact client : quatre champs obligatoires
