@@ -27,6 +27,70 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### feat(forge) — deux appels à project-rules-architect, et un mode « socle de contexte »
+
+La synergie tient en deux appels. **Forge est l'appelant deux fois, jamais l'appelé.**
+
+| Appel | Quand | Forge récupère |
+|---|---|---|
+| socle de contexte | Phase 0, étape 5 | `AGENTS.md`, `SESSION_LOG.md`, `DECISIONS.md`, `LEARNINGS.md` |
+| jeu de règles | `architecture` `approved` | `AGENTS.md` + les règles, câblées |
+
+Le socle ne produit **aucune règle** : entre les deux appels, le projet a une mémoire
+et pas de règles, ce qui est l'état normal et non un travail à moitié fait. Les règles
+se génèrent *contre* la stack, donc avant que la stack soit décidée ce serait deviner —
+et une règle devinée a l'autorité d'une règle et la fiabilité d'une supposition.
+
+`project-rules-architect` gagne un **quatrième mode**, *context scaffold*, qui
+court-circuite avant la sonde de stack et retient des **questions** plutôt que des
+décisions.
+
+### fix(forge) — F-51 : la convention de casse de la mémoire, cassée puis rétablie
+
+`readSiblingMemory` a répondu `present: false` pendant toute la vie du skill. J'ai
+conclu qu'il visait des fichiers impossibles et abaissé ses quatre noms en
+minuscules ; les fichiers étaient déjà en **majuscules**, convention de PRA depuis le
+début. Un `AGENTS.md` et un `agent.md` ne sont pas le même fichier sur un système
+sensible à la casse : le lecteur cherchait un nom que personne n'écrirait, et
+répondait « pas de mémoire » sur un projet qui en avait une — la pire des réponses,
+parce qu'elle est fausse **sans être suspecte**.
+
+Le test de frontière aurait **passé** : il asserte que le nom est cité, pas qu'il
+est écrit. La casse est maintenant une assertion.
+
+### fix(forge) — F-52 : `AGENTS.md` décrivait les trois fichiers sans dire quand y écrire
+
+Le tableau portait une ligne par fichier avec ce qu'il contient ; manquait **ce qui
+fait qu'on y écrive**. Le manque est silencieux, parce qu'un tableau avec description
+et sans déclencheur **ressemble à un tableau complet**. Résultat : une mémoire
+créée, structurée, indexée, et **définitivement vide** — pire que pas de mémoire,
+parce que cela ressemble à du progrès.
+
+`state.js start` expose `triggers_named` et `memory_described_not_triggered`. Le
+compteur ne compte pas les **mentions** (l'index décrit déjà les trois fichiers, donc
+« 3 » est compatible avec un scaffold sans aucun déclencheur) mais la
+**co-occurrence** d'un nom de fichier et d'un cue de condition. Contrôle de présence,
+et la sortie le dit.
+
+### fix(forge) — F-53 : deux motifs plus étroits que ce que le document écrit
+
+`sessions` comptait un titre de niveau 2 alors que le journal écrit ses entrées en
+niveau 3 : **0 sur deux entrées réelles**, le jour du premier événement.
+`questions_open` et `adrs_open` lisaient le même champ du même fichier avec **deux
+motifs** : **0 sur dix questions ouvertes**. F-48 qui revient — un prédicat dupliqué
+diverge, c'est tout ce qu'il fait. Un seul motif, ancré sur la valeur, partagé par les
+deux usages.
+
+### docs — le contrat de frontière était faux
+
+`skill-boundaries.md` promettait que Forge lit la mémoire du projet, que PRA possède
+les trois fichiers, et que les constats de Forge sont promus en règles de PRA.
+**Rien de tout cela ne se produisait**, et le test affirmait que le document disait la
+bonne chose, pas que la frontière tenait. Remplacé par le contrat réel. La preuve
+est un projet exécuté, pas une assertion.
+
+`208 → 210` tests.
+
 ## [1.9.8] - 2026-10-01
 
 ### fix(forge) — Fast Track avait une table de huit conditions et aucun code derrière
