@@ -295,8 +295,8 @@ dont on ne sait plus ce qu'elle contient.
 - **Le défaut était dans le skill, pas dans le projet** : je n'avais pas
   « oublié » de respecter l'ordre, personne ne pouvait le constater.
 - **Correctif** : `PHASE_ARTIFACT_OWNERS` (qui possède quoi), refus de
-  `state.js register` (la source, seul endroit non contournable), et
-  `forge-guard no_premature_artifacts` (la copie, pour ce qui est déjà écrit).
+  `state.js register` ( source, seul endroit non contournable), et
+  `forge-guard no_premature_artifacts` ( copie, pour ce qui est déjà écrit).
 - **Deux pièges rencontrés en écrivant le contrôle**, tous deux donnaient
   l'impression que la règle fonctionnait :
   1. la table possédait `deliverables`/`screens`/… (noms de seaux de
@@ -832,7 +832,7 @@ commanditaire a refusé de supprimer les artefacts. Il n'a pas été contourné.
 
 Et surtout : **ils ont convergé**, depuis deux angles opposés, sur les mêmes
 défauts. C'est la convergence la plus forte du dossier — la deuxième fois
-seulement (la première était le défaut du cycle de vie de version, trouvé
+seulement ( première était le défaut du cycle de vie de version, trouvé
 indépendamment par les deux).
 
 #### Défaut 1 — la garde du cycle de vie ne lit jamais `OLD.status`
@@ -1649,7 +1649,7 @@ bout : `snapshot verify` puis exécution de la suite **dans l'archive extraite**
 ### 1. Le test du refus par tag ne testait rien
 
 `release.js bump` refuse désormais de promouvoir une version dont le tag existe
-(la section publiée serait écrasée). Le test de ce refus :
+( section publiée serait écrasée). Le test de ce refus :
 
 ```js
 git('init', '-q');
@@ -2622,3 +2622,238 @@ reste. Le périmètre était la seule vraie limite.
 et personne ne l'a vu pendant un an. C'est la mesure la plus simple de ce que
 produit la corruption générative : elle ne casse rien, elle se lit, et elle fait
 sourire.
+
+---
+
+## F-54 — le contrat de projet : rendre vérifiable la promesse « le client n'intervient plus »
+
+Le client veut travailler principalement avec Forge, sans se demander quand appeler
+l'autre skill, et sans être ennuyé. Le modèle retenu est celui d'une agence : **il
+signe un contrat, puis il n'est plus interrompu que pour un écart ou pour une
+décision qui lui appartient.**
+
+### Le trou que le skill avait déjà tracé
+
+« Après la signature, le client n'intervient plus » n'est vrai que si **tout ce qui
+engage un achat est décidé avant**. Or le skill trace déjà cette frontière :
+`conventions.md` distingue `À DÉCIDER AVANT LA PHASE 1` — « le fournisseur d'identité,
+le mode d'hébergement, l'achat d'un service, l'exécution de fond » — pour qui
+`forge-guard` **échoue déjà** tant que la case est ouverte.
+
+La phrase du gabarit est exactement celle du client : *« la réponse change ce qu'on
+achète et ce qu'on héberge — pas seulement le code. »* Ces décisions ne sont pas
+délégables : un sous-agent ne choisit pas un hébergeur, il n'achète pas.
+
+Et la stack se décide en **Phase 4**, avec un coût mensuel. D'où le choix retenu :
+**Forge choisit, et le contrat annonce le prix avant que la stack soit choisie.**
+
+### Ce que le lot 1 apporte
+
+`.forge/contract.md`, livrable de `0_bootstrap`, `approved` = signé. Cinq blocs :
+livré · **non livré** · irréversible · ce que Forge décidera seul · ce qui revient au
+client.
+
+La porte est `contract_complete`, dans `all` et dans `state`. Elle vérifie :
+
+| Vérification | Pourquoi elle existe |
+|---|---|
+| les cinq blocs présents | un contrat sans le bloc des **exclusions** ne promet rien de négatif, donc rien à violer |
+| chaque genre d'engagement de `conventions.md` couvert | c'est **la** propriété qui rend la promesse vraie |
+| chaque engagement porte un **prix ou une durée** | un engagement sans prix est un engagement **subi**, pas annoncé |
+| chaque décision client porte une **échéance** | une décision sans date est prise par le plus proche, et le plus proche c'est Forge |
+
+**`warn` si le contrat est absent.** Les quatre projets existants n'en ont pas, et
+les faire échouer casserait des projets verts pour un livrable qu'ils n'ont jamais eu
+l'occasion de produire. L'absence est **nommée**, donc l'oubli reste visible.
+
+### Un défaut trouvé par le témoin positif, pas par le négatif
+
+La couverture se faisait d'abord par **comparaison de chaînes** : le libellé de la
+case de `conventions.md` devait apparaître tel quel dans le contrat. Le témoin
+**positif** a cassé — `conventions.md` écrit « Fournisseur identité », le contrat
+écrit « Identité ». Le même engagement, deux formulations, et la porte signalait une
+absence.
+
+Il n'y a pas de largeur de motif qui convienne ici : les deux documents ont le droit
+de nommer les choses différemment. Le bon correctif est de comparer **le genre de
+l'engagement** — hébergement, identité, achat, fond, données — qui est une propriété
+du fait et non de sa formulation.
+
+### Et la répartition des contre-témoins, qui n'est pas celle qu'on attend
+
+Neutraliser la classification **ne casse pas** le test négatif : il échoue pour
+quatre raisons, et en neutralisant une couverture il en reste trois. Un test négatif
+multi-causes **ne peut pas isoler une régression** — c'est une limite structurelle, pas
+un oubli.
+
+Le témoin qui mord est le **positif**, et c'est normal : un test qui affirme `pass`
+n'a qu'une raison de passer, donc le casser casse le test. Un test qui affirme `fail`
+en a quatre, donc il survit à la plupart des régressions.
+
+C'est la cinquième fois de ce dossier qu'un contre-témoin se révèle ne rien prouver,
+et la première fois que la réponse est « le témoin négatif ne peut pas, par
+construction ». Il a fallu l'écrire **dans** le test positif.
+
+207 → 213 tests.
+
+---
+
+## F-55 — le point de contact client : quatre champs obligatoires, dont un seul est obvious
+
+Le client signe le contrat, puis n'est plus interrompu que pour un **écart** ou une
+**décision qui lui appartient**. Deux motifs, et pas d'autre : « j'aimerais qu'on
+regarde un truc » n'est ni l'un ni l'autre, c'est une conversation, et elle n'a pas à
+être journalisée.
+
+`state.js client` enregistre ces points. Et **refuse** ceux qui n'ont pas les quatre
+champs :
+
+| Champ | Son absence produit |
+|---|---|
+| `what` | une question sans objet, à laquelle on ne peut pas répondre |
+| `price` | le client ne peut **pas** choisir : il n'a pas les éléments |
+| `by` | la décision est prise par le plus proche, et le plus proche c'est Forge |
+| `if_no_answer` | un silence, et `SKILL.md` § 35 interdit d'y lire une approbation |
+
+Le troisième est le plus important et le moins évident. **Une décision sans échéance
+ne reste pas en attente : elle se décide**, et c'est Forge qui décide, en l'écrivant
+dans le code. Le client perd alors le contrôle de son produit sans avoir jamais eu
+l'occasion de l'exercer — ce qui est la pire forme de l'échec, parce qu'elle est
+invisible : tout le monde a l'impression que le client a validé.
+
+Le quatrième est technique avant d'être moral. Forge ne peut pas interpréter un
+silence comme une approbation ; donc un point sans clause « sans réponse » **crée
+mécaniquement** une situation où la seule conduite conforme est de bloquer. Écrire la
+clause à l'avance, c'est éviter de bloquer six mois plus tard.
+
+## Le point en retard ne peut pas vivre dans une commande optionnelle
+
+`--list` n'est jamais lancé spontanément : c'est la commande que l'on pense à
+demander, donc celle que l'on oublie. Un point en retard qui n'apparaît que dans
+`--list` est un point en retard que personne ne voit, et l'échéance n'a servi à rien.
+
+`state.js start` **construit** donc les points ouverts, marque ceux dont la date est
+passée, et met l'action **en tête** de `next_actions` avec la **clause à appliquer** —
+pas seulement l'identifiant. Nommer `C-001` oblige à relire un fichier ; or au moment
+où le point est en retard, personne ne relit, on applique.
+
+## F-56 — deux contre-témoins qui ne mordaient pas, dont un qui n'a jamais rien fait
+
+Trois défauts trouvés en vérifiant les propres contre-témoins, et le troisième est le
+plus instructif de la série.
+
+**Le `next` ne citait pas la clause.** Il nommait l'identifiant et demandait de relire
+le fichier. C'est un défaut réel, trouvé par le test.
+
+**Mon test de découpage d'arguments était faux.** Je retirais un drapeau d'une liste
+avec `splice` en supposant des paires `--drapeau valeur` ; le format réel est
+`--drapeau=valeur`, donc je retirais le mauvais voisin et le test échouait sur un
+découpage, pas sur la règle. Un test qui échoue pour la mauvaise raison est pire
+qu'un test qui n'existe pas : il donne l'impression que la règle est vérifiée.
+
+**Et mon contre-témoin du contre-témoin n'a jamais rien fait.** Deux fois de suite j'ai
+annoncé neutraliser la détection de retard, et le test passait toujours. En cherchant
+pourquoi : je remplaçais `overdue: ouverts.filter(...)` alors que la ligne s'appelle
+`const overdue = ...`. **La chaîne ne correspondait pas, donc la neutralisation n'a
+jamais eu lieu, et le « contre-témoin » ne testait rien du tout.**
+
+Un contre-témoin qui ne s'applique pas est pire que pas de contre-témoin : il
+laisse croire que la discipline a été respectée. Il faut **compter les occurrences
+trouvées** avant de conclure qu'une mutation a été appliquée — c'est une ligne de code,
+et elle a sauvé le test.
+
+Une fois neutralisé correctement, le message d'échec a été le meilleur diagnostic de
+la session : `items[0].overdue: true` pendant que `overdue: []`. **Deux réponses au
+même fait, contradictoires, dans la même sortie** — la porte se contredit elle-même,
+et le test la attrape parce qu'il compare les deux, pas parce qu'il en suppose une.
+
+## La répartition, toujours la même
+
+Le test « les quatre champs sont obligatoires » mord quand on les rend optionnels. Le
+test « un point en retard remonte » **ne l'aurait pas** : il n'affirme qu'une chose et
+elle survit. Un défaut d'**absence** se prouve sur la moitié **positive** — exiger
+qu'un point en retard soit détecté, puis qu'un point **non** échu ne le soit pas. Sans
+la seconde moitié, le test passe sur une porte morte.
+
+C'est la sixième fois de ce dossier. Les six ont été trouvées en annulant la
+correction, jamais en relisant le test.
+
+213 → 216 tests.
+
+---
+
+## F-57 — un formulaire vide a été signé à la place du client
+
+C'est le défaut le plus important de la série, et **seule l'exécution l'a produit**.
+
+`client-liaison` a été lancé sur un vrai contrat, en bac à sable. Sept questions, et la
+dernière observation vaut plus que les six autres :
+
+> `state.json` disait `status: approved`, un `contract_hash` était enregistré, et
+> `checkpoint_reached` valait `true`. Le mécanisme avait validé le document, calculé son
+> empreinte, et considéré le point de contrôle comme franchi. **Un formulaire vide a été
+> signé à la place du client, et le système compte sa décision comme prise.**
+
+Le contenu du document : cinq blocs, les bons titres, et `| Slice | Résultat | | a | b |`.
+
+### Le piège n'est pas le contenu, c'est la structure
+
+Le diagnostic de l'agent client :
+
+> *Les cinq titres sont exactement les cinq questions que je devais me poser. Un lecteur
+> pressé voit cinq sections qui lui posent déjà les bonnes questions, et conclut qu'elles
+> sont traitées. Elles ne le sont pas. Un document vide serait plus honnête : il m'aurait
+> fait demander « il existe ? ». Celui-ci m'a fait demander « c'est quoi A ? ».*
+
+**La structure correcte rend le document plus difficile à critiquer qu'un document vide.**
+C'est l'inverse de l'intuition, et c'est la raison du défaut : `contract_complete`
+vérifiait que les **blocs** étaient là, pas qu'ils étaient **remplis**. Vérifier la
+présence d'un formulaire sans vérifier son contenu n'est pas une porte, c'est un
+passe-case.
+
+`contract_complete` vérifie maintenant deux choses de plus : un bloc **sans ligne de
+contenu** est un défaut (son en-tête et son séparateur ne sont pas du contenu), et une
+cellule d'**une lettre** est un défaut.
+
+### Et mes propres fixtures étaient le défaut
+
+Les deux tests du contrat — celui de F-54, positif et négatif — utilisaient `a | b | c`
+comme valeurs. C'est-à-dire : **un formulaire vide qui passait la porte.** Un test
+positif écrit avec des valeurs de remplissage prouve que la porte est verte, pas qu'elle
+protège. Ils sont remplacés par des valeurs réelles, et la porte les refusait.
+
+## F-58 — j'ai reproduit F-56 une heure après l'avoir documenté
+
+Contre-témoin sur `client-liaison` : j'ai annoncé neutraliser l'interdiction de rendre
+un verdict. Le test est resté vert. Explication : ma chaîne de mutation ne matchait pas le
+texte réel — le document écrit `> **Tu ne rends jamais de verdict.` avec un chevron de
+citation, et je cherchais la chaîne sans lui.
+
+**Un contre-témoin qui ne s'applique pas est pire que pas de contre-témoin** : il laisse
+croire que la discipline a été respectée. Compter les occurrences trouvées avant de
+conclure qu'une mutation a été appliquée n'est pas une bonne habitude — c'est la seule
+chose qui distingue un contre-témoin d'un rituel. Et je venais d'écrire qu'il le fallait.
+
+Deux autres défauts de la même famille, dans le même test :
+
+- **une assertion qui ne pouvait pas échouer** : je comparais `state.json` à la sortie de
+  la commande qui venait de l'écrire. Les deux ne peuvent pas différer.
+- **une assertion qui exprimait le contraire du comportement voulu** : j'exigeais que le
+  hash du checkpoint change après modification du contrat. Il ne change pas, et c'est
+  **correct** — il est figé à la signature, c'est `no_content_drift` qui voit l'édition.
+
+## F-59 — un prédicat de plus, donc une erreur de plus
+
+Pour ignorer la ligne d'en-tête d'un tableau, j'ai écrit « exclure les lignes dont toutes
+les cellules sont des lettres ». Ce qui exclut **exactement** les lignes qu'il fallait
+attraper : `| a | b |` a deux cellules d'une lettre, donc elle passe, et le formulaire vide
+passe avec.
+
+Un prédicat de plus, donc une façon de plus de se tromper. Le comment le dit : *l'en-tête
+n'a pas besoin d'être exclu, ses cellules portent des mots, donc la détection d'une lettre
+isolée ne le remarque pas.*
+
+Septième subdivision de test découverte en annulant la correction. Les sept, sans
+exception.
+
+`216 → 219` tests.
