@@ -176,6 +176,49 @@ short-circuit: emit the four context files, emit no rules, stop.
 | `DECISIONS.md` — decisions taken, and **open questions** as questions | a stack choice |
 | `LEARNINGS.md` — corrections, each naming where it will be promoted | a probe result |
 
+### The formats are normative — reproduce them, do not redesign them
+
+The four files have **fixed shapes**, because a memory whose shape changes per
+project is a memory nobody can read on the second session. They are written out in
+full in `templates/memory/`; that directory is not an illustration, it is the
+specification.
+
+The formats were once **kept** and then **lost**: `provenance/synthesis-provenance.md`
+records that the 8-field `SESSION_LOG.md` and the 6-field ADR form were "kept as-is"
+and were "emitted alongside the entry file". No `templates/` directory was ever
+emitted. The consequence was measured, not predicted — on a project whose Phase 0 ran
+the full way to Phase 5, the scaffold produced a four-bullet journal, a
+questions-only `DECISIONS.md` with **zero closed decisions**, and a `LEARNINGS.md`
+with **zero entries**. The format was known, written down, and not normative, so
+every project got its own.
+
+| File | Shape | The field that is most often lost |
+|---|---|---|
+| `SESSION_LOG.md` | **8 named fields, in order**: `STARTED FROM` · `DECIDED` · `REJECTED` · `BLOCKED` · `FILES TOUCHED` · `STATUS` · `NEXT SESSION SHOULD` · `NEXT SESSION SHOULD NOT` | **`REJECTED`** — see below |
+| `DECISIONS.md` | `## ADR-<NNN>: <title>` with **6 fields**: `Date` · `Statut` · `Contexte` · `Décision` · `Alternatives considérées` · `Conséquences` | **`Alternatives considérées`** |
+| `LEARNINGS.md` | **one line per correction**, the fault written as a contrast, then `→ domaine: … \| Seen: …` | the contrast form |
+| `AGENTS.md` | the context, then the index with description **and** trigger | the trigger |
+
+**`REJECTED` is the field that pays for itself.** Everything else records what was
+done; `REJECTED` records what was **declined and why**, and it is the only one that
+stops a later session from re-proposing it. A journal without it re-litigates its
+own past: on the project measured above, the refusals were the contracted
+exclusions (accounting, card payments), the six slices deliberately left unplanned,
+the sixteen things `client-liaison` rejected, and two invented agent paths. All four
+categories were load-bearing, and none had anywhere to go.
+
+**A closed decision is closed.** `DECISIONS.md` is an **append-only register of
+closed decisions**. "Append-only" and "closed" together mean: a decision that turns
+out to be wrong is **superseded by a new ADR that names the old one**, never
+silently rewritten. `Statut: Actif` or `Statut: Supersédé par ADR-<NNN>` — and a
+`Statut:` line is required on every entry, because an entry without one cannot be
+superseded and therefore cannot be corrected.
+
+Questions the project cannot answer yet belong in `DECISIONS.md` too, as questions,
+and each one carries the trigger that will close it. But **the register's job is the
+closed decisions**: a `DECISIONS.md` with open questions and no closed decision has
+recorded nothing that a future session is bound by.
+
 ### The two halves of the index, and the one that is usually missing
 
 `AGENTS.md` carries a table with a row per file. Each row needs **two** things,

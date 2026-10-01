@@ -1218,11 +1218,36 @@ function readSiblingMemory(root) {
     // Limite assumée : c'est un contrôle de **présence**, pas de justesse. Un cue mal
     // choisi passe. Il attrape l'oubli — la ligne du tableau qui dit ce que contient
     // un fichier sans jamais dire ce qui y écrit — et l'oubli est le cas réel.
-    const CUES = /\b(quand|lorsque|à chaque|au début|à la fin|après|avant|si|dès|une fois|every|when|after|before|on each)\b/i;
+    //
+    // **Deux formes de déclencheur, et la seconde n'était pas lue.** Le lexique
+    // ci-dessous ne contient que des adverbes : `quand`, `si`, `avant`, `une fois`.
+    // Or le meilleur déclencheur n'est pas un adverbe, c'est une **condition** — et
+    // « tu tranches quelque chose qu'une session future rediscuterait » n'en contient
+    // aucun, alors que c'est exactement ce que la ligne doit dire. « Corrections »
+    // est une description ; « la deuxième fois que tu te trompes » est un
+    // déclencheur ; et ni l'une ni l'autre ne passe par un adverbe.
+    //
+    // Constaté sur `Atelier` : `triggers_named` est passé de 3 à 1 après réécriture
+    // de l'index, et les deux lignes comptées « sans déclencheur » étaient les deux
+    // meilleures. Un lexique d'adverbes confond une description d'adverbe avec une
+    // absence de condition.
+    //
+    // Donc : **colonne non vide dans une ligne de tableau**, ou lexique. La colonne
+    // est structurelle et déterministe — c'est la forme que le gabarit prescrit.
+    const CUES = /\b(quand|lorsque|à chaque|au début|à la fin|après|avant|si|dès|une fois|chaque fois|tant que|tout de suite|every|when|after|before|on each|each time)\b/i;
     const MEMORY_FILES = ['SESSION_LOG.md', 'DECISIONS.md', 'LEARNINGS.md'];
+    // Une ligne de tableau `| fichier | description | déclencheur |` : trois cellules
+    // séparées, dont la troisième non vide. Le nombre impair de cellules viendrait
+    // d'une cellule contenant une barre non échappée — on l'accepte, la troisième
+    // reste non vide dans les deux cas.
+    const troisiemeCellule = (line) => {
+      const cells = line.split('|').map(c => c.trim());
+      return cells.length >= 4 && cells[3].length > 0;
+    };
     memory.memory_indexed = MEMORY_FILES.filter(f => agents.includes(f)).length;
     memory.triggers_named = MEMORY_FILES.filter(f =>
-      agents.split('\n').some(line => line.includes(f) && CUES.test(line))).length;
+      agents.split('\n').some(line =>
+        line.includes(f) && (CUES.test(line) || troisiemeCellule(line)))).length;
     // Le compte et le déclencheur ne se déduisent pas l'un de l'autre : un fichier
     // décrit sans être jamais nommé ailleurs est le cas « présent, jamais écrit ».
     memory.memory_described_not_triggered = memory.memory_indexed - memory.triggers_named;
@@ -1261,11 +1286,30 @@ function readSiblingMemory(root) {
     // Le motif tolère les deux formes et **ancre sur la valeur** (`Open`, `Closed`)
     // plutôt que sur la décoration, pour qu'un document écrit dans l'une ou dans
     // l'autre forme soit lu pareil.
-    const STATUT = /\*{0,2}Status:\*{0,2}\s*(\w+)/g;
+    //
+    // **Et il tolère maintenant les DEUX LANGUES.** Le motif ne portait que `Status:`,
+    // alors que les documents sont en français et écrivent `Statut :` — la forme du
+    // gabarit `DECISIONS.md` de `project-rules-architect`, et celle qu'un agent
+    // français écrit sans y penser. Constaté sur `Atelier` : `adrs_open` est tombé de
+    // 6 à 0 après réécriture, non parce que les questions avaient disparu mais parce
+    // qu'elles s'appelaient désormais `Statut`.
+    //
+    // C'est exactement la faute que ce motif corrigeait déjà, une ligne plus haut :
+    // **un motif plus étroit que ce que le document écrit.** Il l'avait été pour la
+    // décoration, il l'est pour la langue, puis pour la typographie : le dépôt entier
+    // écrit `**Statut** : Open` avec une espace avant le deux-points — c'est la
+    // typographie française, et tous les gabarits du skill la suivent. Le motif exigeait
+    // `Statut:` sans espace, donc il ne lisait **aucun** des documents du dépôt.
+    //
+    // Trois narrowings successifs sur le même champ : décoré / non, langue / non,
+    // typographie / non. Le jeton doit être écrit dans le document, et un jeton que
+    // personne ne devine n'est pas un jeton.
+    const STATUT = /\*{0,2}(?:Statut|Status)\*{0,2}\s*:\s*\*{0,2}\s*(\w+)/g;
     const statuts = [...decisions.matchAll(STATUT)].map(m => m[1].toLowerCase());
     memory.adrs = entries.length;
     memory.adrs_open = statuts.filter(v => v === 'open').length;
-    memory.adrs_superseded = statuts.filter(v => v === 'superseded').length;
+    // `superseded` et `supersede` selon la langue du mot.
+    memory.adrs_superseded = statuts.filter(v => v === 'superseded' || v === 'supersede').length;
     // Le socle n'écrit pas d'ADR : il écrit des **questions ouvertes**, parce que la
     // stack n'est pas décidée. Compter les deux séparément évite de lire « aucune
     // décision » là où il y a dix questions en attente — et « rien à décider » est
@@ -1279,7 +1323,16 @@ function readSiblingMemory(root) {
   const learnings = read('LEARNINGS.md');
   if (learnings) {
     memory.files.LEARNINGS_MD = true;
-    const entries = learnings.match(/^- \d{4}-\d{2}-\d{2}\s*:/gm) || [];
+    // Une entrée de correctif commence par `- <date>` puis **anything** : le gabarit
+    // et le document de référence écrivent `- 2026-09-29 — …` avec un tiret cadratin,
+    // et le motif exigeait un deux-points. Les documents du dépôt ne sont donc pas
+    // comptés, et `learnings: 0` sur un fichier de quatorze corrections est un mensonge
+    // de la même famille.
+    //
+    // On exige quand même un séparateur après la date — sinon `- 2026-09-29` seul, ou
+    // une date citée en prose dans une puce, serait compté comme une entrée. C'est la
+    // borne étroite de la correction : un tiret, un deux-points ou une espace.
+    const entries = learnings.match(/^- \d{4}-\d{2}-\d{2}\s*(?:—|–|-|:|\s)\s*\S/gm) || [];
     memory.learnings = entries.length;
     // Le store existe mais rien n'est encore promu : c'est un journal, pas des règles.
     const placeholder = /no entries yet|-\s*\(none/i.test(learnings);
