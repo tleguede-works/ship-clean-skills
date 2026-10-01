@@ -1228,6 +1228,65 @@ function checkContract(root) {
     problems.push({ block: 'Ce qui reviendra au client', why: `${rows.length - dated.length} ligne(s) sans échéance — une décision sans date est prise par le plus proche`, evidence: (rows.find(l => !dated.includes(l)) || '').trim().slice(0, 90) });
   }
 
+  // 5. **Les blocs sont-ils remplis ?**
+  //
+  //    Constaté en exécutant `client-liaison` sur un vrai contrat, en bac à sable.
+  //    Le contrat avait ses cinq blocs, des titres corrects, et **rien dedans** :
+  //    `| Slice | Résultat | | a | b |`.
+  //
+  //    Pire : `state.json` disait `status: approved`, un hash était enregistré, et
+  //    `checkpoint_reached` valait `true`. Le mécanisme avait signé **un formulaire
+  //    vide** à la place du client, et comptait sa décision comme prise.
+  //
+  //    Le diagnostic de l'agent client est le point à retenir : *les cinq titres sont
+  //    exactement les cinq questions du client. Un lecteur pressé voit cinq sections
+  //    qui lui posent déjà les bonnes questions, et conclut qu'elles sont traitées.*
+  //    **La structure rend le document plus difficile à critiquer qu'un document
+  //    vide** — un fichier sans rien aurait fait demander « est-ce qu'il existe ? ».
+  //
+  //    Donc : un bloc vide est un défaut, et une valeur d'une lettre en est un autre.
+  //    Vérifier la présence d'un formulaire sans vérifier son contenu n'est pas une
+  //    porte, c'est un passe-case.
+  const FILLED_BLOCKS = [
+    { label: 'Ce qui sera livré', re: /^##\s+\d*\.?\s*Ce qui sera livré/im },
+    { label: 'Ce qui ne sera pas livré', re: /^##\s+\d*\.?\s*Ce qui ne sera pas livré/im },
+    { label: 'Ce qui est irréversible', re: /^##\s+\d*\.?\s*Ce qui est irréversible/im },
+    { label: 'Ce qui reviendra au client', re: /^##\s+\d*\.?\s*Ce qui reviendra au client/im }
+  ];
+  for (const b of FILLED_BLOCKS) {
+    const parts = raw.split(b.re);
+    const body = parts.length > 1 ? (parts[1].split(/^##\s/im)[0] || '') : '';
+    // Toutes les lignes de tableau du bloc, séparateur exclu. **L'en-tête n'a pas
+    // besoin d'être exclu** : ses cellules portent des mots, donc la détection
+    // d'une lettre isolée ne le remarque pas. Essayer de le filtrer à part revient à
+    // écrire un prédicat de plus, et il n'a qu'une façon de se tromper — ce qu'il a
+    // fait, en excluant exactement les lignes qu'il fallait attraper.
+    //
+    // Un en-tête et son séparateur ne sont pas du contenu : un tableau qui ne contient
+    // que les deux est **aussi vide** qu'un tableau sans rien, et c'est le cas qu'on
+    // voit le moins, parce qu'il a la forme d'un tableau plein.
+    const lignes = body.split('\n').filter(l => /^\s*\|/.test(l));
+    const estSeparateur = l => /^\s*\|[\s\-:|]+\|\s*$/.test(l);
+    const rows = lignes.filter(l => !estSeparateur(l));
+    const contenu = rows.length - 1;   // moins la ligne d'en-tête
+    if (contenu <= 0) {
+      problems.push({ block: b.label, why: 'aucune ligne de contenu — un bloc sans contenu est un formulaire, pas un contrat' });
+      continue;
+    }
+    for (const r of rows) {
+      const cells = r.split('|').map(c => c.trim()).filter(c => c !== '');
+      for (const c of cells) {
+        if (/^[A-Za-z]$/.test(c)) {
+          problems.push({
+            block: b.label,
+            why: `cellule « ${c} » : une valeur d'une lettre est un gabarit non rempli`,
+            evidence: r.trim().slice(0, 80)
+          });
+        }
+      }
+    }
+  }
+
   record('contract_complete', problems.length === 0, {
     state: contract.status,
     blocks_checked: CONTRACT_BLOCKS.length,
