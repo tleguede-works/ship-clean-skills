@@ -168,3 +168,4 @@
 {"ts":"2026-09-30T23:32:57.634Z","type":"status_change","kind":"deliverable","key":"architecture","from":"draft","to":"approved","mirrored":{"mirrored":true,"changed":true,"path":".forge/architecture.md","from":"draft","to":"approved"}}
 {"ts":"2026-09-30T23:32:57.674Z","type":"gate_approved","phase":"4_architecture","next_phase":"5"}
 {"ts":"2026-09-30T23:35:35.216Z","type":"register","deliverable":"conventions","path":".forge/conventions.md","kind":"deliverable"}
+{"ts":"2026-10-01T10:48:19.554Z","type":"register","deliverable":"contract","path":".forge/contract.md","kind":"deliverable"}
