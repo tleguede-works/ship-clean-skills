@@ -2857,3 +2857,101 @@ Septième subdivision de test découverte en annulant la correction. Les sept, s
 exception.
 
 `216 → 219` tests.
+
+---
+
+## F-60 — le passage de `warn` à `fail` : ce que la règle honnête n'est pas
+
+On m'avait demandé de faire le passage en `fail`, et la première version de la règle
+était : *un projet sans contrat est en défaut*. Elle est fausse, et fausse d'une façon
+qui aurait produit deux illusions]:
+
+- un projet **encore en Phase 0** n'a pas fait son travail. Le faire échouer, c'est
+  l'interrompre au milieu d'une tâche normale ;
+- un projet qui a **avancé sans contrat** n'a pas un oubli : il a une promesse non
+  tenue. Personne n'a signé, et le suivi le dira quand même.
+
+La règle est donc : **`warn` en Phase 0, `fail` au-delà.** Et là, un test de la suite a
+cassé — un test que je n'avais pas écrit et qui disait la bonne chose.
+
+## F-61 — le défaut que cette règle révélait : un contrôle qui tombe après la fenêtre
+
+`complete-phase 0_bootstrap` ne demandait pas de contrat. Conséquence : le projet faisait
+tout son travail, le gate passait au vert, le gate passait au **rouge** au moment de
+clore la phase — **après** l'instant où l'agent aurait pu agir.
+
+Un défaut qui n'apparaît qu'une fois la fenêtre fermée est un défaut qu'on apprend à
+ignorer. C'est la pire forme du symptôme « vert quand il ne faut pas » : le rouge
+arrive, et il est déjà trop tard pour le traiter.
+
+**La correction est dans `complete-phase`, pas dans le contrôle.** Le contrat bloque la
+sortie de la Phase 0 — c'est là que le client signe, donc c'est là que l'absence doit
+être signalée. Et un contrat en `draft` **suffit** : un contrat non signé est un
+travail en cours ; ce qui est un travail en cours, c'est le contrat **absent**.
+
+Six tests existants fermaient la Phase 0 sans contrat. Ils sont passés par un helper
+partagé — et le helper écrit un contrat **complet**, pas un fichier vide : un helper qui
+écrit un titre fait échouer exactement la porte qu'il essaie de laisser passer.
+
+## F-62 — la porte comptait sa propre ligne d'en-tête
+
+En validant, la porte a refusé un contrat **complet**, sur `| Décision | Options |
+Échéance | Prix |`. Elle comptait la ligne d'en-tête parmi les décisions à dater — alors
+qu'elle porte le *nom* de la colonne, pas une valeur.
+
+Trois défauts empilés, tous de la même famille que F-48 et F-53 :
+
+1. l'en-tête n'était pas retiré avant de compter ;
+2. le motif cherchait « échéance » **dans la première cellule**, alors qu'elle est en
+   troisième dans ce tableau ;
+3. le motif exigeait l'accent, et une colonne `Echeance` sans accent passait au travers.
+
+Et le troisième est celui qui compte : **un motif plus étroit que ce que les documents
+écrivent est faux**. Ici il était plus étroit que ce que *mes propres fixtures*
+écrivaient — donc la suite ne le prouvait pas. C'est le huitième cas découvert en
+annulant la correction.
+
+## F-63 — la migration des trois projets a trouvé ce qu'elle devait trouver
+
+J'ai dérivé les contrats des documents existants, **sans fabriquer de signature** : les
+trois sont en `draft` et portent un encadré qui dit, sur la face du document, qu'il n'a
+pas été signé.
+
+Résultat : les trois **échouent**, tous sur la même chose — des engagements sans prix.
+`prix non chiffré dans le projet`, répété sur chaque ligne.
+
+**C'est le trou que le contrat existe pour rendre visible.** Trois projets menés de bout
+en bout, avec leurs architectures, leurs DDL, leurs portes — et **personne n'a jamais
+chiffré l'hébergement**. Il n'y avait nulle part où l'écrire.
+
+Les trois restent donc rouges, et c'est la sortie correcte. Les rend verts demanderait
+soit d'inventer des prix, soit d'affaiblir la porte — et les deux sont pires que le
+rouge. Le rapport de migration liste 3, 5 et 8 points « non décidé » par projet : ce
+sont les trous que le commanditaire devra remplir s'il signe un jour.
+
+## F-64 — le scan de caractères ne couvrait pas la source du skill
+
+`forge-guard no_stray_characters` ne lit que les **livrables d'un projet**. Son
+périmètre est sain — un contrôle de projet ne doit pas juger son propre outil — mais la
+conséquence ne l'est pas : la source du skill accumule la corruption que rien ne regarde,
+alors qu'elle est lue par un agent à chaque session.
+
+**Une assertion dans un commentaire n'est pas un test.** Le fichier se parse, les tests
+passent, et seul le mot est faux.
+
+Le contrôle est donc dans `validate-repo`, qui **possède** ces fichiers. Et il a trouvé,
+au premier passage, un caractere CJK dans un commentaire de `selftest.js` — donc **dans un
+test**, où il passait totalement inaperçu.
+
+Contre-témoin vérifié : injection d'un caractère CJK dans `state.js` → `fail` avec le
+fichier et la ligne ; retrait → `pass`. Un contre-témoin manuel, consigné comme tel
+plutôt que présenté comme un test permanent : `validate-repo.js` est un script du dépôt,
+hors du harnais `selftest`.
+
+## Un motif de fixtures, et sa limite
+
+Trois des quatre détections initiales étaient des **fixtures volontaires** : une chaîne
+de test contient un caractère parasite *pour la raison précise qu'on le détecte*. Les
+ignorer est juste ; les ignorer **trop largement** ne l'est pas. Le marqueur est donc
+restreint à des formulations précises — et cette restriction est elle-même un motif trop
+étroit qui se signalerait au premier faux positif.

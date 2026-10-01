@@ -342,6 +342,26 @@
         "N7",
         "N8"
       ]
+    },
+    "contract": {
+      "path": ".forge/contract.md",
+      "type": "contract",
+      "status": "draft",
+      "content_hash": "sha256:463995e3c2a5",
+      "headings": {
+        "1": "Ce qui sera livré",
+        "2": "Ce qui ne sera pas livré",
+        "3": "Ce qui est irréversible",
+        "4": "Ce que Forge décidera seul",
+        "5": "Ce qui reviendra au client"
+      },
+      "updated_at": "2026-10-01T10:48:19.551Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/roadmap.md",
+        ".forge/conventions.md",
+        ".forge/architecture.md"
+      ]
     }
   },
   "index": {
@@ -790,7 +810,7 @@
     "metrics": ".forge/audit/metrics.json",
     "counts": {
       "init": 1,
-      "register": 103,
+      "register": 104,
       "phase_status": 4,
       "status_change": 4,
       "nav_prioritized": 1,

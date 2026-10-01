@@ -160,3 +160,4 @@
 {"ts":"2026-10-01T00:04:17.822Z","type":"fast_track_enter","message":"scope=plans autonomy=milestone"}
 {"ts":"2026-10-01T00:04:18.038Z","type":"fast_track_escape","message":"le commanditaire veut relire le plan lui-meme"}
 {"ts":"2026-10-01T00:04:22.366Z","type":"fast_track_escape","message":"conditions d'entree non remplies : 4 sur 8"}
+{"ts":"2026-10-01T10:48:19.391Z","type":"register","deliverable":"contract","path":".forge/contract.md","kind":"deliverable"}

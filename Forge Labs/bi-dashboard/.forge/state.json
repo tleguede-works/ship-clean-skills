@@ -386,6 +386,26 @@
         "7.1": "Détail des décisions"
       },
       "previous_status": "draft"
+    },
+    "contract": {
+      "path": ".forge/contract.md",
+      "type": "contract",
+      "status": "draft",
+      "content_hash": "sha256:c8180efa88a4",
+      "headings": {
+        "1": "Ce qui sera livré",
+        "2": "Ce qui ne sera pas livré",
+        "3": "Ce qui est irréversible",
+        "4": "Ce que Forge décidera seul",
+        "5": "Ce qui reviendra au client"
+      },
+      "updated_at": "2026-10-01T10:48:19.260Z",
+      "derived_from": [
+        ".forge/prd.md",
+        ".forge/roadmap.md",
+        ".forge/conventions.md",
+        ".forge/architecture.md"
+      ]
     }
   },
   "index": {
@@ -992,7 +1012,7 @@
     "metrics": ".forge/audit/metrics.json",
     "counts": {
       "init": 1,
-      "register": 85,
+      "register": 86,
       "gate_revise": 3,
       "status_change": 43,
       "gate_approved": 7,
