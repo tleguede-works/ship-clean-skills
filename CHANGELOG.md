@@ -27,6 +27,42 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — le contrat devient bloquant, et la règle honnête n'est pas « tout le monde »
+
+`contract_complete` passe de `warn` à `fail` — mais **seulement au-delà de la Phase 0**.
+Un projet encore en Phase 0 n'a pas fait son travail, et le faire échouer serait
+l'interrompre au milieu d'une tâche normale ; un projet qui a avancé sans contrat n'a
+pas un oubli, il a une promesse non tenue.
+
+**Et le défaut que cette règle a révélé : un contrôle qui tombe après la fenêtre.**
+`complete-phase 0_bootstrap` ne demandait pas de contrat — le projet faisait tout son
+travail, le gate passait au vert, puis au rouge au moment de clore la phase, c'est-à-dire
+**après** l'instant où l'agent aurait pu agir. Un défaut qui n'apparaît qu'une fois la
+fenêtre fermée est un défaut qu'on apprend à ignorer. La correction est donc dans
+`complete-phase` : le contrat bloque la sortie de la Phase 0, et un contrat en `draft`
+suffit.
+
+**La porte comptait sa propre ligne d'en-tête**, et refusait un contrat complet sur
+`| Décision | Options | Échéance | Prix |`. Trois motifs empilés : en-tête non retiré,
+« échéance » cherché dans la première cellule alors qu'elle est en troisième, accent
+exigé. Le troisième compte : un motif plus étroit que ce que **mes propres fixtures**
+écrivent ne prouve rien.
+
+### fix(repo) — la source du skill passe au scan de caractères
+
+`forge-guard no_stray_characters` ne lit que les livrables d'un projet. Son périmètre est
+sain — un contrôle de projet ne doit pas juger son propre outil — mais la conséquence ne
+l'est pas : la source du skill accumule la corruption que rien ne regarde.
+
+**Une assertion dans un commentaire n'est pas un test.** Le contrôle est donc ajouté à
+`validate-repo`, qui possède ces fichiers. Il a trouvé au premier passage un caractère CJK
+dans un commentaire de `selftest.js` — **dans un test**, où il passait inaperçu.
+
+Trois des quatre détections initiales étaient des fixtures volontaires, qu'il faut ignorer
+justement — et ignorer trop largement n'est pas juste non plus.
+
+`219 → 220` tests.
+
 ## [1.13.0] - 2026-10-01
 
 ### feat(forge) — l'agent client, et le checkpoint qui devient le contrat signé
