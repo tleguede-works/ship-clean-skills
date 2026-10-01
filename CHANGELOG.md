@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-10-01
+
 ### feat(forge) — l'agent client, et le checkpoint qui devient le contrat signé
 
 **`client-liaison`** est le onzième agent, et le seul qui ne soit pas ingénieur. Les dix
