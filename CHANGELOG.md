@@ -27,6 +27,47 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — Fast Track avait une table de huit conditions et aucun code derrière
+
+`fast-track.md` pose une table de huit conditions d'entrée, puis propose trois
+commandes pour « vérifier d'un coup ». **Aucune des trois ne teste une seule des
+huit** : elles répondent à *le projet est-il sain ?* et non à *est-il prêt pour Fast
+Track ?*. Un dossier dont les **9 écrans sur 9** sont en `draft` passe les trois.
+`run.fast_track` n'existait que comme `null`.
+
+Une porte écrite en prose, que rien n'exécute. Elle ne se voit pas parce qu'un mode
+activé à la main « fonctionne » — jusqu'à ce qu'il valide quinze plans contre des
+livrables en `draft`, ce que rien n'interdit et rien ne signale.
+
+Défaut jumeau, plus bas dans le même fichier : la section « Reprise » documentait une
+forme (`entered_at`, `attempts`, `current_artifact`) et promettait qu'une invocation
+interrompue reprend où elle s'était arrêtée. Le schéma l'acceptait, **aucun écriteur ne
+le produisait**.
+
+`forge-guard fast-track` est désormais la porte — **hors de `all`**, parce que
+`benchmarks` est de phase 3 et `test_plan` de phase 6 et qu'y mettre la porte ferait
+échouer tout projet ordinaire. Un contrôle qu'il faut demander est un contrôle qu'on
+peut oublier, donc quand on le demande **il échoue et nomme chaque condition**.
+
+`state.js fast-track` enregistre la position sans **entrer** dans le mode : les deux
+scripts ne se connaissent pas, donc `--enable` n'appelle pas la porte et renvoie à elle
+dans sa sortie. `--attempt` s'arrête à 2 **dans le code**, `--disable` n'exige pas de
+raison — un mode qui demande une justification pour sortir mais pas pour entrer n'est
+pas un mode qu'on peut quitter.
+
+La limite du scénario de cycle complet est **écrite dans la sortie** : une case de
+checklist est une affirmation de l'agent qui l'a cochée, donc le contrôle vérifie la
+**déclaration** et dit que la justesse n'est pas vérifiée.
+
+Bug trouvé par le contre-témoin : `capture()` lisait la valeur de retour de
+`checkPaths` et `checkStrays`, qui ne `return`ent rien — elles appellent `record()`.
+La lecture renvoyait `undefined`, donc « échec », donc Fast Track refusait un projet
+sain en annonçant « aucun livrable égaré » alors qu'il n'y en a aucun. Un contrôle qui
+lit un canal que la fonction ne remplit pas ne contrôle rien : il signale le vide
+comme un défaut.
+
+206 → 208 tests.
+
 ## [1.9.7] - 2026-09-30
 
 ### fix(forge) — `premises` ne lisait que `[BCE]` : six exigences non fonctionnelles déclarées « mortes »
