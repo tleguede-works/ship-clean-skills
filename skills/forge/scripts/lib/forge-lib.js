@@ -27,6 +27,7 @@ const NON_DELIVERABLE_DIRS = ['audit', '.tmp', 'node_modules'];
 
 /** Livrables livrés avec le layout canonique. kind -> chemin relatif attendu. */
 const CANONICAL_LAYOUT = {
+  contract: '.forge/contract.md',
   conventions: '.forge/conventions.md',
   prd: '.forge/prd.md',
   roadmap: '.forge/roadmap.md',
@@ -196,7 +197,7 @@ function bucketOf(state, kind) {
  * ce qui apprend à contourner le garde-fou.
  */
 const PHASE_ARTIFACT_OWNERS = {
-  '0_bootstrap': { deliverable: ['conventions'] },
+  '0_bootstrap': { deliverable: ['contract', 'conventions'] },
   '1_prd': { deliverable: ['prd'] },
   '2_roadmap': { deliverable: ['roadmap'] },
   '3_design': { deliverable: ['design_system'], screen: true },
@@ -308,7 +309,7 @@ const ALLOWED_STATE_KEYS = [
   'version', 'forge_skill_version', 'product', 'project', 'reference_projects',
   'run', 'current_phase', 'phases', 'deliverables', 'index', 'screens',
   'foundations', 'modules', 'slices', 'gates_pending', 'audit', 'divergences',
-  'findings'
+  'findings', 'client'
 ];
 
 /**
