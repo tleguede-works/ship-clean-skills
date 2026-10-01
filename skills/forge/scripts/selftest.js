@@ -1975,13 +1975,50 @@ test('consequences du retrait : un livrable approuvé sans prémisse déclarée 
   assert(/--requires=/.test(c.undeclared[0].hint), 'l\'aide ne donne pas la commande');
 });
 
-test('une exigence retirée sans son ID est un retrait non traçable', () => {
+test('une exclusion sans ID est la forme ordinaire, et elle n\'est pas un défaut', () => {
+  // La section s'appelle « Hors scope (explicitement) » : elle liste des
+  // exclusions. La forme la plus fréquente est une exclusion qui n'a jamais
+  // été une exigence — ni comptabilité, ni SMS — et elle n'a donc aucun ID à
+  // porter. Le gabarit le dit depuis qu'une exclusion a été distinguée d'un
+  // retrait.
+  //
+  // Ce contrôle exigeait l'ID et échouait quand il manquait : il échouait donc
+  // sur le cas ordinaire et tolérait le cas rare. Un contrôle qui échoue sur la
+  // forme ordinaire apprend à être ignoré, et ses dossiers réels n'ont plus
+  // de valeur.
+  //
+  // **Ce qui reste vrai et doit rester dit** : une entrée sans ID ne donne rien
+  // à vérifier. Si elle retire une exigence qui vivait en § 4/5/6, il faut lui
+  // rendre son ID. Donc avertissement, jamais échec.
   const project = prdProject('premise-sans-id', '- **Multi-tenant strict** — raison : aucun second client');
   run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=C102']);
   const res = run('consistency-check.js', ['premises', project]);
   const c = res.json.checks[0];
-  assert(c.untraceable.length === 1, `le retrait sans ID n\'est pas vu : ${JSON.stringify(c)}`);
-  assert(c.status === 'fail', `un retrait non traçable doit échouer, il est : ${c.status}`);
+  assert(c.untraceable.length === 1, `l'entrée sans ID n'est pas vue : ${JSON.stringify(c)}`);
+  assert(c.status === 'warn',
+    `une exclusion sans ID est un avertissement, il est : ${c.status}`);
+  // Le message doit dire CE QUI MANQUE, et nommer le cas où c'est un défaut.
+  assert(/RETIRE/i.test(c.untraceable[0].why),
+    `le message ne dit pas quand c'est un vrai défaut : ${c.untraceable[0].why}`);
+  assert(/ID/i.test(c.untraceable[0].why),
+    `le message ne dit pas ce qu'il faut faire : ${c.untraceable[0].why}`);
+});
+
+test('l\'avertissement d\'exclusion ne masque pas un vrai retrait', () => {
+  // Le témoin négatif du précédent. Un avertissement ne doit pas devenir un
+  // passe-plat : un retrait **avec** son ID reste accusé, et échoue.
+  //
+  // C'est ce test qui distingue une correction d'un élargissement de motif. Si
+  // l'avertissement avalait le retrait, ce test passerait encore — donc il ne
+  // suffit pas. Le témoin qui mord ici est l'autre moitié : le retrait doit
+  // être **accusé**, pas seulement mentionné.
+  const project = prdProject('premise-retrait-malgre-avertissement', '- **C102** — Multi-tenant strict');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=C102']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks[0];
+  assert(c.retired.length === 1, `le retrait n'est pas accusé : ${JSON.stringify(c.retired)}`);
+  assert(c.status === 'fail', `un retrait reste un échec, il est : ${c.status}`);
 });
 
 test('un ID cité dans la raison ne rend pas le retrait traçable', () => {
@@ -1998,6 +2035,107 @@ test('un ID cité dans la raison ne rend pas le retrait traçable', () => {
   assert(c.retired.length === 0,
     `C102 n'est pas retirée, elle ne doit pas être signalée : ${JSON.stringify(c.retired)}`);
   assert(c.status === 'pass', `statut attendu pass, obtenu ${c.status}`);
+});
+
+test('un ID vivant ET listé en hors scope est une collision, pas un retrait', () => {
+  // Constaté sur Atelier, le premier contrat chiffré du dossier. Le PRD disait
+  // `C2` = « un seul secret, pas de mot de passe » en § 5, et `C2` = «
+  // multi-utilisateur, rôles, permissions : Jean-Luc est seul » en § 9.
+  //
+  // Deux écritures **du même fait**, de polarité opposée. Le contrôle lisait
+  // « ID présent en § 9 » comme « exigence retirée » sans consulter
+  // `definitions` — et `roadmap`, approuvé sur une exigence vivante, était
+  // accusé de reposer sur une exigence retirée. `retired_cited_in_body` le
+  // citait en plus deux fois sans acquittement.
+  //
+  // **L'accusation la plus coûteuse du contrôle était donc émise à tort**, et
+  // un agent qui l'aurait crue aurait supprimé des dépendances réelles pour
+  // faire passer un contrôle.
+  const project = freshProject('premise-ambigu');
+  fs.writeFileSync(path.join(project, '.forge', 'prd.md'), [
+    '---', 'type: prd', 'status: draft', '---', '',
+    '# PRD', '',
+    '## 5. Contraintes', '',
+    '| C2 | Un seul utilisateur, un seul secret : pas de mot de passe |', '',
+    '## 9. Hors scope (explicitement)', '',
+    '- **C2** — Multi-utilisateur, rôles, permissions — raison : Jean-Luc est seul', ''
+  ].join('\n'));
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  // Le corps du livrable **cite** C2 en prose, comme un vrai livrable qui se
+  // justifie. C'est indispensable : sans citation, la branche des citations
+  // n'est jamais atteinte et le contre-témoin correspondant ne prouve rien —
+  // un test qui passe parce qu'il n'exerce pas le chemin qu'il prétend couvrir
+  // est pire qu'aucun test, parce qu'il donne une assurance fausse.
+  fs.writeFileSync(path.join(project, '.forge', 'conventions.md'), [
+    '---', 'type: conventions', 'status: draft', '---', '',
+    '# Conventions', '',
+    '## Motifs', '',
+    'C2 impose un seul secret : pas de mot de passe, pas de gestion de compte.', ''
+  ].join('\n'));
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=C2']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks[0];
+
+  // La citation est bien présente dans le livrable, donc son absence de
+  // signalement ci-dessous est imputable à la garde et pas à un corps vide.
+  assert(/C2/.test(fs.readFileSync(path.join(project, '.forge', 'conventions.md'), 'utf-8')),
+    'la fixture ne cite pas C2 : le test ne couvre rien');
+  assert(c.retired_cited_in_body.length === 0,
+    `une citation saine ne doit pas être suivie comme un retrait : ${JSON.stringify(c.retired_cited_in_body)}`);
+
+  // Le défaut réel : l'ID désigne deux choses. Il doit être signalé.
+  assert(c.collisions.length === 1, `la collision n'est pas détectée : ${JSON.stringify(c.collisions)}`);
+  assert(c.status === 'fail', `une collision doit échouer, elle est : ${c.status}`);
+
+  // Et surtout : le livrable n'est PAS accusé de reposer sur une exigence
+  // retirée. C'est la moitié de la correction, et c'est celle qui compte.
+  assert(c.retired.length === 0,
+    `le livrable est accusé à tort : ${JSON.stringify(c.retired)}`);
+  assert(c.ambiguous.length === 1, `l'ambiguïté n'est pas nommée : ${JSON.stringify(c.ambiguous)}`);
+  assert(c.ambiguous[0].deliverable === 'conventions', 'le livrable fautif n\'est pas nommé');
+  assert(/pas accusé/i.test(c.ambiguous[0].why),
+    `le message accuse quand même : ${c.ambiguous[0].why}`);
+  assert(c.retired_cited_without_acknowledgement.length === 0,
+    `une citation saine est signalée : ${JSON.stringify(c.retired_cited_without_acknowledgement)}`);
+});
+
+test('un retrait genuine reste un retrait : le garde-fou n\'a pas été élargi', () => {
+  // Le contre-témoin du précédent, et il est indispensable : sans lui, un
+  // simple élargissement du motif aurait passé les deux tests.
+  //
+  // Ici `C102` n'est défini **nulle part ailleurs** : c'est la forme d'un
+  // retrait, et c'est celle que la règle des fixtures décrivait déjà. Le
+  // contrôle doit donc l'accuser, sinon la correction aura fait disparaître
+  // le contrôle lui-même.
+  const project = prdProject('premise-retrait-genuine', '- **C102** — Multi-tenant strict');
+  // Le MÊME corps que la fixture d'ambiguïté, pour que la seule variable soit
+  // l'ID. Sans cela, un `retired_cited_in_body` vide dans le test précédent
+  // pourrait venir d'un corps qui ne cite rien, et la garde ne serait pas
+  // prouvée.
+  fs.writeFileSync(path.join(project, '.forge', 'conventions.md'), [
+    '---', 'type: conventions', 'status: draft', '---', '',
+    '# Conventions', '',
+    '## Motifs', '',
+    'C102 impose un seul secret : pas de mot de passe, pas de gestion de compte.', ''
+  ].join('\n'));
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md', '--requires=C102']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  const res = run('consistency-check.js', ['premises', project]);
+  const c = res.json.checks[0];
+  assert(c.ambiguous.length === 0,
+    `un retrait défini nulle part ailleurs n'est pas ambigu : ${JSON.stringify(c.ambiguous)}`);
+  assert(c.retired.length === 1, `un retrait genuine n'est pas accusé : ${JSON.stringify(c.retired)}`);
+  assert(c.retired[0].premise === 'C102', 'l\'ID retiré n\'est pas nommé');
+  assert(c.status === 'fail', `un retrait reste un échec, il est : ${c.status}`);
+  // Et la citation d'un ID réellement retiré EST suivie : c'est la preuve que
+  // le corps ci-dessus est bien lu, et que la garde du test précédent est ce
+  // qui l'a retenue — pas un corps muet.
+  assert(c.retired_cited_in_body.length === 1,
+    `la citation d'un ID retiré n'est pas suivie : ${JSON.stringify(c.retired_cited_in_body)}`);
+  assert(c.retired_cited_in_body[0].premise === 'C102', 'l\'ID cité n\'est pas nommé');
 });
 
 test('un ID qui désigne deux exigences est une collision', () => {
@@ -2841,8 +2979,12 @@ const CONTRAT_COMPLET = [
  * de laisser passer.
  */
 function closePhase0(project) {
+  // Clore la Phase 0 **est** la signature : le contrat passe `approved`.
+  // Un `draft` franchissait la phase en annonçant une signature que rien
+  // n'enregistrait, pendant que `contract_complete` l'exigeait juste après.
   writeDeliverable(project, '.forge/contract.md', { type: 'contract', body: CONTRAT_COMPLET });
   run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
   return run('state.js', ['complete-phase', project, '0_bootstrap']);
 }
 test('après complete-phase, le contrat ne juge pas la phase qui n\'a pas commencé', () => {
@@ -2884,10 +3026,200 @@ test('la Phase 0 ne se ferme pas sans contrat', () => {
   assert(/client signe/.test(j.why), `le refus doit dire pourquoi : ${j.why}`);
   assert(/\$FORGE/.test(j.hint), `le refus doit dire quoi faire : ${j.hint}`);
 
-  // Et un contrat en `draft` suffit : un contrat non signe est un travail en cours.
-  // Ce qui est un travail en cours, c'est le contrat **absent**.
-  assert(closePhase0(project).code === 0,
-    'un contrat en brouillon est un travail en cours, pas une absence');
+  // Et un contrat enregistre mais **non signe** ne suffit pas non plus. Clore
+  // la Phase 0, c'est la signature : laisser passer un `draft` faisait avancer
+  // la phase en annonçant une signature que rien n'enregistrait, pendant que
+  // `contract_complete` exigeait `approved` juste apres.
+  writeDeliverable(project, '.forge/contract.md', { type: 'contract', body: CONTRAT_COMPLET });
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+  const refus2 = run('state.js', ['complete-phase', project, '0_bootstrap']);
+  assert(refus2.code !== 0, 'la Phase 0 ne doit pas se clore sur un contrat non signe');
+  const j2 = JSON.parse(refus2.stdout.slice(0, refus2.stdout.lastIndexOf('}') + 1));
+  assert(j2.error === 'contract_not_signed', `le refus doit se nommer : ${JSON.stringify(j2)}`);
+  assert(j2.state === 'draft', `le statut du contrat doit etre nomme : ${JSON.stringify(j2)}`);
+  assert(/set-status/.test(j2.hint), `le refus doit dire quoi faire : ${j2.hint}`);
+
+  // Le contre-temoin : meme phase, contrat **approuve** — elle passe. Sans lui,
+  // la regle pourrait etre satisfaite par n'importe quoi.
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+  assert(closePhase0(project).code === 0, 'un contrat signe doit laisser clore la Phase 0');
+});
+
+test('un contrat non signé est rouge dès la phase suivante', () => {
+  // Le complément du précédent : `complete-phase` refuse désormais de clore la
+  // Phase 0 sur un `draft`. Mais `contract_complete` doit aussi le dire, parce
+  // qu'un projet peut être passé par une autre voie, et parce que deux portes
+  // du même skill ne doivent pas diverger.
+  //
+  // Constate sur Atelier : contrat parfait, cinq blocs, quatre engagements
+  // chiffrés, `state: draft`, et `contract_complete: pass` en Phase 4. La règle
+  // « warn en Phase 0, fail au-delà » n'avait été écrite que pour le contrat
+  // **absent** — un contrat non signé passait par `problems.length === 0`.
+  const project = freshProject('contrat-non-signe');
+  writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body: '## Stack\n\nRien.\n' });
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+  writeDeliverable(project, '.forge/contract.md', { type: 'contract', body: CONTRAT_COMPLET });
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+  assert(closePhase0(project).code === 0, 'complete-phase');
+  // On repasse le contrat en `draft` — l'état qu'il faut savoir voir.
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'draft']);
+
+  const res = run('forge-guard.js', ['contract', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'contract_complete');
+  assert(c, 'le contrôle doit être présent : ' + JSON.stringify(res.json));
+  assert(c.status === 'fail', `un contrat non signé doit échouer, il est : ${c.status}`);
+  assert(c.state === 'draft', `le statut doit être nommé : ${JSON.stringify(c)}`);
+  assert(/sign/.test(c.why || ''), `le refus doit dire pourquoi : ${c.why}`);
+
+  // Le contre-témoin : le même projet, contrat approuvé. Un `draft` signalé
+  // quand il n'y a rien à signaler serait aussi inutile qu'un silence.
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+  const res2 = run('forge-guard.js', ['contract', project]);
+  const c2 = (res2.json.checks || []).find(x => x.check === 'contract_complete');
+  assert(c2.status === 'pass', `un contrat signé doit passer, il est : ${c2.status}`);
+});
+
+test('un contrat en Phase 0 non signé est un travail en cours, pas un défaut', () => {
+  // La moitié « warn » de la règle, et elle est indispensable : sinon la
+  // correction punirait l'instant où le contrat est en train d'être écrit —
+  // c'est-à-dire l'instant où il faut justement pouvoir travailler.
+  const project = freshProject('contrat-phase-0');
+  writeDeliverable(project, '.forge/contract.md', { type: 'contract', body: CONTRAT_COMPLET });
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+
+  const res = run('forge-guard.js', ['contract', project]);
+  const c = (res.json.checks || []).find(x => x.check === 'contract_complete');
+  assert(c.status === 'pass',
+    `un contrat en cours en Phase 0 est normal, il est : ${c.status}`);
+});
+
+test('une phase perdue du journal est nommée, et pas réparée', () => {
+  // Constaté sur Atelier : `1_prd` en `not_started`, son livrable `approved`,
+  // les phases 2 à 4 approuvées, `current_phase: 5`. Aucun signalement.
+  //
+  // Pourquoi on ne peut pas rattraper : la seule commande qui marque une phase
+  // `approved` est `complete-phase`, et elle **avance le curseur** dans le même
+  // geste. `set-phase … approved` le recule. Il n'existe donc aucun moyen
+  // d'approuver une phase déjà dépassée sans déformer `current_phase`.
+  const project = freshProject('phase-journal-perdue');
+  writeDeliverable(project, '.forge/prd.md', { type: 'prd', body: '## 4. Règles\n\n| B1 | Une règle |\n' });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'prd', 'approved']);
+  // Une phase postérieure est approuvée — la Phase 1 est donc dépassée.
+  writeDeliverable(project, '.forge/roadmap.md', { type: 'roadmap', body: '## Tranches\n\nRien.\n' });
+  run('state.js', ['register', project, 'deliverable', 'roadmap', '.forge/roadmap.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'roadmap', 'approved']);
+  run('state.js', ['set-phase', project, '2_roadmap', 'approved']);
+  // `1_prd` reste `not_started` : c'est exactement l'état à détecter.
+  assert(readState(project).phases['1_prd'].status === 'not_started',
+    'la fixture doit reproduire une phase perdue');
+
+  const res = run('consistency-check.js', ['phase-journal', project]);
+  const c = res.json.checks[0];
+  assert(c.status === 'fail', `une phase perdue doit échouer, elle est : ${c.status}`);
+  assert(c.lost.length === 1, `la phase perdue n'est pas nommée : ${JSON.stringify(c.lost)}`);
+  assert(c.lost[0].phase === '1_prd', `la mauvaise phase est nommée : ${JSON.stringify(c.lost)}`);
+  assert(c.lost[0].deliverables.includes('prd'), 'le livrable Approved n\'est pas nommé');
+  assert(c.lost[0].later_approved.includes('2_roadmap'), 'la phase qui la dépasse n\'est pas nommée');
+  assert(/répare pas|réparer/.test(c.rule), `la règle doit dire que le contrôle ne répare pas : ${c.rule}`);
+});
+
+test('une phase `not_started` qui est la phase courante n\'est pas perdue', () => {
+  // Le contre-témoin, et il est indispensable : `complete-phase` laisse la
+  // phase suivante « courante » tout en la marquant `not_started`. Sans ce
+  // témoin, le contrôle précédent signalerait la **situation normale** après
+  // chaque transition — et un contrôle qui hurle quand on n'a rien à faire
+  // s'apprend à ignorer.
+  const project = freshProject('phase-journal-courante');
+  // La Phase 0 possède deux livrables : le contrat et les conventions.
+  writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body: '## Stack\n\nRien.\n' });
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+  writeDeliverable(project, '.forge/contract.md', { type: 'contract', body: CONTRAT_COMPLET });
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+  assert(closePhase0(project).code === 0, 'complete-phase');
+
+  const res = run('consistency-check.js', ['phase-journal', project]);
+  const c = res.json.checks[0];
+  assert(c.status === 'pass',
+    `la phase courante not_started est la situation normale : ${c.status}`);
+});
+
+test('un livrable approuvé dans une phase non dépassée n\'est pas une perte', () => {
+  // Second contre-témoin, sur l'autre bord : la phase doit être **dépassée**.
+  // Un `draft` n'est pas une perte non plus — c'est un travail en cours.
+  const project = freshProject('phase-journal-non-depassee');
+  writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body: '## Stack\n\nRien.\n' });
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+  writeDeliverable(project, '.forge/contract.md', { type: 'contract', body: CONTRAT_COMPLET });
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+  assert(closePhase0(project).code === 0, 'complete-phase');
+  writeDeliverable(project, '.forge/prd.md', { type: 'prd', body: '## 4. Règles\n\n| B1 | Une règle |\n' });
+  run('state.js', ['register', project, 'deliverable', 'prd', '.forge/prd.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'prd', 'approved']);
+
+  const res = run('consistency-check.js', ['phase-journal', project]);
+  const c = res.json.checks[0];
+  assert(c.status === 'pass',
+    `aucune phase postérieure approuvée, rien n'est perdu : ${c.status}`);
+});
+
+test('un plan manquant est visible DÈS qu\'on entre en Phase 5, pas à la sortie', () => {
+  // Constaté sur Atelier : approuver la Phase 5 avec six tranches sans plan
+  // rendait `reality` rouge ; remettre la phase en `in_progress` — geste
+  // honnête, l'approbation était prématurée — le rendait **vert**.
+  //
+  // La visibilité du travail manquant était couplée à l'approbation de la phase
+  // qui le produit, donc **annuler l'approbation éteignait la lumière pendant
+  // qu'on pouvait encore écrire les plans**. C'est l'inverse exact de la règle
+  // du projet : le défaut doit tomber dans la fenêtre d'action.
+  const project = freshProject('plans-visibles-en-phase-5');
+  writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body: '## Stack\n\nRien.\n' });
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+  writeDeliverable(project, '.forge/contract.md', { type: 'contract', body: CONTRAT_COMPLET });
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+  assert(closePhase0(project).code === 0, 'complete-phase');
+  // Une tranche declaree, **aucun plan ecrit**.
+  run('state.js', ['register', project, 'slice', 'S1', '.forge/plans/S1.md']);
+  run('state.js', ['set-phase', project, '5_implementation_plan', 'in_progress']);
+
+  const res = run('consistency-check.js', ['reality', project]);
+  const c = res.json.checks[0];
+  assert(c.plans_expected === true,
+    `entré en Phase 5, les plans sont attendus : ${JSON.stringify(c)}`);
+  assert(c.status === 'fail', `un plan manquant doit être visible, il est : ${c.status}`);
+  assert(c.missing.some(m => m.slice === 'S1'),
+    `la tranche sans plan n'est pas nommée : ${JSON.stringify(c.missing)}`);
+});
+
+test('un plan manquant ne fait pas échouer AVANT la Phase 5', () => {
+  // Le contre-témoin, et il est indispensable : sinon la correction punirait
+  // le gate de la Phase 4 pour dix plans qui n'existaient pas encore — exactement
+  // ce que la règle initiale corrigeait. Un contrôle qui échoue quand on n'a
+  // rien à faire s'apprend à ignorer, et alors on ne le voit plus jamais.
+  const project = freshProject('plans-absents-avant-phase-5');
+  writeDeliverable(project, '.forge/conventions.md', { type: 'conventions', body: '## Stack\n\nRien.\n' });
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+  writeDeliverable(project, '.forge/contract.md', { type: 'contract', body: CONTRAT_COMPLET });
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+  assert(closePhase0(project).code === 0, 'complete-phase');
+  run('state.js', ['register', project, 'slice', 'S1', '.forge/plans/S1.md']);
+  // Toujours en Phase 1 : les plans sont le travail de la phase 5.
+  run('state.js', ['set-phase', project, '1_prd', 'in_progress']);
+
+  const res = run('consistency-check.js', ['reality', project]);
+  const c = res.json.checks[0];
+  assert(c.plans_expected === false, `avant la Phase 5, les plans ne sont pas attendus : ${JSON.stringify(c)}`);
+  assert(c.status === 'pass', `un plan absent avant la Phase 5 est normal, il est : ${c.status}`);
 });
 
 test('une phase commencée sans livrable reste un échec', () => {
@@ -2936,10 +3268,16 @@ test('un plan ecrit puis disparu reste un defaut', () => {
 });
 
 test('apres la Phase 5, un plan manquant redevient un defaut', () => {
+  // Le déclencheur est `current_phase >= 5`, pas le statut de la phase. Ce test
+  // posait le statut seul, donc il encodait l'ancien couplage — et il est
+  // remonté : une phase franchie exige ses livrables, et « franchie » veut dire
+  // **atteinte**, pas « approuvée ». Sans cette précision, annuler une
+  // approbation prématurée faisait disparaître le signal.
   const project = freshProject('phases-plans-apres');
   run('state.js', ['register', project, 'slice', 'slice-gamma', '.forge/plans/slice-gamma.md']);
   const state = readState(project);
   state.phases['5_implementation_plan'].status = 'approved';
+  state.current_phase = '6';
   writeState(project, state);
   const res = run('consistency-check.js', ['reality', project]);
   const c = res.json.checks.find(x => x.check === 'slice_plan_exists');

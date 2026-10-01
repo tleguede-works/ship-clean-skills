@@ -234,6 +234,45 @@ Cette discipline a un coût — les numéros montent plus vite — et c'est le b
 
 `conventions.md` est le cas le plus fréquent : c'est un document vivant, et un amendement du PRD l'oblige. Réamende-le, repasse-le `stale` puis `approved`, et relance `consistency-check premises`.
 
+### Qui fait quoi, phase par phase
+
+**Cette table est normative.** Elle dit quel fichier d'agent lire pour écrire le
+livrable de la phase. Sans elle, il faut deviner le nom — et deviner produit des
+fichiers qui n'existent pas, dont l'absence n'échoue jamais.
+
+Constaté deux fois de suite sur le projet de test : `agents/solution-architect.md`
+pour la Phase 4 (le fichier s'appelle `systems-architect.md`) et
+`agents/plan-writer.md` pour la Phase 5 (il n'existe pas). Dans les deux cas
+l'appel a **semblé réussir** : un sous-agent a bien produit le livrable, en
+travaillant depuis `SKILL.md` § 5 et en signalant l'absence du fichier. Un agent
+qui contourne une consigne fausse n'en fait pas un defect visible — il fait
+disparaître le défaut.
+
+| Phase | Livrable | Agent à lire | Vérifié par |
+|---|---|---|---|
+| 1 | `.forge/prd.md` | `agents/product-analyst.md` | `forge-guard placeholders`, `client-liaison --check` |
+| 2 | `.forge/roadmap.md` | `agents/scope-architect.md` | `consistency-check premises` |
+| 3 | `.forge/design/` | `agents/ux-designer.md` | `design-check contrast`, `design-check tokens-used` |
+| 4 | `.forge/architecture.md` | `agents/systems-architect.md` | `ddl-exec all`, `dependency-check` |
+| 5 | `.forge/plans/` | **tu les écris toi-même**, en suivant `SKILL.md` § Phase 5 et `templates/implementation-plan.md.tmpl` | `coverage-check slice`, `forge-guard placeholders` |
+| 6 | `.forge/test-plan.md` | `agents/quality-analyst.md` | `consistency-check plans` |
+
+**La Phase 5 n'a pas d'agent rédacteur, et c'est délibéré.** Un plan d'implémentation
+est la chose la plus facile à écrire dans le vide : un document qui décrit un code
+qu'on n'a pas encore écrit passe très bien toutes les vérifications de forme. Il n'y
+a donc personne à qui déléguer la rédaction — seulement `agents/plan-validator.md`,
+qui **relit** un plan déjà écrit et ne réécrit rien.
+
+`premise-challenger.md` intervient **en plus**, à deux moments de la Phase 1 : à
+mi-interview sur l'idée de départ, et à la fin sur le PRD. Il ne réécrit rien : il
+signale, et tu appliques.
+
+`validate-repo` refuse un fichier d'agent présent sur le disque et jamais nommé ici,
+comme il refuse un agent nommé ici et absent du disque. La table ne peut donc pas
+se désynchroniser d'elle-même.
+
+---
+
 ### Phase 0 — Bootstrap
 
 But : établir le contexte du projet et générer la base des conventions avant toute réflexion produit.

@@ -131,14 +131,26 @@ version: 1
 ## 9. Hors scope (explicitement)
 
 <!--
-  Une exigence retirée garde son ID. C'est la règle qui rend le retrait
-  traçable : si l'ID disparaît avec l'exigence, plus rien ne peut dire qu'un
-  livrable déjà approuvé reposait dessus, et la contradiction devient
-  indétectable. `consistency-check premises` lit cette section pour le
-  vérifier — il ne peut le faire que si l'ID est là.
+  Cette section liste des **exclusions**, pas des retraits. La distinction est
+  ce qui rend lisible la suite du projet, et elle se voit dans l'usage de l'ID.
 
-  Format : `B7 — titre` ou `C3 — titre` ou `E5 — titre`, puis la raison.
-  L'ID doit être celui que l'exigence portait dans les sections 4, 5 ou 6.
+  **Une exclusion qui n'a jamais été une exigence ne porte pas d'ID.** Elle
+  décrit ce que le produit ne fera pas — ni comptabilité, ni SMS, ni gestion des
+  appels. Aucun ID, aucune trace à garder, rien à vérifier.
+
+  **Un retrait, lui, garde son ID** — et l'exigence disparaît alors des
+  sections 4, 5 et 6. C'est la seule règle qui rend le retrait traçable : si
+  l'ID reste vivant ailleurs, plus rien ne peut dire qu'un livrable déjà
+  **approuvé reposait dessus**, et la contradiction devient indétectable.
+
+  Donc : **un ID ne vit qu'à un seul endroit.** Un ID présent en § 5 *et* en § 9
+  n'est ni une exclusion ni un retrait — c'est une collision, et
+  `consistency-check premises` la signale sans accuser le livrable qui cite
+  l'ID. Écrire « C2 — pas de multi-utilisateur » ici alors que le § 5 dit
+  « C2 — un seul secret » est la forme la plus fréquente de cette collision :
+  deux écritures du même fait, de polarité opposée.
+
+  Format quand l'ID est nécessaire : `B7 — titre`, puis la raison.
   Ne jamais réattribuer un ID retiré à autre chose.
 -->
 
