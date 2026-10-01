@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-10-01
+
 ### feat(forge) — deux appels à project-rules-architect, et un mode « socle de contexte »
 
 La synergie tient en deux appels. **Forge est l'appelant deux fois, jamais l'appelé.**
