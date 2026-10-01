@@ -2503,3 +2503,122 @@ ressemble : c'est toucher à celle qui décide. Vérifié en neutralisant
 `record('fast_track_ready', …)`, qui casse alors **trois** tests.
 
 208 tests.
+
+---
+
+## F-51 — la convention de casse de la mémoire : je l'ai cassée en croyant corriger un lecteur mort
+
+**Constaté en exécutant l'appel 1 pour la première fois**, sur `Forge Labs/club-athletique`.
+
+`readSiblingMemory` a répondu `present: false` pendant toute la vie du skill. J'ai
+conclu que le lecteur visait des fichiers impossibles, et j'ai abaissé ses quatre
+noms en minuscules. Les quatre fichiers du projet étaient déjà écrits en
+**majuscules** — `AGENTS.md`, `SESSION_LOG.md`, `DECISIONS.md`, `LEARNINGS.md` — et
+c'est la convention de PRA depuis le début.
+
+**J'avais cassé la convention en croyant la réparer.**
+
+Un `AGENTS.md` et un `agent.md` ne sont pas le même fichier sur un système de
+fichiers sensible à la casse. Le lecteur cherchait désormais un nom que personne
+n'écrirait, et répondait « pas de mémoire » sur un projet qui en avait une — la
+pire des réponses, parce qu'elle est fausse **sans être suspecte** : elle ressemble
+à un projet qui démarre.
+
+Et l'erreur de raisonnement, c'est de n'avoir pas vérifié l'existant : j'ai lu la
+requête de l'utilisateur (« `agent.md` ») comme un nom canonique alors qu'une
+convention de casse établie avait la priorité. **La spécification du projet ne Prime
+jamais sur la convention établie du dépôt** — c'est l'inverse, et l'inverse coûte
+cher.
+
+Trois autres conséquences, toutes de la même famille :
+
+- `state_schema_clean` ne l'aurait pas vu : les noms de fichiers ne sont pas des
+  clés d'état.
+- le test de frontière asserait `b.includes('DECISIONS.md')` et aurait **passé**,
+  parce que le document nommera toujours le nom, en majuscules comme en minuscules.
+  Un test qui vérifie qu'un nom est cité ne vérifie pas qu'il est écrit.
+
+**Ce qu'il faut, et qui manquait :** que la casse soit une assertion. Elle est
+maintenant dans les six vérifications du mode socle de PRA, et dans le test.
+
+## F-52 — `AGENTS.md` décrivait les trois fichiers sans dire quand y écrire
+
+Le même appel, le même tour, et celui-là est le plus intéressant des trois.
+
+Le scaffold produit quatre fichiers. `AGENTS.md` portait un tableau : une ligne par
+fichier, avec **ce qu'il contient**. Une seule moitié de l'index.
+
+L'autre moitié manquait : **ce qui fait qu'on y écrive**. Pas ce qu'on y met — ce
+qui déclenche l'écriture. Et le manque est silencieux, parce qu'un tableau avec
+description et sans déclencheur **ressemble à un tableau complet**.
+
+Le résultat est une mémoire créée, correctement nommée, structurée, indexée, et
+**définitivement vide** : quatre contenants et aucune instruction de les remplir.
+C'est pire que pas de mémoire, parce que ça ressemble à du progrès — et personne ne
+signalera jamais « la mémoire est vide », puisque la mémoire existe.
+
+La distinction qui rend le défaut visible :
+
+| Moitié | Question | Son absence |
+|---|---|---|
+| **Description** | qu'y met-on ? | le fichier est un mystère |
+| **Déclencheur** | qu'est-ce qui m'y fait écrire, et quand ? | le fichier reste vide pour toujours |
+
+Un déclencheur est une **condition**, pas une catégorie. « Corrections » est une
+description ; « la deuxième fois que tu te trompes » est un déclencheur. Les trois
+doivent être distincts, sinon c'est le même déclencheur recopié trois fois.
+
+`state.js start` expose maintenant `triggers_named` et
+`memory_described_not_triggered`. Le second est le signal : un fichier décrit et
+jamais déclenché.
+
+**Et le compteur ne compte pas les mentions.** Compter les mentions aurait donné
+3 sur un scaffold entièrement dépourvu de déclencheur — l'index décrit déjà les
+trois fichiers. Ce qui compte est la **co-occurrence** d'un nom de fichier et d'un
+cue de condition sur la même ligne. C'est un contrôle de **présence**, et il le
+dit : il attrape l'oubli, pas la maladresse.
+
+## F-53 — la quatrième fois où un motif trop étroit lisait un document comme vide
+
+Trois occurrences en une session, dont deux ici.
+
+`sessions` comptait `/^##\s+\d{4}-\d{2}-\d{2}/`. Le journal écrit ses entrées en
+`###` sous une section `## Sessions`. Compteur : **0 sur deux entrées réelles**,
+le jour où le premier événement a été écrit. « Aucune session » est un mensonge
+fréquent, parce qu'il ressemble à un projet qui démarre.
+
+`questions_open` comptait `/Status:\s*Open/`, `adrs_open` comptait
+`/^- \*\*Status:\*\* Open/`. Le même champ, du même fichier, **deux motifs**. Le
+socle écrit la forme claire ; la seconde expression répondait **0 sur dix questions
+ouvertes**.
+
+Le second défaut est le plus grave des deux, et il a une forme qui revient : **un
+prédicat dupliqué diverge**, c'est tout ce qu'il fait. Corriger l'un sans l'autre
+donne deux lecteurs du même champ qui peuvent ne pas être d'accord, et aucun des
+deux ne le dit.
+
+Le correctif est le même que pour F-48 : **un seul motif**, ancré sur la **valeur**
+et tolérant à la décoration, partagé par les deux usages.
+
+## Deux trouvailles signalées, pas corrigées
+
+**Le scan de caractères ne couvre pas la source du skill lui-même.** C'est
+assumé et écrit : `scanTargets` ne lit que « ce que le projet a produit, rien de
+tiers ». Le périmètre est sain — un contrôle de projet ne doit pas juger son propre
+outil. Mais la conséquence est réelle : la source du skill accumule la corruption
+générative que rien ne regarde, alors qu'elle est lue par un agent à chaque session.
+
+Deux occurrences trouvées **par hasard** pendant cette session, pas par un contrôle :
+`ПREDIT` en cyrillique dans un commentaire de `state.js`, et `的` dans un commentaire  <!-- unicode-scan:ignore -->
+de `ddl-exec.js` — « C'était un 的 service du script ». Les deux corrigées. Le  <!-- unicode-scan:ignore -->
+périmètre, lui, n'a pas été élargi : c'est une décision à prendre séparément, et
+elle ne concerne pas la synergie.
+
+Et une précision qui invalide mon premier diagnostic : j'ai cru le scan percé sur
+le cyrillique. Non — `scanVerdict` le couvre explicitement, et signale tout le
+reste. Le périmètre était la seule vraie limite.
+
+**`ПREDIT` était déjà dans le dépôt** avant cette session, dans la source de Forge,  <!-- unicode-scan:ignore -->
+et personne ne l'a vu pendant un an. C'est la mesure la plus simple de ce que
+produit la corruption générative : elle ne casse rien, elle se lit, et elle fait
+sourire.
