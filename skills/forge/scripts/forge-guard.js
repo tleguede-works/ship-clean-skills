@@ -1154,7 +1154,7 @@ function checkContract(root) {
       state: 'absent_past_phase_0',
       phase: state.current_phase,
       why: 'Le projet est en Phase ' + state.current_phase + ' et n\'a pas de contrat : il a franchi la Phase 0 sans l\'etape ou le client signe ce qui est livre, ce qui ne l\'est pas, et ce qui engage un achat.',
-      next: 'Produire le contrat depuis templates/contract.md.tmpl — ou node "$FORGE/scripts/state.js" contract-migrate <anchor>, qui le derive des decisions deja prises',
+      next: 'Produire le contrat depuis templates/contract.md.tmpl : node "$FORGE/scripts/state.js" register <anchor> deliverable contract .forge/contract.md',
       rule: "\u00ab Apres la signature, le client n\'intervient plus \u00bb est la promesse centrale du mode agence. Elle repose entierement sur un contrat signe avant que quoi que ce soit ne soit engage. Un projet qui a avance sans n\'a pas de client : il a un perimetre."
     });
   }
