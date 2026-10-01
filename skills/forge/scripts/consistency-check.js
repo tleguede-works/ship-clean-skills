@@ -128,7 +128,26 @@ function checkSliceReality(root, state) {
   // pour la raison exacte qu'on était en train de faire ce qu'on fait dans
   // l'ordre prévu. Un contrôle qui échoue pour une information qu'on n'a pas
   // encore à produire apprend à être ignoré.
-  const plansExpected = ((state.phases || {})['5_implementation_plan'] || {}).status === 'approved';
+    // La fenêtre : les plans sont attendus dès que le projet **est entré** en
+  // Phase 5, pas seulement quand la phase est approuvée.
+  //
+  // La règle initiale — « pas d'échec avant la Phase 5 » — était juste et reste
+  // juste : au gate de la Phase 4, dix plans n'existaient pas encore et c'était
+  // le travail de la phase suivante. Mais elle était indexée sur
+  // `status === 'approved'`, c'est-à-dire sur la **sortie** de la phase, pas sur
+  // son entrée.
+  //
+  // Conséquence, mesurée sur Atelier : approuver la Phase 5 avec six tranches
+  // sans plan rendait `reality` rouge ; remettre la phase en `in_progress`
+  // — geste **honnête**, puisque l'approbation était prématurée — le rendait
+  // **vert**. La visibilité du travail manquant était donc couplée à
+  // l'approbation de la phase qui le produit, et l'annulation de l'approbation
+  // éteignait la lumière **pendant** qu'on pouvait encore écrire les plans.
+  //
+  // Un défaut doit tomber dans la fenêtre d'action. Ici, la fenêtre est
+  // exactement `current_phase >= 5`.
+  const phaseNum = parseInt(state.current_phase, 10);
+  const plansExpected = Number.isFinite(phaseNum) && phaseNum >= 5;
 
   const missingPlan = [];
   const missingTest = [];
@@ -498,10 +517,27 @@ function checkPremises(root, state) {
     const lead = head.match(/^\*\*([BCE]\d+)\*\*\s*[-—:]?\s*/) || head.match(/^([BCE]\d+)\s*[-—:]\s*/);
     if (!lead) {
       const label = head.split('—')[0].trim();
+      // Une entrée SANS ID est un **avertissement**, pas un échec.
+      //
+      // La forme normale d'une section « Hors scope » est une exclusion qui
+      // n'a jamais été une exigence : ni comptabilité, ni SMS. Elle n'a donc
+      // aucun ID à porter, et le gabarit le dit depuis qu'une section nommée
+      // « Hors scope (explicitement) » a été distinguée d'un registre de
+      // retraits. Ce contrôle exigeait l'ID et échouait quand il manquait —
+      // donc il échouait sur le cas ordinaire et tolérait le cas rare.
+      //
+      // Ce qui est dit ici est exact et borné : le document **ne donne rien à
+      // vérifier**. Si cette entrée retire une exigence qui vivait en § 4, 5
+      // ou 6, aucun contrôle ne le saura — et il faut donc que l'PRD le dise
+      // avec un ID. La condition est fausse pour une exclusion, vraie pour un
+      // retrait, et rien dans la ligne ne permet de trancher.
       untraceable.push({
         line: label.slice(0, 80),
-        why: 'exigence retirée sans son ID en tête d\'entrée — plus rien ne peut dire ' +
-             'qu\'un livrable approuvé reposait dessus'
+        why: 'entrée de « Hors scope » sans ID. Si elle décrit une simple ' +
+             'exclusion, c\'est la forme normale et il n\'y a rien à corriger. ' +
+             'Si elle RETIRE une exigence qui vivait en § 4, 5 ou 6, il faut lui ' +
+             'rendre son ID et la retirer de ces sections — sinon aucun contrôle ' +
+             'ne pourra dire qu\'un livrable approuvé reposait dessus.'
       });
       continue;
     }
@@ -522,6 +558,40 @@ function checkPremises(root, state) {
     }
   }
 
+  /* ---------------------------------------------------------------- *
+   * « Hors scope » n'est pas « retiré ».
+   *
+   * Le gabarit nomme la section **« 9. Hors scope (explicitement) »** et son
+   * commentaire parle d'exigences **retirées**. Ce sont deux sections
+   * différentes : la première liste ce qui est **exclu**, la seconde enregistre
+   * ce qui a été **annulé**.
+   *
+   * Un auteur qui écrit la section 9 comme elle est titrée — une liste
+   * d'exclusions — produit naturellement des ID **déjà vivants** ailleurs :
+   * `C2` vaut « un seul secret » en § 5 et « pas de multi-utilisateur » en § 9.
+   * Ce sont **deux écritures du même fait**, de polarité opposée.
+   *
+   * Le code lisait « ID présent en § 9 » comme « exigence retirée », sans
+   * consulter `definitions` — donc malgré le commentaire de `definitions`
+   * ci-dessus, qui décrit précisément cette faute. Résultat : `roadmap`,
+   * approuvé sur une exigence vivante, était accusé de reposer sur une exigence
+   * **retirée**, et `retired_cited_in_body` le citait deux fois sans
+   * acquittement. **L'accusation la plus coûteuse du contrôle était donc émise
+   * à tort**, et un agent qui l'aurait crue aurait supprimé des dépendances
+   * réelles.
+   *
+   * La règle qui rend la distinction possible est déjà celle des fixtures : un
+   * retrait genuine laisse l'ID **nulle part ailleurs**. Un ID en § 9 qui est
+   * aussi défini ailleurs n'est donc **pas** un retrait — c'est une collision,
+   * et `collisions` la signale déjà. Ce contrôle n'accuse pas sur ce qu'il ne
+   * peut pas déterminer : il nomme l'ambiguïté et laisse la collision parler.
+   * ---------------------------------------------------------------- */
+  const ambiguousHorsScope = new Set();
+  for (const [id, defs] of definitions) {
+    if (!inHorsScope.has(id)) continue;
+    if (defs.some(d => !/hors[ -]?scope/i.test(d.section))) ambiguousHorsScope.add(id);
+  }
+
   // Les IDs déclarés, et leur état.
   //
   // **Même catégorie que `definitions` ci-dessus, même constante.** Les deux lisaisons
@@ -533,6 +603,7 @@ function checkPremises(root, state) {
   for (const m of text.matchAll(ID_EXIGENCE_G)) declared.add(m[1]);
 
   const retired = [];
+  const ambiguous = [];
   const unknown = [];
   const undeclared = [];
   const checked = [];
@@ -551,7 +622,18 @@ function checkPremises(root, state) {
     }
     for (const id of d.requires) {
       checked.push({ deliverable: key, premise: id });
-      if (inHorsScope.has(id)) {
+      if (ambiguousHorsScope.has(id)) {
+        // Ambiguïté, pas retrait : voir le bloc « Hors scope n'est pas retiré ».
+        // `collisions` la signale, et c'est elle qui doit être corrigée — pas la
+        // déclaration de prémisse de ce livrable.
+        ambiguous.push({
+          deliverable: key, premise: id, path: d.path,
+          why: `l'ID ${id} est à la fois défini dans le PRD et listé en « Hors scope ». ` +
+               `Impossible de dire si l'exigence a été retirée ou si le même fait est ` +
+               `écrit deux fois — donc ${key} n'est PAS accusé de reposer sur une ` +
+               `exigence retirée. C'est l'ID qu'il faut trancher.`
+        });
+      } else if (inHorsScope.has(id)) {
         retired.push({
           deliverable: key, premise: id, path: d.path,
           why: `l'exigence ${id} est dans la section « Hors scope » du PRD, ` +
@@ -595,6 +677,9 @@ function checkPremises(root, state) {
     const body = read(root, d.path);
     if (!body) continue;
     for (const id of inHorsScope) {
+      // Un ID ambigu n'est pas un retrait : le citer ici produirait un
+      // « signale sans acquittement » sur un livrable parfaitement sain.
+      if (ambiguousHorsScope.has(id)) continue;
       if (!new RegExp(`\\b${id}\\b`).test(body)) continue;
       const lines = body.split('\n');
       const hits = lines
@@ -628,10 +713,11 @@ function checkPremises(root, state) {
   // un contrôle qui signale un défaut inexistant apprend à être ignoré.
   const unacknowledgedCitations = retiredCited.filter(r => !r.acknowledged_only);
 
-  const pass = retired.length === 0 && unknown.length === 0 && untraceable.length === 0 &&
+  const pass = retired.length === 0 && unknown.length === 0 &&
     collisions.length === 0;
   record('premises', pass, {
     retired,
+    ambiguous,
     unknown,
     undeclared,
     untraceable,
@@ -641,13 +727,19 @@ function checkPremises(root, state) {
     declared_dependencies: checked.length,
     rule: 'Un livrable approuvé qui se justifie par une exigence retirée reste un livrable ' +
           'approuvé, et rien ne le signale. C\'est le motif le plus coûteux d\'un projet : ' +
-          'l\'artefact tardif révèle le défaut de l\'artefact déjà validé.'
+          'l\'artefact tardif révèle le défaut de l\'artefact déjà validé.',
+    ambiguous_rule: '« Hors scope » liste des exclusions ; un retrait annule une exigence. ' +
+          'Un ID présent dans les deux sections n\'est PAS un retrait — c\'est une ' +
+          'collision, et seul l\'ID est à trancher. Accuser le livrable sur cette ' +
+          'ambiguïté lui ferait supprimer une vraie dépendance.'
   });
   // Les livrables approuvés sans prémisse déclarée ne sont pas une erreur —
   // un PRD ne dépend de rien — mais l'omission doit être visible, sinon la
   // dépendance reste non déclarée pour de bon. Idem pour la citation d'un ID
-  // retiré : elle est légitime si elle annonce le retrait.
-  if (pass && (undeclared.length || unacknowledgedCitations.length)) {
+  // retiré : elle est légitime si elle annonce le retrait. Et pour une entrée
+  // de « Hors scope » sans ID : inoffensive si c'est une exclusion, ce qui est
+  // le cas ordinaire, donc un avertissement et non un échec.
+  if (pass && (undeclared.length || unacknowledgedCitations.length || untraceable.length)) {
     const entry = results.checks[results.checks.length - 1];
     entry.status = 'warn';
   }
@@ -1287,6 +1379,73 @@ function checkSectionReferences(root, state) {
   });
 }
 
+/* ------------------------------------------------------------------ *
+ * Le journal des phases a-t-il gardé toutes les phases ?
+ * ------------------------------------------------------------------ */
+
+/**
+ * Une phase marquée `not_started` alors que **son propre livrable est approuvé**,
+ * et qu'une phase **postérieure** est approuvée : la phase n'a pas été sautée
+ * par oubli, elle a été perdue.
+ *
+ * Contexte, parce que la réparation n'est pas évidente et ne doit surtout pas
+ * être tentée ici. La seule commande qui marque une phase `approved` est
+ * `complete-phase`, et elle **avance le curseur** dans le même geste. Il n'existe
+ * donc aucun moyen d'approuver une phase déjà dépassée sans **reculer**
+ * `current_phase`. Un agent qui n'a pas appelé `complete-phase` sur la Phase 1
+ * avant d'avancer ne peut pas le rattraper, et `sync` ne le voit pas.
+ *
+ * Constaté sur Atelier : `1_prd` en `not_started`, son livrable `approved`, les
+ * phases 2 à 4 approuvées, `current_phase: 5`. Zéro signalement — ni
+ * `forge-guard`, ni `consistency-check`, ni `sync`.
+ *
+ * Ce contrôle **signale et ne répare pas** : déplacer le curseur pour réparer
+ * une trace d'audit en déforme une autre. Il nomme la phase, son livrable, et la
+ * phase approuvée la plus tardive qui la rend impossible.
+ */
+function checkPhaseJournal(root, state) {
+  const phases = state.phases || {};
+  const owners = L.PHASE_ARTIFACT_OWNERS || {};
+  const keys = L.PHASE_KEYS;
+  const approvedLater = keys.filter(k => (phases[k] || {}).status === 'approved');
+
+  const lost = [];
+  for (const k of keys) {
+    const p = phases[k] || {};
+    if (p.status !== 'not_started') continue;
+    const owned = ((owners[k] || {}).deliverable || []).filter(a => {
+      const d = (state.deliverables || {})[a];
+      return d && (d.status === 'approved' || d.status === 'in_review');
+    });
+    if (!owned.length) continue;
+    // La phase n'est signalée que si le projet a **dépassé** : tant qu'elle
+    // est la phase courante ou une phase future, `not_started` est exact.
+    const idx = keys.indexOf(k);
+    const laterApproved = approvedLater.filter(a => keys.indexOf(a) > idx);
+    if (!laterApproved.length) continue;
+    lost.push({
+      phase: k,
+      status: p.status,
+      deliverables: owned,
+      later_approved: laterApproved,
+      why: `la phase ${k} est \`not_started\` alors que ${owned.join(', ')} ` +
+           `est approuvé et que ${laterApproved.join(', ')} est approuvée après elle. ` +
+           'La phase a été perdue, pas sautée.',
+      rule: 'Le journal des phases est une trace. Une phase perdue dedans ne se voit ' +
+            'nulle part, alors que les deux seules commandes qui écrivent dans ce journal ' +
+            'avancent le curseur en même temps.'
+    });
+  }
+
+  record('phase_journal', lost.length === 0, {
+    lost,
+    rule: 'Une phase `not_started` dont le livrable est approuvé, devant une phase ' +
+          'approuvée, est une phase perdue du journal. Le contrôle la nomme et ne la ' +
+          'répare pas : réparer en déplaçant le curseur déformerait une autre trace.'
+  });
+  if (!lost.length) return;
+}
+
 const CHECKS = {
   reality: (root, state) => checkSliceReality(root, state),
   ids: (root, state) => checkIdTraceability(root, state),
@@ -1298,6 +1457,7 @@ const CHECKS = {
   citations: (root, state) => checkCitationAccuracy(root, state),
   'state-parity': (root, state) => checkStateParity(root, state),
   references: (root, state) => checkSectionReferences(root, state),
+  'phase-journal': (root, state) => checkPhaseJournal(root, state),
 };
 
 function main() {

@@ -575,6 +575,118 @@ check('hints_point_to_real_commands', hintIssues.length === 0, {
 });
 
 /* ------------------------------------------------------------------ *
+ * La table de repartition des agents ne doit pas mentir
+ * ------------------------------------------------------------------ */
+
+/*
+ * Deux verites qui ne seJoinednt pas, et que rien ne rapprochait :
+ *
+ *   - un agent nomme dans `SKILL.md` et absent du disque ;
+ *   - un agent present sur le disque et jamais nomme dans `SKILL.md`.
+ *
+ * Le second est le plus grave et il ne se voit pas. Un agent orphelin donne
+ * l'impression que la phase est couverte — il y a un fichier pour elle — alors
+ * que personne n'y renvoie. Constate deux fois de suite sur le projet de test :
+ * `agents/solution-architect.md` (le vrai nom est `systems-architect.md`) et
+ * `agents/plan-writer.md` (il n existe pas). Dans les deux cas l appel a
+ * **semble reussir** : un sous-agent a produit le livrable en contournant la
+ * consigne, et l absence du fichier n a jamais rien signale.
+ *
+ * Un appel qui echoue est un appel qui a marche. Un agent qui contourne une
+ * consigne fausse ne rend pas le defaut visible — il le fait disparaitre.
+ */
+
+const SKILL_MD = path.join(ROOT, 'skills', 'forge', 'SKILL.md');
+const AGENTS_DIR = path.join(ROOT, 'skills', 'forge', 'agents');
+const dispatchIssues = [];
+
+if (fs.existsSync(SKILL_MD) && fs.existsSync(AGENTS_DIR)) {
+  const doc = fs.readFileSync(SKILL_MD, 'utf-8');
+
+  // **La table est normative ; la prose ne l'est pas.**
+  //
+  // Chercher `agents/<nom>.md` dans tout le document produit un faux positif dès
+  // que la prose raconte un chemin inventé — et c est exactement ce que fait un
+  // journal de defauts : il *cite* les mauvais noms. Un controle qui lit sa propre
+  // documentation comme une declaration de dependance signale sa reponse.
+  //
+  // Donc : seules les **lignes de tableau** de la section sont lues. Elles sont
+  // trouvees par leur en-tete `| Phase |`, puis les lignes consecutives qui
+  // commencent par `|` — la suite arretant des la premiere ligne qui n en est pas
+  // une. La prose qui entoure ne peut ni ajouter ni retirer un agent.
+  let table = '';
+  {
+    const lignes = doc.split('\n');
+    const tete = lignes.findIndex(l => /^\|\s*Phase\s*\|/.test(l));
+    if (tete === -1) {
+      dispatchIssues.push({
+        problem: 'table_de_repartition_absente_de_SKILL_md',
+        why: 'Sans la table normative, il faut deviner le nom du fichier d agent de chaque phase — et deviner produit des chemins qui n existent pas, sans jamais echouer.',
+        fix: 'Ajouter un tableau en-tete « | Phase | Livrable | Agent a lire | Verifie par | » dans SKILL.md.'
+      });
+    } else {
+      for (let i = tete; i < lignes.length && lignes[i].trimStart().startsWith('|'); i++) {
+        table += lignes[i] + '\n';
+      }
+      // Une table a au moins un separateur : sans lui, le bloc est de la prose
+      // qui imite un tableau, et le control croirait lire une declaration.
+      if (!/\|\s*-{2,}/.test(table)) {
+        table = '';
+        dispatchIssues.push({
+          problem: 'table_de_repartition_sans_separateur',
+          why: 'Un bloc de lignes commencant par « | » sans separateur n est pas une table : le control croirait lire une declaration normative.',
+          fix: 'Ajouter la ligne « |---|---|---|---| » sous l en-tete du tableau.'
+        });
+      }
+    }
+  }
+
+  const nommes = new Set(
+    [...table.matchAll(/agents\/([a-z0-9-]+)\.md/g)].map(m => m[1])
+  );
+  const surDisque = fs.readdirSync(AGENTS_DIR)
+    .filter(f => f.endsWith('.md'))
+    .map(f => f.replace(/\.md$/, ''));
+
+  for (const name of nommes) {
+    if (!surDisque.includes(name)) {
+      dispatchIssues.push({
+        agent: name,
+        problem: 'nomme_dans_la_table_mais_absent_du_disque',
+        why: 'La table est normative : elle promet un fichier. Un fichier absent transforme la promesse en invention.',
+        fix: `Ecrire skills/forge/agents/${name}.md, ou retirer le nom de la table.`
+      });
+    }
+  }
+
+  // Un agent orphelin est le cas le plus grave et le moins visible : le fichier
+  // existe, donc il semble que la phase soit couverte, alors que personne ne le
+  // cite. On le cherche donc dans TOUT le document, par nom nu — ce que la
+  // prose fait deja (`client-liaison`, `red-team`…).
+  for (const name of surDisque) {
+    if (nommes.has(name)) continue;
+    const cite = new RegExp('`?' + name + '`?').test(doc);
+    if (cite) continue;
+    dispatchIssues.push({
+      agent: name,
+      problem: 'present_sur_le_disque_mais_jamais_nomme_dans_SKILL_md',
+      why: 'Un agent orphelin donne l impression que sa phase est couverte — il y a un fichier pour elle — alors que personne n y renvoie.',
+      fix: `Nommer ${name}.md dans la table de repartition de SKILL.md, ou supprimer le fichier.`
+    });
+  }
+} else {
+  dispatchIssues.push({
+    problem: 'table_de_repartition_introuvable',
+    why: `Ni SKILL.md (${SKILL_MD}) ni agents/ (${AGENTS_DIR}) n sont lisibles — la repartition par phase ne peut pas etre verifiee.`
+  });
+}
+check('agent_dispatch_matches_skill', dispatchIssues.length === 0, {
+  offenders: dispatchIssues,
+  hint: 'Nommer chaque fichier de agents/ dans la table de repartition de SKILL.md, et verifier que chaque nom existe sur le disque.',
+  rule: 'Un agent orphelin donne l impression que sa phase est couverte alors que personne n y renvoie. Et l appel qui echoue est un appel qui a marche : un sous-agent qui contourne une consigne fausse fait disparaitre le defaut au lieu de le montrer.'
+});
+
+/* ------------------------------------------------------------------ *
  * Sortie
  * ------------------------------------------------------------------ */
 

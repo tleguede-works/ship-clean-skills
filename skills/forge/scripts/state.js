@@ -655,17 +655,42 @@ function cmdCompletePhase(root, phaseKey) {
   // puis passerait au rouge **après** l'instant où l'agent aurait pu agir. Un défaut
   // qui n'apparaît qu'une fois la fenêtre fermée est un défaut qu'on apprend à ignorer.
   //
-  // Ici, l'absence est signalée au moment de **clore la phase** — c'est-à-dire quand le
-  // client signe. L'approbation reste la sienne : `draft` suffit pour franchir, parce
-  // qu'un contrat non signé est un travail en cours, et un contrat absent n'en est pas un.
-  if (phaseKey === '0_bootstrap' && !(state.deliverables || {}).contract) {
-    L.fail({
-      error: 'no_contract',
-      phase: phaseKey,
-      why: 'La Phase 0 se termine par un contrat : c\'est là que le client signe ce qui est livré, ce qui ne l\'est pas, et ce qui engage un achat. Sans lui, la promesse « après la signature, le client n\'intervient plus » n\'a personne derrière.',
-      hint: 'node "$FORGE/scripts/state.js" register ' + root + ' deliverable contract .forge/contract.md — puis set-status … approved quand le client a signé',
-      rule: 'Un contrôle qui n\'apparaît qu\'après la fenêtre d\'action est un contrôle qu\'on apprend à ignorer. Celui-ci tombe au moment de clore la phase.'
-    });
+  // Clore la Phase 0, c'est le client qui signe. Donc le contrat doit être
+  // **`approved`** à cet instant — pas seulement présent.
+  //
+  // Ce commentaire disait le contraire : *« `draft` suffit pour franchir, parce
+  // qu'un contrat non signé est un travail en cours, et un contrat absent n'en est
+  // pas un. »* C'était une distinction fine et juste… qui ne s'appliquait qu'aux
+  // deux premiers mots. Le troisième existait déjà : **clore la phase, c'est
+  // signer**. La règle laissait donc passer un `draft`, la phase s'avançait, et
+  // `contract_complete` exigeait ensuite `approved` — deux documents du même
+  // skill en désaccord, dont l'un ouvrait une porte que l'autre fermait.
+  //
+  // Le choix est net : `draft` franchissait en **annonçant** une signature que
+  // rien n'enregistrait. Le client ne signe pas un `state.json`.
+  if (phaseKey === '0_bootstrap') {
+    const contract = (state.deliverables || {}).contract;
+    if (!contract) {
+      L.fail({
+        error: 'no_contract',
+        phase: phaseKey,
+        why: 'La Phase 0 se termine par un contrat : c\'est là que le client signe ce qui est livré, ce qui ne l\'est pas, et ce qui engage un achat. Sans lui, la promesse « après la signature, le client n\'intervient plus » n\'a personne derrière.',
+        hint: 'node "$FORGE/scripts/state.js" register ' + root + ' deliverable contract .forge/contract.md',
+        rule: 'Un contrôle qui n\'apparaît qu\'après la fenêtre d\'action est un contrôle qu\'on apprend à ignorer. Celui-ci tombe au moment de clore la phase.'
+      });
+    }
+    if (contract.status !== 'approved') {
+      L.fail({
+        error: 'contract_not_signed',
+        phase: phaseKey,
+        state: contract.status,
+        why: 'Clore la Phase 0 EST la signature. Le contrat est enregistré mais son statut est `' +
+             contract.status + '` : la phase s\'avancerait en annonçant une signature que personne n\'a faite, et ' +
+             '`contract_complete` la refuserait juste après — deux portes du même skill en désaccord.',
+        hint: 'Faire signer, puis node "$FORGE/scripts/state.js" set-status ' + root + ' deliverable contract approved',
+        rule: 'Un `draft` est un travail en cours ; clore la phase est une signature. Confondre les deux permet de franchir une porte en mentant sur ce qui l\'a ouverte.'
+      });
+    }
   }
 
   state.phases[phaseKey].status = 'approved';

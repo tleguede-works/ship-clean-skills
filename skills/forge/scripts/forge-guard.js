@@ -1102,7 +1102,14 @@ const CONTRACT_BLOCKS = [
  */
 const ENGAGEMENT_KINDS = [
   { kind: 'hebergement', re: /h[eé]bergement|hebergeur|hosting|serveur|instances?\b/i },
-  { kind: 'identite', re: /identit[eé]|identity|authentification|auth provider|login|connexion/i },
+  // `signature` et `signataire` appartiennent au genre **identite** : signer, c'est
+  // etablir qui a engage. Constate sur Atelier, le premier contrat reellement
+  // chiffre de tout le dossier : les conventions nommaient « Identite du signataire »
+  // et le contrat nommait « Signature du devis » — le meme engagement, deux
+  // formulations, et la porte signalait une absence. C'est F-48 et F-53 encore,
+  // mais sur la **classification** : une categorie qui ne couvre pas ce que les
+  // documents ecrivent ne sert a rien, meme si le reste du raisonnement est bon.
+  { kind: 'identite', re: /identit[eé]|identity|authentification|auth provider|login|connexion|signature|signataire|signer/i },
   { kind: 'achat', re: /\bachat\b|acheter|licence|license|abonnement|subscription|solde\.|facturation|facture|forfait|\bplan\b (payant|pro|premium)|\bnom de domaine\b/i },
   { kind: 'fond', re: /ex[ée]cution de fond|background (job|execution)|t[aâ]che planifi[eé]e|\bcron\b|webhook|queue|file d'attente/i },
   { kind: 'donnees', re: /donn[eé]es? personnelle|rgpd|gdpr|h[ée]bergement de donn[eé]es|residenz? (data|ue)/i }
@@ -1269,7 +1276,15 @@ function checkContract(root) {
   // seulement la premiere : dans `| Décision | Options | Échéance | Prix |` le mot est
   // en troisieme position, et un motif ancre sur la premiere ne voit rien.
   const rows = allRows.filter(l => !/e[\u0300-\u036f]?cheance/i.test(l));
-  const dated = rows.filter(l => /\d{4}-\d{2}-\d{2}|avant le|au plus tard|échéance|\bd[ée]\b/i.test(l));
+  // Une echeance relative s'ecrit de mille facons, et `avant le` n'en est qu'une.
+  // « Avant la premiere facture » est une echeance aussi precise que « avant le
+  // premier devis » — meme jour, meme obligation, meme consequence si elle passe.
+  // Constate sur le meme contrat, sur la meme ligne dont la premiere version
+  // etait refusee pour cette seule raison : la porte reconnait l'article, pas la
+  // proposition. Vingt-et-unieme manifestation du meme defaut — un motif plus
+  // etroit que ce que les documents ecrivent.
+  const ECHEANCE = /\d{4}-\d{2}-\d{2}|avant\s+(?:le |la |l’|les )|au\s+plus\s+tard|[eé]ch[eé]ance|d ici|fin de|premiere|premi[eè]re|\bd[ée]\b/i;
+  const dated = rows.filter(l => ECHEANCE.test(l));
   if (rows.length && dated.length < rows.length) {
     problems.push({ block: 'Ce qui reviendra au client', why: `${rows.length - dated.length} ligne(s) sans échéance — une décision sans date est prise par le plus proche`, evidence: (rows.find(l => !dated.includes(l)) || '').trim().slice(0, 90) });
   }
@@ -1331,6 +1346,34 @@ function checkContract(root) {
         }
       }
     }
+  }
+
+  /* Un contrat **relu et non signé** n'engage personne non plus.
+   *
+   * La branche « contrat absent » applique déjà `warn` en Phase 0 et `fail`
+   * au-delà. Elle ne voyait que l'absence. Un contrat `draft` — écrit,
+   * chiffré, relu — passait ensuite par `problems.length === 0`, donc
+   * **vert dans toutes les phases**, alors que personne n'avait signé.
+   *
+   * Constate sur Atelier : contrat parfait, cinq blocs, quatre engagements
+   * chiffrés, et `state: draft`. La porte disait `pass`. Un `draft` n'est pas
+   * « en cours d'écriture » : le gabarit produit le document en un geste, et un
+   * client signe ou ne signe pas. La seule chose qui rend le `draft` légitime
+   * est la phase 0 — le travail en cours.
+   */
+  const phaseNum = parseInt(state.current_phase, 10);
+  if (contract.status !== 'approved' && Number.isFinite(phaseNum) && phaseNum > 0) {
+    return record('contract_complete', false, {
+      state: contract.status,
+      phase: state.current_phase,
+      why: 'Le contrat est en Phase ' + state.current_phase + ' et son statut est ' +
+           '`' + contract.status + '` : personne ne l\'a signé. « Après la signature, ' +
+           'le client n\'intervient plus » est la promesse centrale du mode agence, et ' +
+           'elle ne commence pas à la lecture du document.',
+      next: 'Faire signer, puis node "$FORGE/scripts/state.js" set-status <anchor> deliverable contract approved',
+      rule: 'Le contrat est le seul artefact qui engage le client. Tant qu\'il est en Phase 0, son absence ou son statut `draft` est le travail à faire. Au-delà, un contrat non signé est une promesse faite à personne.',
+      problems
+    });
   }
 
   record('contract_complete', problems.length === 0, {

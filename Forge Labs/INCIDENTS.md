@@ -3015,3 +3015,324 @@ qu'un contrôle ne voit pas le défaut qu'il existe pour voir. Mieux vaut une li
 qu'une liste qui attrape tout.
 
 220 tests, inchangés — le contrôle vit dans `validate-repo`, hors du harnais `selftest`.
+
+---
+
+## F-67 — le premier contrat réellement chiffré a cassé la porte deux fois
+
+Les trois projets migrés ont tous échoué sur « engagement sans prix ». Aucun n'a donc
+jamais atteint la porte des irréversibles, et **ses défauts étaient invisibles**.
+`Atelier` est le premier contrat chiffré du dossier — et les deux premiers refus qu'il
+aubara venaient de la porte, pas du contrat.
+
+### Défaut 1 — `signature` n'appartenait à aucun genre
+
+Les conventions nommaient **« Identité du signataire »** en case `AVANT LA PHASE 1`. Le
+contrat nommait **« Signature du devis »** — même engagement, autre formulation, et la
+porte signalait une absence.
+
+La porte compare par **genre**, ce qui est la bonne idée, mais sa liste de genres ne
+couvrait pas ce que les documents écrivent : `signature` n'était ni dans `identite`, ni
+ailleurs. Signer, c'est établir qui a engagé — c'est de l'identité, et la catégorie ne
+le disait pas.
+
+**Une catégorie qui ne couvre pas ce que les documents écrivent ne sert à rien**, même
+si tout le reste du raisonnement est bon. F-48 et F-53 encore, mais portant sur la
+**classification** plutôt que sur la lecture.
+
+### Défaut 2 — la porte reconnaissait l'article, pas la proposition
+
+`avant le` était reconnu, `avant la` ne l'était pas. « Avant la première facture » est
+une échéance aussi précise que « avant le premier devis » : même jour, même obligation,
+même conséquence si elle passe.
+
+**Vingt-et-unième manifestation du même défaut** — un motif plus étroit que ce que les
+documents écrivent. Le motif est maintenant une constellation : dates, `avant` suivi
+d'un article, `au plus tard`, `d'ici`, `première`, et un mot en `é`.
+
+### Pourquoi il a fallu un projet chiffré
+
+Aucun des trois contrats migrés n'avait de prix, donc aucun n'a franchi la porte des
+irréversibles. **Les défauts d'une porte ne se voient que sur les entrées qui la
+traversent.** Une porte peut être fausse depuis longtemps et n'avoir rien dit, parce que
+personne ne lui a donné de quoi se tromper.
+
+Contre-témoins vérifiés, compteur d'occurrences inclus : `signature` hors du genre
+identité → `FAIL` ; échéance relative non reconnue → `FAIL`.
+
+---
+
+## F-68 — « Hors scope » n'est pas « retiré », et le contrôle accusait à tort
+
+`consistency-check premises` a accusé `roadmap` de reposer sur **cinq exigences
+retirées** qui ne l'étaient pas — et cité chacune d'elles deux fois dans le corps du
+document, sans acquittement. Sur les six `collisions` qu'il signalait, cinq venaient
+du même mécanisme.
+
+### Ce que le PRD écrivait
+
+| Section | Ce que l'ID portait |
+|---|---|
+| § 5 Contraintes | `C2` — un seul utilisateur, un seul secret, pas de mot de passe |
+| § 9 Hors scope | `C2` — multi-utilisateur, rôles, permissions : Jean-Luc est seul |
+
+**Le même fait, écrit deux fois, de polarité opposée.** Un § 5 dit ce que le produit
+fait ; un § 9 écrit ce qu'il ne fera pas. Les deux disent la même chose.
+
+### Ce que le contrôle en faisait
+
+`inHorsScope.has(id)` suffisait à conclure « exigence retirée ». Le contrôle ne
+consultait **jamais** `definitions` — alors que la règle discriminante était écrite
+dans le commentaire, huit lignes plus haut :
+
+> *« Un ID défini deux fois avec deux sens différents n'est pas un identifiant, c'est
+> une collision — et **le contrôle qui s'appuie dessus va alors accuser le mauvais
+> livrable, en citant une exigence sans rapport** »*
+
+Le motif est donc décrit, les fixtures le décrivent déjà, et **le code ne le fait
+pas**. La règle existait partout sauf là où elle comptait.
+
+### La règle, et d'où elle vient
+
+Un retrait genuine laisse l'ID **nulle part ailleurs** — toutes les fixtures de
+retrait du selftest le montrent déjà. Un ID en § 9 qui est aussi défini ailleurs
+n'est donc **pas** un retrait : c'est une collision.
+
+Un ID ambigu va dans `ambiguous`, avec un message qui dit les deux lectures possibles
+et nomme ce qu'il faut trancher. **Il n'accuse pas le livrable** — parce qu'accuser
+sur une ambiguïté ferait supprimer une vraie dépendance pour faire passer un
+contrôle.
+
+### La seconde moitié : le gabarit exigeait la collision
+
+Le gabarit disait : *« L'ID doit être celui que l'exigence portait dans les sections 4,
+5 ou 6 »* — il **prescrivait** précisément la collision qu'il prétendait signaler. Et
+sa section s'appelle « Hors scope (explicitement) » alors que son commentaire la
+décrit comme un registre de retraits.
+
+Corigé : une exclusion qui n'a jamais été une exigence **ne porte pas d'ID** ; un
+retrait garde son ID **et l'exigence disparaît des § 4, 5, 6**. Un ID ne vit qu'à un
+endroit.
+
+### Et le troisième défaut, inverse
+
+Une fois le gabarit corrigé, le contrôle exigeait l'ID et échouait sans lui — il
+échouait sur le **cas ordinaire** et tolérait le cas rare. `untraceable` est passé en
+avertissement, avec le message qui dit *quand* c'est un vrai défaut.
+
+**Une entrée sans ID ne donne rien à vérifier.** Si elle retire une exigence qui
+vivait en § 4/5/6, il faut lui rendre son ID — et l'avertissement le dit.
+
+### Les contre-témoins, et le premier qui ne mordait pas
+
+Premier essai : désactiver la garde et relancer sur `Atelier`. **Aucun échec** — parce
+que j'avais déjà retiré les ID du § 9 du PRD, donc la garde n'avait rien à faire.
+Un contre-témoin qui passe parce que le défaut a été corrigé à la main **ne prouve
+rien**.
+
+Relancé sur la fixture qui porte réellement la collision : là il mord, et le message
+est exactement l'accusation à tort qu'il fallait voir (`l'exigence C2 est dans la
+section « Hors scope » du PRD, mais conventions a été approuvé en s'appuyant dessus`).
+
+Second contre-témoin : désactiver la garde des citations. **Il ne mordait pas
+non plus** — la fixture n'avait pas de corps qui cite `C2`, donc la branche des
+citations n'était jamais atteinte. Fixture corrigée pour citer l'ID, et le test
+jumeau (retrait genuine, **même corps**) prouve désormais que la citation est bien
+retrouvable : la seule variable est l'ID.
+
+---
+
+## F-69 — un contrat non signé passait, et deux portes du même skill divergeaient
+
+### Le symptôme
+
+`Atelier`, premier contrat chiffré du dossier : `contract_complete: pass`, `state:
+draft`, phase 4. Un contrat parfait — cinq blocs, quatre engagements chiffrés, un
+budget qui se recompose — et **personne ne l'avait signé**.
+
+### Le défaut, et il était dans une règle déjà écrite
+
+La règle du Lot 1 disait : *« `contract_complete` : `warn` en Phase 0, `fail` au-delà »*.
+Elle n'avait été implémentée que pour le contrat **absent**. Un contrat présent mais
+`draft` passait ensuite par `problems.length === 0` — donc **vert dans toutes les
+phases**.
+
+La branche absente :
+
+```js
+if (phaseKey === '0_bootstrap' && !(state.deliverables || {}).contract) { … }
+```
+
+Un seul cas. Le statut n'était jamais consulté.
+
+### La correction a révélé la seconde moitié
+
+En ajoutant la garde du statut, un test a échoué : `après complete-phase, le contrat ne
+juge pas la phase qui n'a pas commencé`. En le lisant, il y avait moins une régression
+qu'une **incohérence interne** :
+
+| Document | Ce qu'il disait |
+|---|---|
+| commentaire de `state.js` | *« Clore la Phase 0, c'est le client qui signe. `draft` suffit pour franchir, parce qu'un contrat non signé est un travail en cours. »* |
+| code de `state.js` | `if (!contract)` — la présence suffisait |
+| `contract_complete` | exigeait `approved` au-delà de la phase 0 |
+
+**Une porte ouvrait, l'autre fermait, sur le même état.** Un projet pouvait franchir
+la Phase 0 en annonçant une signature que rien n'enregistrait, puis devenir rouge une
+phase plus tard — c'est-à-dire **après** l'instant où l'agent pouvait encore agir.
+
+### Le choix
+
+Le commentaire disait une chose juste et une chose fausse. `draft` est bien un travail
+en cours ; mais **clore la phase est une signature**, pas un travail en cours. Donc :
+
+- `complete-phase 0_bootstrap` refuse un contrat `draft` — `error: contract_not_signed`.
+- `contract_complete` échoue au-delà de la phase 0 sur un contrat non signé.
+- En phase 0, `draft` reste `pass` : c'est là que le contrat s'écrit.
+
+Les deux portes disent maintenant la même chose, au même endroit.
+
+### Et ce que ça change sur `Atelier`
+
+Le projet est **arrêté à la phase 4 sur une signature humaine**. C'est le premier des
+cinq projets où la porte dit ce qui manque : les quatre autres sont passés la Phase 0
+avec un contrat `draft` non signé, et personne n'avait rien vu.
+
+C'est le résultat correct, pas un blocage à contourner. Les champs de signature du
+contrat sont `[à compléter]` — SIRET de Jean-Luc, raison sociale de Forge, adresse,
+téléphone, courriel — et **aucun de ces cinq n'est à moi d'inventer**.
+
+---
+
+## F-70 — une phase sur six disait quel agent écrire ; j'ai inventé les deux autres
+
+### Ce qui s'est passé
+
+Deux fois de suite, en dispatchant les agents de la Phase 4 et de la Phase 5, j'ai
+écrit des chemins qui n'existaient pas :
+
+| Ce que j'ai demandé | Ce qui existe |
+|---|---|
+| `agents/solution-architect.md` | `agents/systems-architect.md` |
+| `agents/plan-writer.md` | rien — et c'est délibéré |
+
+Les deux appels ont **semblé réussir**. Un sous-agent a produit le livrable en
+travaillant depuis `SKILL.md` § 5, et a signalé lui-même l'absence des fichiers.
+
+**C'est le pire mode de défaillance possible** : l'appel qui échoue signale l'erreur,
+l'appel qui contourne la consigne **la fait disparaître**. Rien dans la sortie ne
+disait qu'un chemin avait été inventé.
+
+### La cause, et elle est mesurable
+
+`SKILL.md` nomme un fichier d'agent pour **une phase sur six** :
+
+| Phase | Agent nommé dans `SKILL.md` |
+|---|---|
+| 1 | `premise-challenger` (les autres, en prose) |
+| 2, 3, 4, 5, 6 | **aucun** |
+
+Il n'y avait donc rien à lire pour décider : il fallait deviner, et un nom plausible
+(`solution-architect`) est beaucoup plus probable qu'une vérification.
+
+### Les deux corrections
+
+**1. Une table normative dans `SKILL.md`** — `Qui fait quoi, phase par phase`, avec
+la phase, le livrable, le fichier d'agent à lire, et qui vérifie. Elle dit aussi
+pourquoi la Phase 5 n'a **pas** de rédacteur : un plan d'implémentation décrit un code
+qu'on n'a pas encore écrit et passe toutes les vérifications de forme. Il n'y a donc
+personne à qui déléguer sa rédaction, seulement `plan-validator` qui relit.
+
+**2. `validate-repo` refuse la désynchronisation**, dans les deux sens :
+
+- un agent nommé dans la table et absent du disque ;
+- un agent sur le disque et jamais nommé dans `SKILL.md`.
+
+Le second est le plus grave : le fichier existe, donc la phase *semble* couverte
+alors que personne n'y renvoie. Quatre agents étaient dans cet état —
+`client-liaison`, `forge-implementer`, `red-team`, `scenario-tester` — et tous
+étaient nommés **en prose**, sans chemin. Le contrôle les accepte donc sur une mention
+dans tout le document, et refuse sur une absence totale.
+
+### Le détail qui a coûté une itération
+
+La première version du contrôle cherchait `agents/<nom>.md` dans **tout** `SKILL.md`.
+Elle a signalé mes deux propres exemples — parce que la prose que je venais d'écrire
+**cite** les mauvais noms pour raconter le défaut.
+
+Un journal de défauts *cite* les chemins cassés. Un contrôle qui lit sa documentation
+comme une déclaration de dépendance signale sa propre réponse. Le contrôle lit donc
+**les lignes de tableau de la section**, extraites par leur en-tête `| Phase |` — et
+refuse un bloc de lignes `|` sans séparateur, qui est de la prose imitant un tableau.
+
+### Le contre-témoin qui ne mordait pas
+
+Première mutation testée : renommer `plan-validator` sur disque **et** dans `SKILL.md`.
+PASS — à raison : le document nommait désormais le nouveau nom, qui existait. La
+mutation s'annulait elle-même.
+
+Relancé en ne changeant **que** le disque : `FAIL`, `plan-relayeur-obsolete … jamais
+nommé dans SKILL.md`. Une seule variable, et c'est celle qui compte.
+
+---
+
+## F-71 — j'ai éteint le signal en faisant le geste honnête
+
+### La séquence
+
+1. L'architecture déclare **20 tranches**. Six sont V1, et l'architecture dit
+   elle-même qu'elles ne sont pas planifiables — Q-004, Q-006 et le jour de la
+   relance sont ouverts, et inventer ces nombres est interdit.
+2. Le sous-agent écrit **14 plans** (les 14 tranches MVP) et laisse les 6 de côté,
+   en nommant les trois questions qui bloquent. C'est le bon geste.
+3. J'approuve la Phase 5. `reality` devient rouge : 6 tranches sans plan. J'ai
+   approuvé une phase dont deux tiers... non, dont six des vingt unités n'ont pas
+   de plan. **L'approbation était prématurée.**
+4. Je la retire : `set-phase 5_implementation_plan in_progress`.
+5. `reality` devient **VERT**.
+
+L'étape 4 est le geste honnête. L'étape 5 est le défaut.
+
+### La cause
+
+```js
+const plansExpected = phases['5_implementation_plan'].status === 'approved';
+```
+
+La fenêtre était indexée sur la **sortie** de la phase, pas sur son **entrée**. Donc
+la visibilité du travail manquant était couplée à l'approbation de la phase qui le
+produit — et **annuler l'approbation éteignait la lumière pendant qu'on pouvait
+encore écrire les plans.**
+
+C'est l'inversion exacte de la règle qui governs tout ce dossier : un défaut doit
+tomber dans la fenêtre d'action, pas après. Ici la fenêtre est
+`current_phase >= 5`, et elle était fermée jusqu'à la sortie.
+
+### La règle, et ce qu'elle ne casse pas
+
+`plansExpected = current_phase >= 5`.
+
+Le contre-témoin est indispensable et il existe déjà sous une autre forme : au gate
+de la **Phase 4**, dix plans n'existaient pas encore, et c'était le travail de la
+phase suivante. Un contrôle qui échoue pour une information qu'on n'a pas encore à
+produire apprend à être ignoré — et la règle initiale avait raison.
+
+Donc les deux bords sont testés :
+
+| Situation | Attendu | Test |
+|---|---|---|
+| `current_phase` = 5, phase `in_progress`, plan absent | **rouge** | nouveau |
+| `current_phase` = 1, phase `in_progress`, plan absent | vert | nouveau |
+| `current_phase` = 6, phase `approved`, plan absent | rouge | `apres la Phase 5…` |
+
+Le troisième test encodait l'ancien couplage — il posait le statut de phase sans
+`current_phase`. Remonté, il a été corrigé : « une phase franchie exige ses
+livrables » veut dire **atteinte**, pas « approuvée ».
+
+### La leçon, qui est plus large que ce contrôle
+
+Un signal conditionné à un état qu'on peut annuler n'est pas un signal : c'est un
+indicateur qu'on peut éteindre. Et le geste qui l'éteint est souvent **le bon
+geste** — retirer une approbation prématurée, revenir en arrière, corriger une
+erreur. Le défaut apparaît donc au moment exact où l'agent fait ce qu'il faut, ce
+qui est la pire place possible pour un défaut.
