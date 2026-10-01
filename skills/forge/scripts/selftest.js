@@ -1798,6 +1798,187 @@ test('PROSE et CASE ne se confondent pas dans le meme document', () => {
     `la ligne accusee est bien la case vide : ${JSON.stringify(check.offenders[0])}`);
 });
 
+/* ------------------------------------------------------------------ *
+ * Fast Track — les conditions d'entrée
+ * ------------------------------------------------------------------ */
+
+/** Un dossier prêt pour Fast Track : les conditions d'état remplies, un écran approuvé. */
+function fastTrackReadyProject(label, extra = {}) {
+  const project = freshProject(label);
+  const write = (rel, front) => {
+    fs.mkdirSync(path.join(project, path.dirname(rel)), { recursive: true });
+    fs.writeFileSync(path.join(project, rel), `---\n${front}\n---\n\n# ${rel}\n\ncontenu\n`);
+  };
+  for (const [key, rel, type] of [
+    ['prd', '.forge/prd.md', 'prd'],
+    ['conventions', '.forge/conventions.md', 'conventions'],
+    ['design_system', '.forge/design/design-system.md', 'design-system'],
+    ['benchmarks', '.forge/benchmarks.md', 'benchmarks']
+  ]) {
+    write(rel, `type: ${type}\nstatus: draft`);
+    run('state.js', ['register', project, 'deliverable', key, rel]);
+    run('state.js', ['set-status', project, 'deliverable', key, 'approved']);
+  }
+  const screenRel = '.forge/design/screens/accueil.md';
+  write(screenRel, 'type: screen\nstatus: draft');
+  run('state.js', ['register', project, 'screen', 'accueil', screenRel]);
+  run('state.js', ['set-status', project, 'screen', 'accueil', 'approved']);
+  if (extra.test_plan) {
+    const tpRel = '.forge/test-plan.md';
+    write(tpRel, 'type: test-plan\nstatus: draft');
+    fs.appendFileSync(path.join(project, tpRel), extra.cycle
+      ? '\n## Scénario de cycle complet\n\nde la signature au déblocage\n'
+      : '\n## Ce que la suite couvre\n\nun test par tranche\n');
+    run('state.js', ['register', project, 'deliverable', 'test_plan', tpRel]);
+    run('state.js', ['set-status', project, 'deliverable', 'test_plan', 'approved']);
+  }
+  return project;
+}
+
+test('NEGATIF — Fast Track refuse un dossier dont les livrables sont en `draft`', () => {
+  // Le mode avait une table de huit conditions d'entrée et une promesse de refus,
+  // **sans code derrière** : `run.fast_track` n'existait que comme `null`, et les trois
+  // commandes que la référence proposait pour « vérifier d'un coup » ne testent aucune
+  // des huit — elles disent si le projet est sain, pas s'il est prêt pour Fast Track.
+  // Un projet dont les neuf écrans sont en `draft` les passe toutes les trois.
+  const project = fastTrackReadyProject('fasttrack-pret');
+  for (const key of ['conventions', 'design_system']) {
+    run('state.js', ['set-status', project, 'deliverable', key, 'draft']);
+  }
+  const res = run('forge-guard.js', ['fast-track', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'fast_track_ready');
+  assert(check && check.status === 'fail', 'un dossier non validé ne peut pas entrer en Fast Track');
+  const named = (check.problems || []).map(p => p.condition);
+  assert(named.some(c => /conventions/.test(c)), `la condition non remplie doit être nommée : ${JSON.stringify(check.problems)}`);
+  assert(named.some(c => /design_system/.test(c)), `la condition non remplie doit être nommée : ${JSON.stringify(check.problems)}`);
+  assert(res.code !== 0, 'le refus doit se voir au code de sortie, pas seulement dans la sortie');
+});
+
+test('POSITIF — un dossier prêt passe les conditions, et le prouve', () => {
+  // Un contrôle qui ne sait que refuser ne prouve pas qu'une porte est correcte, il
+  // prouve qu'elle existe. Le témoin propre est la moitié obligatoire du travail.
+  const project = fastTrackReadyProject('fasttrack-pret-ok');
+  const res = run('forge-guard.js', ['fast-track', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'fast_track_ready');
+  assert(check && check.status === 'pass',
+    `un dossier prêt doit passer : ${JSON.stringify(check && check.problems)}`);
+  assert(res.code === 0, 'le passage doit se voir au code de sortie');
+  assert(check.scope === 'plans' && check.autonomy === 'milestone',
+    `les deux réglages sont indépendants et ont un défaut : ${JSON.stringify({ s: check.scope, a: check.autonomy })}`);
+});
+
+test('NON-VACUITÉ — « tous les écrans sont approved » est FAUX sur zéro écran', () => {
+  // Un projet sans écran passe « tous les écrans sont approved » : la phrase est
+  // vraie sur l'ensemble vide. C'est un projet qui n'a pas de design — donc
+  // précisément un projet où Fast Track n'a rien à valider. Même famille que
+  // `token-classes` : un contrôle qui lit un ensemble vide lit le vide, pas le projet.
+  const project = freshProject('fasttrack-zero-ecran');
+  for (const [key, rel, type] of [
+    ['prd', '.forge/prd.md', 'prd'],
+    ['conventions', '.forge/conventions.md', 'conventions'],
+    ['design_system', '.forge/design/design-system.md', 'design-system'],
+    ['benchmarks', '.forge/benchmarks.md', 'benchmarks']
+  ]) {
+    fs.mkdirSync(path.join(project, path.dirname(rel)), { recursive: true });
+    fs.writeFileSync(path.join(project, rel), `---\ntype: ${type}\nstatus: draft\n---\n\n# ${rel}\n`);
+    run('state.js', ['register', project, 'deliverable', key, rel]);
+    run('state.js', ['set-status', project, 'deliverable', key, 'approved']);
+  }
+  const res = run('forge-guard.js', ['fast-track', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'fast_track_ready');
+  assert(check && check.status === 'fail', 'zéro écran ne peut pas valider Fast Track');
+  assert(/vide/.test(JSON.stringify(check.problems)),
+    `la non-vacuité doit se lire dans le refus : ${JSON.stringify(check.problems)}`);
+});
+
+test('la PORTÉE est indépendante : `phases4-7` exige le test_plan, `plans` non', () => {
+  // Les deux réglages sont indépendants (`fast-track.md` § 1). Une portée qui exigeait
+  // la stratégie de test en `plans` ferait échouer tout projet normal ; une qui ne
+  // l'exigeait pas en `phases4-7` laisserait implémenter sans stratégie de test.
+  const project = fastTrackReadyProject('fasttrack-portee');
+
+  const plans = run('forge-guard.js', ['fast-track', project, '--scope=plans']);
+  assert((plans.json.checks || []).find(c => c.check === 'fast_track_ready').status === 'pass',
+    'en portée `plans`, le test_plan n\'est pas une condition');
+
+  const phases = run('forge-guard.js', ['fast-track', project, '--scope=phases4-7']);
+  const check = (phases.json.checks || []).find(c => c.check === 'fast_track_ready');
+  assert(check.status === 'fail', 'en portée `phases4-7`, l\'absence de test_plan bloque');
+  assert(/test_plan/.test(JSON.stringify(check.problems)),
+    `la condition manquante doit être nommée : ${JSON.stringify(check.problems)}`);
+  assert(check.conditions_checked === 8,
+    `la portée `+'`phases4-7`'+` en compte une de plus : ${check.conditions_checked}`);
+
+  // Et le scénario de cycle complet est ce que la condition lit — pas la case cochée.
+  const avecCycle = fastTrackReadyProject('fasttrack-portee-ok', { test_plan: true, cycle: true });
+  const ok = run('forge-guard.js', ['fast-track', avecCycle, '--scope=phases4-7']);
+  const checkOk = (ok.json.checks || []).find(c => c.check === 'fast_track_ready');
+  assert(checkOk.status === 'pass',
+    `un test_plan qui déclare un scénario de cycle complet satisfait la condition : ${JSON.stringify(checkOk.problems)}`);
+  assert(checkOk.limits.some(l => /justesse/.test(l)),
+    `la limite « présence et non justesse » doit être dans la sortie : ${JSON.stringify(checkOk.limits)}`);
+
+  const sansCycle = fastTrackReadyProject('fasttrack-portee-sans-cycle', { test_plan: true, cycle: false });
+  const ko = run('forge-guard.js', ['fast-track', sansCycle, '--scope=phases4-7']);
+  const checkKo = (ko.json.checks || []).find(c => c.check === 'fast_track_ready');
+  assert(checkKo.status === 'fail' && /cycle complet/.test(JSON.stringify(checkKo.problems)),
+    `un test_plan sans scénario de cycle complet ne satisfait pas la condition : ${JSON.stringify(checkKo.problems)}`);
+});
+
+test('la position du mode se CONSERVE, et le 3e essai est refusé', () => {
+  // La section « Reprise » documentait une forme (`entered_at`, `attempts`,
+  // `current_artifact`, `checkpoint_reached`) et promettait qu'une invocation
+  // interrompue reprend où elle s'était arrêtée. Aucun écritur : `run.fast_track`
+  // restait `null` pour toujours. Une section de référence qui décrit un état que rien
+  // ne peut produire est la même porte absente qu ailleurs, en plus discret.
+  const project = fastTrackReadyProject('fasttrack-reprise');
+
+  const on = run('state.js', ['fast-track', project, '--enable', '--scope=plans', '--autonomy=full']);
+  assert(on.code === 0, `l'activation doit s'enregistrer : ${on.stdout.slice(0, 200)}`);
+  assert(on.json.fast_track.enabled === true, 'le mode doit être marqué actif');
+  assert(on.json.fast_track.entered_at, '`entered_at` doit être posé à l\'entrée, pas à la première écriture');
+  assert(on.json.fast_track.autonomy === 'full', 'l\'autonomie est un réglage lu');
+
+  // Un artefact en cours, et un compteur qui **s'arrête**.
+  run('state.js', ['fast-track', project, '--artifact', '.forge/plans/slice-panier.md']);
+  run('state.js', ['fast-track', project, '--attempt', 'slice-panier']);
+  run('state.js', ['fast-track', project, '--attempt', 'slice-panier']);
+  const troisieme = run('state.js', ['fast-track', project, '--attempt', 'slice-panier']);
+  assert(troisieme.code !== 0, 'la troisième tentative doit être refusée : la limite de la référence est 2');
+  assert(/attempts_exhausted/.test(troisieme.stdout), `le refus doit se nommer : ${troisieme.stdout.slice(0, 200)}`);
+
+  // Reprise : l'état est resté lisible, et il dit où l'on en était.
+  const relu = run('state.js', ['status', project]);
+  const st = readState(project);
+  assert(st.run.fast_track.current_artifact === '.forge/plans/slice-panier.md',
+    `l'artefact en cours doit survivre à l'interruption : ${JSON.stringify(st.run.fast_track)}`);
+  assert(st.run.fast_track.attempts['slice-panier'] === 2,
+    `le compteur doit rester à 2 après le refus : ${JSON.stringify(st.run.fast_track.attempts)}`);
+
+  // L'échappatoire ne demande **pas** de justification.
+  const out = run('state.js', ['fast-track', project, '--disable']);
+  assert(out.code === 0, `on doit pouvoir sortir sans justification : ${out.stdout.slice(0, 200)}`);
+  assert(out.json.fast_track.enabled === false, 'la sortie doit désamorcer le mode');
+});
+
+test('enregistrer le mode n\'est pas entrer : le refus de la porte reste la seule porte', () => {
+  // `state.js fast-track --enable` n'appelle pas `forge-guard`, et ne doit pas : les
+  // deux scripts ne se connaissent pas. Mais alors la commande doit **dire** où la
+  // porte se vérifie — sinon `--enable` devient un contournement plus commode que la
+  // porte qu'il remplace, ce qui est pire que l'absence de porte.
+  const project = freshProject('fasttrack-enregistrer-nest-pas-entrer');
+  const res = run('state.js', ['fast-track', project, '--enable']);
+  assert(res.code === 0, 'l\'activation est un enregistrement, pas une décision');
+  assert(/forge-guard\.js" fast-track/.test(res.json.note),
+    `la commande doit renvoyer à la porte qui décide : ${JSON.stringify(res.json.note)}`);
+
+  // Et la porte, elle, refuse bien ce dossier — qui n'a aucun des livrables requis.
+  const gate = run('forge-guard.js', ['fast-track', project]);
+  const check = (gate.json.checks || []).find(c => c.check === 'fast_track_ready');
+  assert(check && check.status === 'fail', 'un dossier vide ne peut pas entrer');
+  assert((check.problems || []).length >= 5, `chaque condition manquante doit être nommée : ${JSON.stringify(check.problems)}`);
+});
+
 test('forge-guard échoue sur une case AVANT LA PHASE 1 encore ouverte', () => {
   const project = freshProject('a-decider-bloquante');
   const rel = '.forge/conventions.md';

@@ -47,12 +47,39 @@ Le mode ne s'active que si **tout** est vrai :
 Vérification d'un coup :
 
 ```bash
-node "$FORGE/scripts/state.js" start <anchor>
-node "$FORGE/scripts/forge-guard.js" all <anchor>
-node "$FORGE/scripts/consistency-check.js" all <anchor>
+node "$FORGE/scripts/forge-guard.js" fast-track <anchor> \
+     [--scope plans|phases4-7] [--autonomy milestone|full]
 ```
 
-Si une condition échoue, Fast Track **refuse de démarrer** et dit laquelle.
+Cette commande **est** la porte. Elle sort en code non nul et nomme chaque condition non
+remplie, avec son motif : `conventions est draft, pas approved`, `9/9 en attente :
+accueil (draft), …`.
+
+> Elle n'est pas dans `forge-guard all`, et c'est délibéré : `benchmarks` est un livrable
+> de phase 3 et `test_plan` de phase 6, donc les mettre dans `all` ferait échouer tout
+> projet ordinaire à la phase 4. Un contrôle qu'il faut demander est un contrôle
+> qu'on peut oublier — d'où la règle : **quand on le demande, il échoue et dit
+> pourquoi**, et `state.js status` affiche si le mode est actif.
+
+Enregistrer la position du mode est une autre commande, et elle **n'active rien** :
+
+```bash
+node "$FORGE/scripts/state.js" fast-track <anchor> --enable \
+     [--scope …] [--autonomy …] [--artifact <chemin>] [--attempt <slice>] [--checkpoint]
+node "$FORGE/scripts/state.js" fast-track <anchor> --disable [--reason <texte>]
+```
+
+`--attempt` **s'arrête à 2** et refuse la troisième : au-delà, ce n'est pas un plan
+qu'on corrige. `--disable` n'exige **pas** de raison — le mode doit pouvoir être
+interrompu sans justification, et une commande qui exige une raison pour sortir mais
+pas pour entrer n'est pas un mode qu'on peut quitter.
+
+**Ce que la porte vérifie, et ce qu'elle ne vérifie pas.** Elle vérifie l'**état** — les
+statuts, la propreté du dossier, le domaine des constats — et, en `phases4-7`, que le
+`test_plan` **déclare** un scénario de cycle complet. Elle ne vérifie ni la justesse
+d'un plan, ni qu'un scénario de cycle complet couvre la bonne propriété. C'est la limite
+générale du mode, écrite plus bas ; la commande la rappelle dans sa sortie plutôt que de
+la cacher derrière un `pass: true`.
 
 ---
 
