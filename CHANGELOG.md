@@ -27,6 +27,38 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### feat(forge) — le contrat de projet : rendre vérifiable « le client n'intervient plus »
+
+Le modèle d'une agence : **le client signe un contrat, puis il n'est plus interrompu que
+pour un écart ou pour une décision qui lui appartient.** Un bilan par phase produirait
+l'inverse — une formalité que le client approuve sans lire, donc un gate vide.
+
+`.forge/contract.md`, livrable de `0_bootstrap`. Cinq blocs : livré · **non livré** ·
+irréversible · ce que Forge décidera seul · ce qui revient au client.
+
+La promesse n'est vraie que si **tout ce qui engage un achat est décidé avant**, et
+c'est vérifiable : `conventions.md` porte déjà les cases `À DÉCIDER AVANT LA PHASE 1`,
+et la porte `contract_complete` exige que le contrat couvre chacune d'elles, **avec un
+prix et une date**. Un engagement sans prix est un engagement subi, pas annoncé ; une
+décision sans échéance est prise par le plus proche, et le plus proche c'est Forge.
+
+`warn` si le contrat est absent : les projets antérieurs ne l'ont pas, et les faire
+échouer casserait des projets verts pour un livrable qu'ils n'ont jamais eu l'occasion
+de produire. L'absence est nommée, donc l'oubli reste visible.
+
+**Un défaut trouvé par le témoin positif.** La couverture se faisait par comparaison de
+chaînes, et `conventions.md` dit « Fournisseur identité » là où le contrat dit
+« Identité ». Il n'y a pas de largeur de motif qui convienne : les deux documents ont
+le droit de nommer différemment. La porte compare donc **le genre de l'engagement**,
+propriété du fait et non de sa formulation.
+
+**Et le contre-témoin est dans le test positif, pour une raison structurelle.** Un test
+négatif qui échoue pour quatre raisons en laisse trois quand on neutralise une
+couverture : il ne peut pas isoler une régression. Un test qui affirme `pass` n'a
+qu'une raison de passer.
+
+`207 → 213` tests.
+
 ## [1.10.0] - 2026-10-01
 
 ### feat(forge) — deux appels à project-rules-architect, et un mode « socle de contexte »
