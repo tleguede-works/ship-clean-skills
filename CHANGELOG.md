@@ -27,6 +27,41 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(repo) — un gate qui envoyait vers une commande inexistante
+
+Chaque `next`, `fix` et `hint` d'un contrôle est une **promesse au lecteur** : quand un
+gate refuse, il dit quoi faire. L'audit de ces citations a trouvé un `contract-migrate`
+dans un gate écrit dix minutes plus tôt — une commande **nommée sans jamais être écrite**.
+
+**Une erreur de mode d'emploi dans un message de secours est plus grave qu'un défaut de
+contrôle** : le contrôle au moins a raison de refuser, et son message le contredit. Le
+lecteur tape, obtient `unknown_command`, et apprend que le skill ne sait pas ce qu'il
+demande.
+
+`validate-repo` vérifie désormais que chaque indice cité **existe et répond** — exécuté
+dans un projet témoin, en distinguant un refus métier d'une erreur d'invocation.
+
+### Un contre-témoin qui ne mordait pas, et que j'ai cru deux fois
+
+J'ai annoncé deux fois que le contre-témoin « ne mordait pas », et corrigé le motif deux
+fois. Les deux fois j'avais tort, pour la même raison : **le `"$FORGE"` de ma commande
+shell était mangé par le shell**, donc la chaîne cherchée n'existait pas dans le fichier et
+le compteur renvoyait **zéro**. Je tentais de casser une citation absente du fichier visé,
+donc mes deux « contre-témoins » n'avaient rien muté — et le contrôle était probablement
+correct dès le début.
+
+Le signal laissé passer était affiché par le script lui-même : `occurrences reelles: 0`.
+
+**Compter les mutations appliquées n'est pas une précaution, c'est la seule chose qui
+distingue un contre-témoin d'un rituel.**
+
+Et un signal trop large, dans l'autre sens : `bad_kind` était compté comme une erreur
+d'invocation, alors que `state.js client` sans drapeau refuse ainsi pour une raison
+métier. L'inclure déclarait sain un indice vers une commande inexistante, parce qu'elle
+partage le mot « bad ».
+
+220 tests, inchangés.
+
 ## [1.13.1] - 2026-10-01
 
 ### fix(forge) — le contrat devient bloquant, et la règle honnête n'est pas « tout le monde »
