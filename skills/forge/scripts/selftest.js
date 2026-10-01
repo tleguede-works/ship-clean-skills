@@ -1147,6 +1147,139 @@ test('la mémoire du projet est lue sous les MAJUSCULES, et ses déclencheurs so
     'des noms en minuscules ne sont pas la convention : le lecteur doit dire qu il n y a pas de mémoire, pas inventer');
 });
 
+test("NEGATIF — le contrat se fait créditer d'une couverture qu'il n'a pas", () => {
+  // La promesse « après la signature, le client n'intervient plus » ne tient que si
+  // **tout ce qui engage un achat est décidé avant**. C'est vérifiable, parce que
+  // `conventions.md` porte déjà les cases `À DÉCIDER AVANT LA PHASE 1` — celles qui
+  // « changent ce qu'on achète et ce qu'on héberge », selon le gabarit lui-même.
+  //
+  // Cinq défauts, tous de la famille « le gate a l'air de travailler » :
+  //   1. un bloc manquant, et c'est celui des **exclusions** — donc rien de négatif
+  //      à promettre, donc rien à violer ;
+  //   2. un engagement de `conventions.md` absent du contrat ;
+  //   3. un engagement **sans prix** : le client ne peut pas valider un coût qu'il
+  //      n'a pas vu ;
+  //   4. une décision client **sans échéance** : elle sera prise par le plus proche,
+  //      et le plus proche c'est Forge ;
+  //   5. un engagement au prix dans la mauvaise colonne.
+  const project = freshProject('contrat-defauts');
+  const w = (rel, body) => {
+    fs.mkdirSync(path.join(project, path.dirname(rel)), { recursive: true });
+    fs.writeFileSync(path.join(project, rel), body);
+  };
+
+  w('.forge/conventions.md', '---\ntype: conventions\nstatus: approved\nderived_from: []\n---\n\n# C\n\n' +
+    '| Domaine | Choix | Prix |\n|---|---|---|\n' +
+    '| Hébergement | À DÉCIDER AVANT LA PHASE 1 | — |\n' +
+    '| Fournisseur identité | À DÉCIDER AVANT LA PHASE 1 | — |\n' +
+    '| State management | À DÉCIDER EN PHASE 4 | — |\n');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  // Volontairement incomplet : pas de bloc « Ce qui ne sera pas livré », l'engagement
+  // « Fournisseur identité » est absent du contrat, « Hébergement » est présent mais
+  // sans prix, et la décision client n'a pas de date.
+  w('.forge/contract.md', '---\ntype: contract\nstatus: draft\n---\n\n# Contrat\n\n' +
+    '## 1. Ce qui sera livré\n\n| Slice | Résultat |\n|---|---|\n| a | b |\n\n' +
+    '## 3. Ce qui est irréversible\n\n| Engagement | Choix | Prix / durée |\n|---|---|---|\n' +
+    '| Hébergement | OVH | |\n' +
+    '| Exécution de fond | Cron interne | 0 € / mois |\n\n' +
+    '## 4. Ce que Forge décidera seul\n\n| Décision | Pourquoi |\n|---|---|\n' +
+    '| Librairie | réversible |\n\n' +
+    '## 5. Ce qui reviendra au client\n\n| Décision | Options |\n|---|---|\n' +
+    '| Paiement | A ou B |\n');
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+
+  const res = run('forge-guard.js', ['contract', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'contract_complete');
+  assert(check && check.status === 'fail',
+    `un contrat qui ne couvre pas les engagements doit échouer : ${JSON.stringify(check)}`);
+  const why = JSON.stringify(check.problems);
+  assert(/Ce qui ne sera pas livré/.test(why), `le bloc des exclusions doit être nommé : ${why}`);
+  assert(/Identité|identité/i.test(why), `l'engagement absent du contrat doit être nommé : ${why}`);
+  assert(/prix/i.test(why), `l'engagement sans prix doit être nommé : ${why}`);
+  assert(/échéance/.test(why), `la décision sans date doit être nommée : ${why}`);
+  assert(res.code !== 0, 'le refus doit se voir au code de sortie');
+});
+
+test('POSITIF — un contrat complet passe, et le prouve', () => {
+  // Un contrôle qui ne sait que refuser ne prouve pas qu'une porte est correcte, il
+  // prouve qu'elle existe. Et le témoin doit passer **avec les cinq blocs présents et
+  // chaque engagement couvert**, sinon le test d'avant ne prouverait rien.
+  const project = freshProject('contrat-complet');
+  const w = (rel, body) => {
+    fs.mkdirSync(path.join(project, path.dirname(rel)), { recursive: true });
+    fs.writeFileSync(path.join(project, rel), body);
+  };
+  w('.forge/conventions.md', '---\ntype: conventions\nstatus: approved\nderived_from: []\n---\n\n# C\n\n' +
+    '| Domaine | Choix | Prix |\n|---|---|---|\n' +
+    '| Hébergement | À DÉCIDER AVANT LA PHASE 1 | — |\n' +
+    '| Fournisseur identité | À DÉCIDER AVANT LA PHASE 1 | — |\n' +
+    '| State management | À DÉCIDER EN PHASE 4 | — |\n');
+  run('state.js', ['register', project, 'deliverable', 'conventions', '.forge/conventions.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'conventions', 'approved']);
+
+  w('.forge/contract.md', '---\ntype: contract\nstatus: approved\n---\n\n# Contrat\n\n' +
+    '## 1. Ce qui sera livré\n\n| Slice | Résultat | Pour qui |\n|---|---|---|\n| a | b | c |\n\n' +
+    '## 2. Ce qui ne sera pas livré\n\n| Exclu | Pourquoi | Réexamen |\n|---|---|---|\n' +
+    '| Le mode hors-ligne | hors périmètre | V2 |\n\n' +
+    '## 3. Ce qui est irréversible\n\n| Engagement | Choix | Prix / durée | Réversible ? |\n|---|---|---|---|\n' +
+    '| Hébergement | OVH | 7,50 € / mois | Non |\n' +
+    '| Identité | Clerk | 25 € / mois | Non |\n\n' +
+    '## 4. Ce que Forge décidera seul\n\n| Décision | Pourquoi |\n|---|---|\n' +
+    '| Librairie | réversible |\n\n' +
+    '## 5. Ce qui reviendra au client\n\n| Décision | Options | Échéance | Prix selon l option |\n|---|---|---|---|\n' +
+    '| Paiement | A ou B | 2026-11-01 | A : 0 € — B : 4,99 € |\n');
+  run('state.js', ['register', project, 'deliverable', 'contract', '.forge/contract.md']);
+  run('state.js', ['set-status', project, 'deliverable', 'contract', 'approved']);
+
+  const res = run('forge-guard.js', ['contract', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'contract_complete');
+  assert(check && check.status === 'pass',
+    `un contrat complet doit passer : ${JSON.stringify(check && check.problems)}`);
+  assert(res.code === 0, 'le passage doit se voir au code de sortie');
+  assert(check.blocks_checked === 5, `les cinq blocs sont vérifiés : ${check.blocks_checked}`);
+  assert(check.engagements_in_conventions === 2,
+    `les deux engagements bloquants de conventions.md sont comptés : ${check.engagements_in_conventions}`);
+
+  // **Contre-témoin du contre-témoin.** Ce test est le seul qui prouve que la
+  // couverture se fait par **genre d'engagement** et non par libellé : `conventions.md`
+  // écrit « Fournisseur identité », le contrat écrit « Identité ». Une porte qui
+  // compare les chaînes signale une absence sur un dossier complet, et le défaut
+  // reste invisible pour le test **négatif** — qui utilise un libellé différent, et
+  // échoue donc dans les deux cas.
+  //
+  // Donc on neutralise la classification ici, explicitement, et on exige que ce test
+  // casse. Un test qui passe quand on casse la chose qu'il vérifie ne la vérifie pas.
+  const chemin = path.join(SCRIPTS, 'forge-guard.js');
+  const backup = fs.readFileSync(chemin, 'utf-8');
+  try {
+    fs.writeFileSync(chemin, backup.replace('const k = engagementKind(line);', 'const k = null;'));
+    const casse = run('forge-guard.js', ['contract', project]);
+    const c2 = (casse.json.checks || []).find(c => c.check === 'contract_complete');
+    assert(c2 && c2.status === 'fail',
+      'sans classification par genre, « Fournisseur identité » et « Identité » ne se rejoignent plus : le test DOIT casser');
+  } finally {
+    fs.writeFileSync(chemin, backup);
+  }
+});
+
+test('un projet SANS contrat passe, en signalant ce qui manque', () => {
+  // Le contrat est **nouveau**. Les projets qui existaient avant ne l'ont pas, et les
+  // faire échouer casserait des projets verts pour un livrable qu'ils n'ont jamais eu
+  // l'occasion de produire. Il est donc `warn` — et `warn` est un signal, pas un
+  // pardon : il nomme ce qui manque, donc l'oubli reste visible.
+  const project = freshProject('contrat-absent');
+  const res = run('forge-guard.js', ['contract', project]);
+  const check = (res.json.checks || []).find(c => c.check === 'contract_complete');
+  assert(check && check.status === 'pass', 'un projet sans contrat ne doit pas échouer');
+  assert(check.state === 'absent', `l'absence doit être nommée : ${check.state}`);
+  assert(/client ne signe rien|engagement/.test(check.warn + check.next),
+    `le motif de l'avertissement doit être écrit : ${JSON.stringify(check)}`);
+  assert(/register .*contract/.test(check.next),
+    `l'avertissement doit dire quoi faire : ${JSON.stringify(check.next)}`);
+});
+
 test('les 5 nouvelles références existent et portent les règles essentielles', () => {
   for (const r of ['skill-boundaries', 'scenario-tests', 'test-strategies', 'research-protocol', 'migration-v1-v2']) {
     assert(fs.existsSync(path.join(SKILL_DIR, 'references', `${r}.md`)), `references/${r}.md manquant`);

@@ -1048,6 +1048,197 @@ function checkHashDrift(root) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Le contrat de projet — ce que le client signe, et ce qu'il couvre
+ * ------------------------------------------------------------------ */
+
+/**
+ * Le projet comporte un artefact de plus : ce que le client **signe**.
+ *
+ * ## Pourquoi un contrat, et pas un bilan par phase
+ *
+ * Le modèle demandé est celui d'une agence : le client signe un contrat, puis il
+ * n'est plusinterruptu que pour un **écart** ou une **décision qui lui appartient**.
+ * Un bilan par phase sur un client non technique produit l'inverse de ce qu'il
+ * cherche : une formalité qu'il approuve sans lire, donc un gate vide. C'est la
+ * même faute qu'un constat non promu qui verdit l'indicateur.
+ *
+ * ## La propriété qui rend la promesse vraie
+ *
+ * « Après la signature, le client n'intervient plus » n'est vrai que si **tout ce
+ * qui engage un achat est décidé avant la signature**. Sinon il découvre un
+ * engagement en Phase 4, dans un document qu'il ne lit pas.
+ *
+ * Cette propriété est **vérifiable**, parce que `conventions.md` porte déjà les
+ * cases `À DÉCIDER AVANT LA PHASE 1` — celles qui « changent ce qu'on achète et ce
+ * qu'on héberge », selon le gabarit lui-même. Le contrat doit donc **nommer chacune**
+ * d'elles, avec un prix et une date. C'est le seul endroit où la promesse de
+ * non-intervention peut s'appuyer sur autre chose que de la bonne volonté.
+ */
+const CONTRACT_BLOCKS = [
+  { key: 'livre', re: /^##\s+\d*\.?\s*Ce qui sera livré/im, label: 'Ce qui sera livré' },
+  { key: 'exclu', re: /^##\s+\d*\.?\s*Ce qui ne sera pas livré/im, label: 'Ce qui ne sera pas livré' },
+  { key: 'irreversible', re: /^##\s+\d*\.?\s*Ce qui est irréversible/im, label: 'Ce qui est irréversible' },
+  { key: 'forge_seul', re: /^##\s+\d*\.?\s*Ce que Forge décidera seul/im, label: 'Ce que Forge décidera seul' },
+  { key: 'client', re: /^##\s+\d*\.?\s*Ce qui reviendra au client/im, label: 'Ce qui reviendra au client' }
+];
+
+/**
+ * Les engagements qu'un client non technique ne peut pas déléguer, **par genre**.
+ *
+ * ## Pourquoi une classification, et non une comparaison de chaînes
+ *
+ * Le premier essai comparait le libellé de la case de `conventions.md` à celui du
+ * contrat. Il a échoué sur un dossier parfaitement complet : `conventions.md` écrit
+ * « Fournisseur identité », le contrat écrit « Identité » — le même engagement,
+ * deux formulations. Le contrôle a signalé une absence, donc **le test positif a
+ * cassé**, et c'est lui qui avait raison.
+ *
+ * C'est la règle du dossier,applied this time to two documents of the same project :
+ * un motif plus étroit que ce que les documents écrivent est faux. Et ici le
+ * meilleur correctif n'est pas d'élargir le motif — il n'y a pas de largeur qui
+ * convienne, puisque les deux documents ont le droit de nommer les choses
+ * différemment. Le bon correctif est de comparer **le genre de l'engagement**,
+ * qui est une propriété du fait et non de sa formulation.
+ */
+const ENGAGEMENT_KINDS = [
+  { kind: 'hebergement', re: /h[eé]bergement|hebergeur|hosting|serveur|instances?\b/i },
+  { kind: 'identite', re: /identit[eé]|identity|authentification|auth provider|login|connexion/i },
+  { kind: 'achat', re: /\bachat\b|acheter|licence|license|abonnement|subscription|solde\.|facturation|facture|forfait|\bplan\b (payant|pro|premium)|\bnom de domaine\b/i },
+  { kind: 'fond', re: /ex[ée]cution de fond|background (job|execution)|t[aâ]che planifi[eé]e|\bcron\b|webhook|queue|file d'attente/i },
+  { kind: 'donnees', re: /donn[eé]es? personnelle|rgpd|gdpr|h[ée]bergement de donn[eé]es|residenz? (data|ue)/i }
+];
+
+/** Le genre d'un engagement, ou `null` si la ligne n'en est pas un. */
+function engagementKind(text) {
+  for (const k of ENGAGEMENT_KINDS) if (k.re.test(text)) return k.kind;
+  return null;
+}
+
+const ENGAGEMENT_RE = new RegExp(ENGAGEMENT_KINDS.map(k => k.re.source).join('|'), 'i');
+
+/** Une ligne du tableau des irréversibles : un champ et une valeur, pas de la prose. */
+function parseCommitment(line) {
+  const cells = line.split('|').map(c => c.trim()).filter(c => c !== '');
+  if (cells.length < 2) return null;
+  // La colonne du champ doit nommer l'engagement ; celle du prix doit porter un montant
+  // ou une durée. Une ligne qui n'a pas les deux est une intention, pas un engagement.
+  const named = ENGAGEMENT_RE.test(cells[0]) || ENGAGEMENT_RE.test(cells[1]);
+  if (!named) return null;
+  const hasPrice = cells.some(c => /\d/.test(c) && /[€$£]|€|\/\s*(mois|an|month|year)|par\s+(mois|an)|\d/.test(c));
+  return { field: cells[0].replace(/`/g, '').slice(0, 60), hasPrice, cells };
+}
+
+function checkContract(root) {
+  const state = loadStateOrFail(root);
+  const contract = (state.deliverables || {}).contract;
+
+  if (!contract) {
+    // Le contrat est **nouveau**. Les projets qui existaient avant ne l'ont pas, et
+    // les faire échouer serait casser des projets verts pour un livrable qu'ils n'ont
+    // jamais eu l'occasion de produire. Il est donc `warn` — et `warn` est un signal,
+    // pas un pardon : il nomme ce qui manque, donc l'oubli est visible.
+    return record('contract_complete', true, {
+      state: 'absent',
+      warn: 'Aucun contrat de projet. Le client ne signe rien, donc rien ne garantit que les engagements engageants ont été annoncés avant la Phase 4.',
+      next: 'node "$FORGE/scripts/state.js" register <anchor> deliverable contract .forge/contract.md',
+      rule: "Le contrat est le seul artefact qui engage le client, et « il n'intervient plus après la signature » n'est vrai que si ce qui engage un achat est décidé avant."
+    });
+  }
+
+  const rel = contract.path || L.CANONICAL_LAYOUT.contract;
+  const abs = L.toAbs(root, rel);
+  if (!fs.existsSync(abs)) {
+    return record('contract_complete', false, {
+      state: 'file_missing', path: rel,
+      rule: "Un contrat enregistré mais absent du disque ne signe rien : l'engagement du client est un souvenir, pas un document."
+    });
+  }
+
+  const raw = fs.readFileSync(abs, 'utf-8');
+  const problems = [];
+
+  // 1. Les cinq blocs. Un contrat sans le bloc « ce qui ne sera pas livré » est un
+  //    contrat qui ne promet rien de négatif, donc qui ne peut pas être violé.
+  for (const b of CONTRACT_BLOCKS) {
+    if (!b.re.test(raw)) problems.push({ block: b.label, why: 'bloc absent' });
+  }
+
+  // 2. Les engagements de `conventions.md` doivent tous figurer au contrat.
+  const conv = (state.deliverables || {}).conventions;
+  const engagements = [];
+  if (conv && conv.path && fs.existsSync(L.toAbs(root, conv.path))) {
+    const crows = fs.readFileSync(L.toAbs(root, conv.path), 'utf-8').split('\n');
+    for (const line of crows) {
+      if (!/À\s*DÉCIDER\s+AVANT\s+LA\s+PHASE\s+1/i.test(line)) continue;
+      const c = parseCommitment(line);
+      engagements.push({
+        field: c ? c.field : line.trim().slice(0, 60),
+        kind: engagementKind(line),
+        line: line.trim().slice(0, 90)
+      });
+    }
+  }
+
+  const irrSection = raw.split(/^##\s+\d*\.?\s*Ce qui est irréversible/im)[1] || '';
+  const irrBefore = irrSection.split(/^##\s/im)[0] || '';
+
+  // Les genres couverts par le contrat, lus **ses** lignes — pas son texte entier :
+  // une mention en prose dans le contrat ne couvre pas un engagement, une ligne de
+  // tableau si. C'est la même distinction que pour un prix, et pour la même raison :
+  // ce qui compte est l'engagement annoncé, pas le mot écrit quelque part.
+  const covered = new Set();
+  for (const line of irrBefore.split('\n')) {
+    if (!/^\s*\|/.test(line)) continue;
+    const k = engagementKind(line);
+    if (k) covered.add(k);
+  }
+
+  for (const e of engagements) {
+    if (!e.kind) continue;
+    if (!covered.has(e.kind)) {
+      problems.push({
+        block: 'Ce qui est irréversible',
+        field: e.field,
+        kind: e.kind,
+        why: `engagement de genre « ${e.kind} » annoncé dans conventions.md, absent des irréversibles du contrat`,
+        evidence: e.line
+      });
+    }
+  }
+
+  // 3. Un engagement sans prix n'est pas un engagement annoncé, c'est un engagement
+  //    subi. Le client ne peut pas valider un coût qu'il n'a pas vu.
+  for (const line of irrBefore.split('\n')) {
+    if (!/^\s*\|/.test(line)) continue;
+    const c = parseCommitment(line);
+    if (c && !c.hasPrice) {
+      problems.push({ block: 'Ce qui est irréversible', field: c.field, why: 'aucun prix ni durée — le client ne peut pas valider un coût qu\'il n\'a pas vu', evidence: line.trim().slice(0, 90) });
+    }
+  }
+
+  // 4. Le bloc « ce qui reviendra au client » doit porter une **date** par ligne.
+  //    Une décision sans échéance est prise par le plus proche, et le plus proche
+  //    c'est Forge — c'est-à-dire exactement l'absence de client que le contrat
+  //    prétend éviter.
+  const clientSection = raw.split(/^##\s+\d*\.?\s*Ce qui reviendra au client/im)[1] || '';
+  const clientBefore = clientSection.split(/^##\s/im)[0] || '';
+  const rows = clientBefore.split('\n').filter(l => /^\s*\|/.test(l) && !/^\s*\|[\s\-:|]+\|\s*$/.test(l));
+  const dated = rows.filter(l => /\d{4}-\d{2}-\d{2}|avant le|au plus tard|échéance|\bd[ée]\b/i.test(l));
+  if (rows.length && dated.length < rows.length) {
+    problems.push({ block: 'Ce qui reviendra au client', why: `${rows.length - dated.length} ligne(s) sans échéance — une décision sans date est prise par le plus proche`, evidence: (rows.find(l => !dated.includes(l)) || '').trim().slice(0, 90) });
+  }
+
+  record('contract_complete', problems.length === 0, {
+    state: contract.status,
+    blocks_checked: CONTRACT_BLOCKS.length,
+    engagements_in_conventions: engagements.length,
+    problems,
+    fix: 'Le contrat est relisible ; les points ci-dessus disent ce qui manque et où.',
+    rule: "« Après la signature, le client n'intervient plus » n'est vrai que si tout ce qui engage un achat est décidé avant la signature. Cette propriété est vérifiable : conventions.md porte les cases `À DÉCIDER AVANT LA PHASE 1`, et le contrat doit nommer chacune d'elles, avec un prix et une date."
+  });
+}
+
+/* ------------------------------------------------------------------ *
  * Fast Track — les conditions d'entrée
  * ------------------------------------------------------------------ */
 
@@ -1288,6 +1479,7 @@ const CHECKS = {
     checkPathsExist(root);
     checkPhaseRequirements(root);
     checkPrematureArtifacts(root);
+    checkContract(root);
     checkStrayCharacters(root);
     checkHashes(root);
     checkProvenance(root);
@@ -1299,6 +1491,7 @@ const CHECKS = {
   'hash-check': (root) => checkHashDrift(root),
   anchor: (root) => checkAnchor(root),
   'fast-track': (root, flags) => checkFastTrack(root, flags),
+  contract: (root) => checkContract(root),
   all: (root, flags) => {
     checkAnchor(root);
     checkPaths(root);
@@ -1308,6 +1501,7 @@ const CHECKS = {
     checkPathsExist(root);
     checkPhaseRequirements(root);
     checkPrematureArtifacts(root);
+    checkContract(root);
     checkStrayCharacters(root);
     checkHashes(root);
     checkProvenance(root);
@@ -1338,6 +1532,7 @@ function main() {
         'hash-check': 'forge-guard hash-check <root>',
         anchor: 'forge-guard anchor [start]',
         'fast-track': 'forge-guard fast-track <root> [--scope plans|phases4-7] [--autonomy milestone|full]',
+        contract: 'forge-guard contract <root>',
         all: 'forge-guard all <root> [--fix] [--relocate]',
         note: 'Tous les contrôles de `state` sont aussi dans `all`. ' +
               '`fast-track` n\'y est PAS : deux de ses conditions portent sur des livrables de phase 3 et 6, ' +
