@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.9.8] - 2026-10-01
+
 ### fix(forge) — Fast Track avait une table de huit conditions et aucun code derrière
 
 `fast-track.md` pose une table de huit conditions d'entrée, puis propose trois
