@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.13.2] - 2026-10-01
+
 ### fix(repo) — un gate qui envoyait vers une commande inexistante
 
 Chaque `next`, `fix` et `hint` d'un contrôle est une **promesse au lecteur** : quand un
