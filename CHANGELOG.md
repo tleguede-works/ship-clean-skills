@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.13.3] - 2026-10-03
+
 ### fix(forge) — FastTrack ne pouvait pas valider une fondation
 
 Testé sur un projet réel, pas décrit. Trois défauts trouvés en ouvrant le mode
