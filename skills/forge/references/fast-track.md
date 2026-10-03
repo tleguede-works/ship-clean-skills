@@ -208,7 +208,11 @@ Aucun appel LLM avant que les scripts passent. Un script détecte en une seconde
 | Artefact | Scripts |
 |---|---|
 | Architecture | `forge-guard.js all` · `dependency-check.js check --write` |
-| Plan de slice | `coverage-check.js slice` · `forge-guard.js placeholders` · `check-stale` |
+| Plan de slice **ou de fondation** | `coverage-check.js slice` · `forge-guard.js placeholders` · `check-stale` |
+
+Ces trois scripts acceptent une **fondation** au même titre qu'une slice : une fondation est un nœud du graphe, avec un plan, un statut et des dépendances. Les noms sont résolus par `forge-lib resolveGraphNode`, donc un oubli dans un script ne peut plus se reproduire.
+
+Et vérifie le nom d'un livrable **avant** de l'enregistrer : `state.js register` refuse une clé absente de `CANONICAL_LAYOUT`. `design-system` et `design_system` sont tous deux plausibles à l'oreille ; sans ce refus, le premier crée un livrable que la porte ne verra jamais ne verra jamais, et elle répond « jamais enregistré » pour un fichier pourtant présent.
 
 Un script en échec court-circuite la boucle : **REVISE immédiat**, sans consulter les agents.
 

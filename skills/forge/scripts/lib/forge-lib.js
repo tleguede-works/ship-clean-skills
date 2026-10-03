@@ -775,6 +775,44 @@ function looksLikeForgeDeliverable(filePath) {
   return DELIVERABLE_MARKERS.some(m => head.includes(m));
 }
 
+/**
+ * Les nœuds du graphe : slices ET fondations.
+ *
+ * Une fondation est un nœud du graphe — `architecture.md` §2 le dit — et elle a
+ * un plan, un statut, des dépendances, un hash. Longtemps, `check-stale`,
+ * `coverage-check` et `forge-exit` ne lisaient que `state.slices`.
+ *
+ * Conséquence, mesurée : `state.js check-stale . F4` répondait
+ * `unknown_slice` alors que F4 était déclarée dans `state.foundations`. Et
+ * FastTrack prescrit précisément ce script à l'étape 2 de sa boucle de
+ * validation — donc **le mode ne pouvait pas valider une fondation**, c'est-à-dire
+ * ni F1 (design system) ni F4 (isolation par ligne), les deux plus délicates du
+ * projet. L'agent contournait alors l'étape, ou lisait « unknown_slice » comme
+ * « rien à vérifier ».
+ *
+ * Passé par un résolveur unique : une fondation et une slice se traitent
+ * pareil, et l'oubli d'un script ne peut plus se reproduire.
+ */
+function graphNodes(state) {
+  return { ...(state.foundations || {}), ...(state.slices || {}) };
+}
+
+/** Résout un nœud par son nom, quelle que soit sa nature. */
+function resolveGraphNode(state, name) {
+  const all = graphNodes(state);
+  const entry = all[name];
+  if (!entry) {
+    fail({
+      error: 'unknown_slice',
+      slice: name,
+      known: Object.keys(all),
+      rule: 'Le nom est cherché parmi les slices ET les fondations : une fondation est ' +
+            'un nœud du graphe, avec le même statut et le même plan.'
+    });
+  }
+  return { key: name, entry, isFoundation: !!(state.foundations || {})[name] };
+}
+
 module.exports = {
   FORGE_DIR, STATE_PATH, STATE_VERSION, AUDIT_PATHS, NON_DELIVERABLE_DIRS,
   CANONICAL_LAYOUT, STATUS_VOCAB, ALLOWED_STATE_KEYS, FORBIDDEN_STATE_KEYS, FINDING_DOMAINS,
@@ -788,5 +826,6 @@ module.exports = {
   looksLikeForgeDeliverable,
   PHASE_KEYS, PHASE_REQUIREMENTS, missingPhaseRequirements,
   PHASE_ARTIFACT_OWNERS, bucketOf, resolveDerivedFrom, ownerPhaseFor, isPrematureArtifact, prematureArtifacts,
-  isPlanPath
+  isPlanPath,
+  graphNodes, resolveGraphNode
 };

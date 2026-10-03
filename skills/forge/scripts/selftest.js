@@ -4563,6 +4563,148 @@ test('SKILL.md branche design-check au gate de la Phase 3', () => {
   assert(/`design-check\.js`/.test(list), 'le script doit figurer dans le tableau de référence');
 });
 
+/* ------------------------------------------------------------------ *
+ * FastTrack — testé sur un projet réel, pas seulement décrit
+ * ------------------------------------------------------------------ */
+
+section('FastTrack sur projet réel');
+
+/** Un projet qui remplit les conditions d'entrée de la porte FastTrack. */
+function fastTrackProject(label) {
+  const project = freshProject(label);
+  const files = {
+    prd: '---\ntype: prd\nstatus: approved\n---\n\n# PRD\n\n## 1. Résumé\n\n## 4. Règles métier\n\n## 5. Contraintes\n\n## 6. Edge cases\n\n## 9. Hors scope (explicitement)\n',
+    conventions: '---\ntype: conventions\nstatus: approved\n---\n\n# Conventions\n',
+    benchmarks: '---\ntype: benchmarks\nstatus: approved\n---\n\n# Benchmarks\n'
+  };
+  // Chaque artefact s'enregistre dans SA phase : `premature_artifact` refuse
+  // un livrable enregistré avant qu'on l'ait atteint, et il a raison. Un helper
+  // qui écrit tout en Phase 0 se fait refuser en silence — c'est arrivé, et
+  // les tests échouaient ensuite sur un détail sans rapport.
+  const write = (key, rel, body, phase) => {
+    fs.writeFileSync(path.join(project, rel), body);
+    run('state.js', ['set-phase', project, phase, 'in_progress']);
+    const reg = run('state.js', ['register', project, 'deliverable', key, rel]);
+    assert(reg.code === 0, `enregistrement de ${key} refusé : ${reg.stdout}${reg.stderr}`);
+    run('state.js', ['set-status', project, 'deliverable', key, 'approved']);
+    run('state.js', ['hash', project, key]);
+  };
+  write('conventions', '.forge/conventions.md', files.conventions, '0_bootstrap');
+  write('prd', '.forge/prd.md', files.prd, '1_prd');
+  write('design_system', '.forge/design/design-system.md',
+    '---\ntype: design-system\nstatus: approved\n---\n\n# Design system\n', '3_design');
+  write('benchmarks', '.forge/benchmarks.md', files.benchmarks, '3_design');
+  fs.mkdirSync(path.join(project, '.forge', 'design', 'screens'), { recursive: true });
+  fs.writeFileSync(path.join(project, '.forge', 'design', 'screens', 'accueil.md'),
+    '---\ntype: screen\nstatus: approved\n---\n\n# Accueil\n');
+  run('state.js', ['register', project, 'screen', 'accueil', '.forge/design/screens/accueil.md']);
+  run('state.js', ['set-status', project, 'screen', 'accueil', 'approved']);
+  // Une fondation appartient à la Phase 4.
+  run('state.js', ['set-phase', project, '4_architecture', 'in_progress']);
+  return project;
+}
+
+test('la porte FastTrack passe quand toutes les conditions sont remplies', () => {
+  const project = fastTrackProject('ft-pret');
+  const res = run('forge-guard.js', ['fast-track', project, '--scope=plans']);
+  assert(res.json.pass === true,
+    `la porte a refusé à tort : ${JSON.stringify((res.json.checks || [])[0])}`);
+});
+
+test('la porte refuse une clé de livrable orthographiée autrement', () => {
+  // Le cas réel : `design-system` au lieu de `design_system`. Les deux sont
+  // plausibles à l'oreille, et rien ne tranchait jusqu'au gate — où la porte
+  // disait « jamais enregistré » pour un livrable pourtant sur disque.
+  const project = freshProject('ft-cle-tiree');
+  fs.mkdirSync(path.join(project, '.forge', 'design'), { recursive: true });
+  fs.writeFileSync(path.join(project, '.forge', 'design', 'design-system.md'),
+    '---\ntype: design-system\nstatus: draft\n---\n\n# DS\n');
+  const res = run('state.js', ['register', project, 'deliverable', 'design-system', '.forge/design/design-system.md']);
+  assert(res.code !== 0, 'une clé de livrable inconnue a été acceptée');
+  assert(res.json.error === 'unknown_deliverable_key', `erreur inattendue : ${res.stdout}`);
+  assert(res.json.suggestion === 'design_system',
+    `la bonne clé n'est pas suggérée : ${JSON.stringify(res.json.suggestion)}`);
+});
+
+test('status et start annoncent le mode réel, pas run.mode resté à guided', () => {
+  // FastTrack activé, enregistré, journalisé — et `status` annonçait `guided`.
+  // Une reprise se lisait donc le mode à l'envers.
+  const project = fastTrackProject('ft-mode-affiche');
+  assert(/"mode":\s*"guided"/.test(run('state.js', ['status', project]).stdout),
+    'le point de départ devrait être guided');
+
+  run('state.js', ['fast-track', project, '--enable', '--scope=plans']);
+  const on = run('state.js', ['status', project]).stdout;
+  assert(/"mode":\s*"fast-track"/.test(on), `status n'annonce pas fast-track : ${on.slice(0, 300)}`);
+
+  const start = run('state.js', ['start', project]).stdout;
+  assert(/"mode":\s*"fast-track"/.test(start), `start n'annonce pas fast-track : ${start.slice(0, 300)}`);
+
+  run('state.js', ['fast-track', project, '--disable']);
+  assert(/"mode":\s*"guided"/.test(run('state.js', ['status', project]).stdout),
+    'après désactivation, le mode doit redevenir guided');
+});
+
+test('check-stale et coverage-check acceptent une fondation', () => {
+  // FastTrack prescrit ces scripts à l'étape 2. Les deux lisaient uniquement
+  // `state.slices`, donc le mode ne pouvait valider NI F1 (design system) NI F4
+  // (isolation par ligne) — les deux fondations les plus délicates du projet.
+  const project = fastTrackProject('ft-fondation');
+  fs.writeFileSync(path.join(project, '.forge', 'plans', 'F4.md'),
+    '---\ntype: implementation-plan\nslice: F4\nstatus: planned\n---\n\n# Plan F4\n\n' +
+    '## 1. Résumé\n\n## 2. Contrats de données\n\n## 3. Algorithmes critiques\n\n' +
+    '## 4. Plan composants\n\n## 5. Gestion d\'état\n\n## 6. Traçabilité\n\n' +
+    '## 7. Pièges\n\n## 8. Dépendances\n\n## 9. Checklist\n\n## 10. Critères\n\n## 11. Plan de tests\n');  run('state.js', ['register', project, 'foundation', 'F4', '.forge/plans/F4.md']);
+
+
+  // check-stale compare aussi le plan à ses sources déclarées. Sans hash côté
+  // sources, il répond `no_reference_hash` — un verdict légitime qui masque
+  // précisément le défaut visé. Le workflow réel hashe en amont.
+  for (const key of ['prd', 'architecture', 'conventions', 'design_system']) {
+    if (fs.existsSync(path.join(project, '.forge', `${key}.md`))) {
+      run('state.js', ['hash', project, key]);
+    }
+  }
+  run('state.js', ['hash', project, 'F4']);
+  const stale = run('state.js', ['check-stale', project, 'F4']);
+  assert(stale.code === 0, `check-stale refuse une fondation : ${stale.stdout}${stale.stderr}`);
+  assert(!/unknown_slice/.test(stale.stdout + stale.stderr),
+    `la fondation reste inconnue : ${stale.stdout}`);
+
+  const cov = run('coverage-check.js', ['slice', project, 'F4']);
+  assert(!/not found/.test(cov.stdout), `coverage-check refuse une fondation : ${cov.stdout}`);
+});
+
+test('un nom de slice réellement inconnu est toujours refusé', () => {
+  // Le résolveur élargi ne doit pas devenir un passe-partout : un vrai
+  // fantôme doit toujours échouer, en nommant les nœuds qui EXISTENT — donc
+  // le test en déclare un, sinon il ne prouve qu'une liste vide.
+  const project = fastTrackProject('ft-fantome');
+  fs.mkdirSync(path.join(project, '.forge', 'plans'), { recursive: true });
+  fs.writeFileSync(path.join(project, '.forge', 'plans', 'F4.md'),
+    '---\ntype: implementation-plan\nslice: F4\nstatus: planned\n---\n\n# Plan F4\n');
+  run('state.js', ['register', project, 'foundation', 'F4', '.forge/plans/F4.md']);
+  const res = run('state.js', ['check-stale', project, 'F99']);
+  assert(res.code !== 0, 'une slice fantôme a été acceptée');
+  const text = res.stdout + res.stderr;
+  assert(/unknown_slice/.test(text), `erreur inattendue : ${res.stdout}`);
+  // La liste nomme les nœuds du GRAPHE (slices + fondations), pas les écrans :
+  // un écran n'a pas de place dans un graphe de dépendances.
+  assert(/"F4"/.test(text),
+    `la liste des nœuds connus ne nomme pas la fondation : ${res.stdout}`);
+});
+
+test('forge-exit résout une fondation', () => {
+  const project = fastTrackProject('ft-exit');
+  fs.writeFileSync(path.join(project, '.forge', 'plans', 'F4.md'),
+    '---\ntype: implementation-plan\nslice: F4\nstatus: planned\n---\n\n# Plan\n');  run('state.js', ['register', project, 'foundation', 'F4', '.forge/plans/F4.md']);
+
+  const res = run('forge-exit.js', [project, 'F4', '--dry-run']);
+  assert(res.json && res.json.slice === 'F4',
+    `forge-exit ne résout pas la fondation : ${res.stdout.slice(0, 200)}`);
+  const plan = (res.json.checks || []).find(c => c.check === 'plan_exists');
+  assert(plan && plan.status === 'pass', `le plan de la fondation n'est pas trouvé : ${JSON.stringify(plan)}`);
+});
 runQueue().then(() => {
   console.log(`\n${'─'.repeat(60)}`);
   if (failed === 0) {

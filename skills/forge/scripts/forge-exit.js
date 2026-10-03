@@ -146,8 +146,10 @@ function check(args) {
   const add = (name, ok, details = {}) => checks.push({ check: name, status: ok ? 'pass' : 'fail', ...details });
 
   /* --- 1. le plan existe --- */
-  const slice = (state.slices || {})[sliceName];
-  const planRel = (slice && slice.plan_path) || (sliceName ? `${L.FORGE_DIR}/plans/${sliceName}.md` : null);
+  // Fondations comprises, comme `check-stale` et `coverage-check`.
+  const slice = L.graphNodes(state)[sliceName];
+  const planRel = (slice && (slice.plan_path || slice.path)) ||
+    (sliceName ? `${L.FORGE_DIR}/plans/${sliceName}.md` : null);
   const planAbs = planRel ? L.toAbs(anchor, planRel) : null;
   const planExists = !!(planAbs && fs.existsSync(planAbs));
 
@@ -155,7 +157,7 @@ function check(args) {
     L.fail({
       error: 'missing_slice',
       usage: 'forge-exit.js <anchor> <slice> [--dry-run] [--only=lint,test]',
-      known: Object.keys(state.slices || {})
+      known: Object.keys(L.graphNodes(state))
     });
   }
   add('plan_exists', planExists, { path: planRel, ...(planExists ? {} : { hint: `Créer ${planRel}` }) });
