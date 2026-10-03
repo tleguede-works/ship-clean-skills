@@ -359,6 +359,37 @@ function cmdInit(rootArg, productName, references) {
  * register
  * ------------------------------------------------------------------ */
 
+/** La clé connue la plus proche, par distance d'édition. */
+function closestKey(key, known) {
+  let best = null;
+  let bestDist = Infinity;
+  for (const k of known) {
+    const d = editDistance(String(key).toLowerCase(), k.toLowerCase());
+    if (d < bestDist) { bestDist = d; best = k; }
+  }
+  // Au-delà de 3, ce n'est plus une faute de frappe, c'est une autre chose.
+  return bestDist <= 3 ? best : null;
+}
+
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
 function cmdRegister(root, kind, key, relPath, type, opts) {
   const state = loadState(root);
   const canonical = L.CANONICAL_LAYOUT[key];
@@ -373,6 +404,31 @@ function cmdRegister(root, kind, key, relPath, type, opts) {
       resolved: abs,
       rule: `Tout livrable Forge doit être écrit dans <anchor>/${L.FORGE_DIR}/.`,
       canonical_hint: canonical || null
+    });
+  }
+
+  // Garde-fou n°1 bis : une clé de livrable connue.
+  //
+  // Le test de chemin est `if (canonical && …)` : une clé inconnue donne
+  // `undefined`, le test passe, et un livrable est enregistré sous un nom que
+  // rien ne reconnaîtra jamais. Le document existe, son fichier passe les
+  // contrôles de contenu, et aucun gate ne le voit.
+  //
+  // Constaté sur un test grandeur nature, en ouvrant FastTrack : la porte
+  // exige `design_system` et répond « jamais enregistré », alors que le livrable
+  // était bien là sous la clé `design-system`. Les deux orthographes sont
+  // plausibles à l'oreille, et rien ne tranche avant qu'il soit trop tard —
+  // c'est-à-dire au moment du gate.
+  if (kind === 'deliverable' && !canonical) {
+    const suggestion = closestKey(key, Object.keys(L.CANONICAL_LAYOUT));
+    L.appendLog(root, { type: 'register_rejected', reason: 'unknown_deliverable_key', key });
+    L.fail({
+      error: 'unknown_deliverable_key',
+      key,
+      known: Object.keys(L.CANONICAL_LAYOUT),
+      suggestion: suggestion || null,
+      rule: 'Un livrable sous une clé inconnue n\'est vu par aucun gate : son fichier ' +
+            'passe, son contenu passe, et la phase qui l\'attend ne le trouvera pas.'
     });
   }
 
@@ -931,8 +987,10 @@ function cmdDep(root, key, depsArg) {
 }
 
 function cmdCheckStale(root, sliceName) {  const state = loadState(root);
-  const slice = (state.slices || {})[sliceName];
-  if (!slice) L.fail({ error: 'unknown_slice', slice: sliceName, known: Object.keys(state.slices || {}) });
+  // Fondations comprises : voir `resolveGraphNode`. Sans cela, FastTrack — qui
+  // prescrit ce script — ne pouvait pas valider F1 ni F4.
+  const { entry: slice } = L.resolveGraphNode(state, sliceName);
+  slice.plan_path = slice.plan_path || slice.path || `.forge/plans/${sliceName}.md`;
 
   const reasons = [];
   if (!slice.plan_path) {
@@ -1419,8 +1477,16 @@ function cmdStart(rootArg) {
     ascended: !!ascended,
     product: state.product.name,
     archetype: state.product.archetype,
-    mode: (state.run || {}).mode,
-    autonomy: (state.run || {}).autonomy || 'milestone',
+    // Le mode affiché est celui du **mode réel**, pas celui d'une chaîne laissée
+    // à `init`. `run.mode` vaut `guided` depuis `init` et rien ne le remettait à
+    // jour : FastTrack était activé, enregistré, journalisé — et `status`
+    // annonçait `guided`. Une reprise se lisait donc le mode à l'envers.
+    // Constaté en ouvrant FastTrack sur un projet réel.
+    mode: (state.run || {}).fast_track && state.run.fast_track.enabled
+      ? 'fast-track'
+      : ((state.run || {}).mode || 'guided'),
+    autonomy: ((state.run || {}).fast_track || {}).autonomy ||
+      (state.run || {}).autonomy || 'milestone',
 
     phase: {
       current: state.current_phase,
@@ -1772,7 +1838,11 @@ function cmdStatus(root) {
     product: state.product.name,
     archetype: state.product.archetype,
     anchor: state.project.path,
-    mode: (state.run || {}).mode,
+    // Idem `start` : `run.mode` reste `guided` depuis `init`, donc une reprise
+    // annonçait Guided alors que FastTrack était actif.
+    mode: (state.run || {}).fast_track && state.run.fast_track.enabled
+      ? 'fast-track'
+      : ((state.run || {}).mode || 'guided'),
     current_phase: state.current_phase,
     phases: state.phases,
     deliverables: deliv,

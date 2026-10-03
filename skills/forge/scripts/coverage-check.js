@@ -33,12 +33,16 @@ function deliverablePath(state, root, key, fallback) {
 
 function checkSlice(projectPath, sliceName) {
   const state = readState(projectPath);
-  const slice = (state.slices || {})[sliceName];
-
-  if (!slice) {
-    console.log(JSON.stringify({ error: `Slice "${sliceName}" not found in state.json` }));
+  // Fondations comprises : une fondation a un plan, donc une couverture à
+  // vérifier. C'est ce que FastTrack appelle à l'étape 2 de sa boucle.
+  let slice;
+  try {
+    slice = L.resolveGraphNode(state, sliceName).entry;
+  } catch {
+    console.log(JSON.stringify({ error: `Slice "${sliceName}" not found in state.json`, known: Object.keys(L.graphNodes(state)) }));
     process.exit(1);
   }
+  slice = { ...slice, plan_path: slice.plan_path || slice.path || `.forge/plans/${sliceName}.md` };
 
   const results = {
     slice: sliceName,

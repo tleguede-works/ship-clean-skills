@@ -27,6 +27,73 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — FastTrack ne pouvait pas valider une fondation
+
+Testé sur un projet réel, pas décrit. Trois défauts trouvés en ouvrant le mode
+sur Atlas BI, au moment où l'architecture était faite et les plans non.
+
+**1. La porte annonçait « jamais enregistré » pour un livrable présent.**
+`CANONICAL_LAYOUT` fixe `design_system` ; le livrable avait été enregistré sous
+`design-system`. Les deux orthographes sont plausibles à l'oreille, et
+`register` acceptait les deux : son test de chemin canonique est
+`if (canonical && …)`, donc une clé inconnue donne `undefined` et passe.
+
+Un livrable sous une clé inconnue est le pire genre de défaut ici : son
+fichier passe les contrôles de contenu, et **aucun gate ne le voit**. La porte
+FastTrack l'a无名解码 — « livrable `design_system` jamais enregistré » — pour un
+fichier présent sur disque, à un moment où il n'y avait plus rien à faire
+d'autre que réécrire la spécification.
+
+`register` refuse désormais une clé absente de `CANONICAL_LAYOUT`, et suggère
+la bonne par distance d'édition.
+
+**2. Le mode était activé et l'état annonçait `guided`.**
+`run.mode` vaut `guided` depuis `init` et **rien ne le remettait à jour**.
+FastTrack activé, enregistré, journalisé — et `status` comme `start` affiche
+`guided`. Une reprise se lisait le mode à l'envers, et c'est précisément la
+reprise qui doit savoir où le mode s'arrête.
+
+**3. `check-stale`, `coverage-check` et `forge-exit` ne lisaient que
+`state.slices`, jamais `state.foundations`.**
+Une fondation est un nœud du graphe — `architecture.md` §2 le dit — avec un
+plan, un statut, des dépendances. Or FastTrack prescrit `check-stale` et
+`coverage-check` à l'étape 2 de sa boucle. Donc **le mode ne pouvait pas
+valider F1 (design system) ni F4 (isolation par ligne)** : les deux fondations
+les plus délicates du projet.
+
+`state.js check-stale . F4` répondait `unknown_slice` pour une fondation
+déclarée dans `state.foundations`.
+
+Résolu par un résolveur unique, `forge-lib graphNodes` / `resolveGraphNode`,
+que les trois scripts utilisent : fondation et slice se traitent pareil, et
+l'oubli d'un script ne peut plus se reproduire. Un nom réellement inconnu
+échoue toujours, en nommant les nœuds qui existent.
+
+### test(forge) — 6 tests ajoutés (226 → 232)
+
+Porte qui passe quand les conditions sont remplies, clé orthographiée
+autrement refusée, mode affiché par `status` **et** `start`, fondation acceptée
+par `check-stale` et `coverage-check`, fantôme toujours refusé, fondation
+résolue par `forge-exit`.
+
+Trois de ces tests ont d'abord échoué **à tort**, et les trois fois le test
+avait raison de douter du helper, pas le helper du test :
+
+- `check-stale` répondait `plan_hash_missing` et `no_reference_hash` — verdicts
+  légitimes, qui masquaient le défaut visé. Le plan et ses sources doivent être
+  hashés, comme le fait le workflow réel.
+- le helper écrivait tous les livrables en Phase 0, où `premature_artifact` les
+  refuse — **et il a raison**. Les enregistrements échouaient en silence et les
+  tests échouaient ensuite sur un détail sans rapport. Chaque artefact
+  s'enregistre désormais dans sa phase, et l'helper **asserte** que
+  l'enregistrement a réussi au lieu d'ignorer l'échec.
+- l'assertion « la liste nomme un écran » était fausse : un écran n'a pas sa
+  place dans un graphe de dépendances. `known` liste les nœuds du graphe, et
+  c'est correct.
+
+C'est le pendant de ce que le test vérifie : un contrôle qui refuse tout est
+aussi cassé qu'un contrôle qui ne refuse rien.
+
 ## [1.13.2] - 2026-10-01
 
 ### fix(repo) — un gate qui envoyait vers une commande inexistante
