@@ -27,6 +27,8 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-10-11
+
 ### fix(forge) — les domaines de constat n'étaient plus routables
 
 `FINDING_DOMAINS` listait 22 noms, la bibliothèque en compte **31**. Neuf
