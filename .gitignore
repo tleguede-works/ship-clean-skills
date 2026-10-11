@@ -19,3 +19,10 @@ package-lock.json
 # version, jamais versionné. Un `dist/` commité ferait verifier l'archive d'une
 # version périmée en croyant vérifier la courante.
 dist/
+
+# Projets de laboratoire : ils servent a eprouver les skills sur des cas reels
+# (un ecart de gate, une convention divergente, une IA qui contourne un script).
+# Aucun n'est une source du produit, et un dossier de 130 fichiers de specs
+# masque les 5 Skills qu'ils doivent tester. Ils restent sur le disque, versionnes
+# par le developpeur qui les a produits.
+Forge Labs/

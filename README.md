@@ -27,7 +27,7 @@ See `npx skills add --help` for the full list.
 | Skill | What it does |
 |---|---|
 | **[`forge`](skills/forge/)** | Takes a rough product idea and turns it into an exhaustive implementation plan — PRD, roadmap, design, architecture, per-slice plans, test plan, impact analysis — precise enough that a weak model can implement a slice without ambiguity. Also runs the implementation, with executable exit criteria and optional autonomous validation. |
-| **[`project-rules-architect`](skills/project-rules-architect/)** | Generates a coherent, non-redundant set of AI-agent instruction files for a project — an entry file plus a rules directory, built from a template library selected by detected stack rather than copied wholesale. |
+| **[`project-rules-architect`](skills/project-rules-architect/)** | Generates a coherent, non-redundant set of AI-agent instruction files for a project — an entry file plus a rules directory, built from a template library selected by detected stack rather than copied wholesale. Measures the project before writing any rule (a baseline scan decides `greenfield` vs `ratchet`), and verifies what it delivers: `scripts/rules-selftest.js` checks the wiring, the index, cross-references, contradictory thresholds, cross-project contamination and the presence of the quality gates. |
 | `cartographe` | *Planned.* Legacy codebases and migrations to a different stack. |
 
 ### How they fit together

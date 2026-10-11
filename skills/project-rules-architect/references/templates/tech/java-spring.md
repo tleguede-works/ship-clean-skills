@@ -237,6 +237,69 @@ This file supplies the Spring mechanisms.
   a slice test; assert on a mock invocation; rely on test ordering; leave a
   container running for the whole suite to save a few seconds.
 
+## Generators, Scaffolding, and Where There Is No Generator
+
+**Being honest about the asymmetry here matters more than being consistent.**
+
+### The project skeleton: generate it
+
+A Spring Boot project's skeleton is exactly what a generator is good at — build
+file, directory layout, a runnable application class, the test, the properties
+file, `.gitignore`.
+
+```bash
+# https://start.spring.io — CLI form
+spring init --dependencies=web,data-jpa,validation,postgresql my-service
+# or the HTTP form, which the IDEs and VS Code plugins wrap
+curl https://start.spring.io/starter.zip -d dependencies=web,data-jpa -d javaVersion=21 -o svc.zip
+```
+
+**Use it for a new service. Do not hand-write `pom.xml`.** The failure mode is
+not visible in the file — it is a missing plugin version that resolves to a
+different Spring Boot patch level than the one the rest of the code assumes.
+
+**In IntelliJ or STS, the Initializr is the same service with a form.** So the
+rule is the same: the generator decides the dependency set, the plugin versions
+and the Java version; `pom.xml` is then edited by hand from there.
+
+### The code: write it by hand, and that is correct
+
+**There is no mature code generator for a Spring controller, service, repository
+or JPA entity**, in the way Nest, Angular, Rails or Spring Initializr have one.
+Saying otherwise in a rule set would produce an agent hunting for a tool that
+does not exist.
+
+So the rules are the ones that stand on their own:
+
+| Artefact | Generated? | What to do instead |
+|---|---|---|
+| Project skeleton | **Yes** — `spring init` / Initializr | Never hand-write `pom.xml` for a new service |
+| A JPA entity | **No** | Write it. A generated entity is a mutable data class with `equals` that compares identity, which is wrong for a domain model |
+| A `Repository` interface | **No** | It is one line: `extends JpaRepository<T, ID>`. There is nothing to generate |
+| A controller | **No** | Write it. What a generator would produce is a class with a method that returns `null` |
+| A service | **No** | Write it |
+| A DTO | **No** | Write it, and hand-map it at the boundary (`domain/data-and-state.md` §Normalizers) |
+| Lombok annotations | **Yes**, if the project uses Lombok | Let the IDE generate accessors. **Verify `lombok.config` in the repository** — the generated code is not in git, so the config is the only source of truth for what Lombok will do |
+
+**What a generator would have got right, and what you must therefore remember
+by hand:**
+
+- The **package** matches the directory, always. The build does not enforce it,
+  so a mismatched class compiles and Spring refuses to find it at startup.
+- The constructor is `public`, for proxying — the same reason every other class
+  here takes constructor injection.
+- A `@RestController` returning an entity leaks the schema; a DTO does not.
+- A `@Transactional` boundary belongs on the **public** method of the bean.
+
+{{#if intellij}}
+**In IntelliJ:** `File → New → Spring Boot Component` generates the file, the
+package and — for a controller — the `@RequestMapping` skeleton. It does not
+generate tests; generate the test separately, or write it. The Java Database
+tools can generate an entity from an existing schema, which is legitimate when
+adopting an existing database — and produces a class you then have to review,
+because it defaults to identity `equals`.
+{{/if}}
+
 ## Banned Patterns
 
 | Banned | Use instead | Enforced by |
@@ -254,3 +317,5 @@ This file supplies the Spring mechanisms.
 | a test relying on data another test wrote | independent fixtures | review |
 | a data-slice test with the embedded database left on while migrations own the schema | `replace = Replace.NONE` | review |
 | a full-context test for a single status code | a web slice | review |
+| a hand-written `pom.xml` for a new service | `spring init` / Initializr | review |
+| a generated entity with identity `equals` on a domain type | a hand-written one, or Lombok | review |

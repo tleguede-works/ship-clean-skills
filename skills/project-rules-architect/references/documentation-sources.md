@@ -178,6 +178,47 @@ explicitly** in the emitted file rather than assumed. The signal is a release
 cadence that ships breaking changes, and a major version numbering that tracks
 the platform underneath it.
 
+## The tool-selection rule
+
+**Before a tool becomes a rule, it clears four checks. A tool that fails any of
+them is described in the output as a proposal, not emitted as a gate.**
+
+| Check | The failure it prevents |
+|---|---|
+| **Is it installed, or does one command install it?** | A gate the project cannot run is a gate nobody runs |
+| **Is it maintained?** — a release inside ~12 months, an issue tracker that responds | A rule depending on an abandoned tool outlives the tool |
+| **Does it exit non-zero on a violation?** | A tool that warns produces a gate that is always green |
+| **Does the project already have something equivalent?** | A second linter is a second opinion, not a better one — and a second thing to maintain |
+
+The third check is the one that gets skipped, and skipping it is the most
+expensive: **a tool that cannot fail cannot gate.** Confirm it on the project's
+own code, where a violation already exists. A detector configured against a
+clean codebase proves nothing — it is equally consistent with "no duplicates"
+and with "the tool is not looking at this directory".
+
+### Cost, before adoption
+
+One tool per concern, and a concern already covered costs nothing to keep.
+Adding a tool adds a version to pin, a config to maintain, a CI minute, and a
+failure mode on the day it changes behaviour. **Prefer the tool the ecosystem
+already ships** — it needs no installation, no config, and no upgrade.
+
+The honest ordering, when a project's own tooling does not cover a gate:
+
+1. **The ecosystem's own command** — `npm audit`, `mvn verify`, `go vet`.
+2. **A single tool that covers several gates** — `jscpd` reports duplication,
+   dead code and complexity from one binary, so it costs one install rather than
+   three.
+3. **Nothing, and say so** — record the gate as `absent` in the baseline. A
+   missing gate is visible; an unmaintained dependency on a scanner is not.
+
+### And record which version
+
+A tool's flags and its output format change. **Pin the version and write it in
+the rule**, because a threshold check that starts reporting a different field
+after an upgrade fails silently — the gate keeps running, the numbers change,
+and nobody knows they mean something else now.
+
 ## Applying this to the backend overlays
 
 The two backend overlays in this library (`node-nestjs.md`, `java-spring.md`)

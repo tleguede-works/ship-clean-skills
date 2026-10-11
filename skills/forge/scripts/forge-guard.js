@@ -24,6 +24,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const L = require('./lib/forge-lib');
 
 /* Gabarits attendus : {{NOM_EN_MAJUSCULES}}. Un reste = rendu de template incomplet. */
@@ -1614,6 +1615,603 @@ function checkFastTrack(root, flags) {
   });
 }
 
+/**
+ * rules_present — le jeu de règles existe-t-il quand l'architecture est close ?
+ *
+ * **Pourquoi ce contrôle existe.** L'appel 2 à `project-rules-architect` était
+ * décrit à trois endroits — `SKILL.md` §Les deux appels,
+ * `references/skill-boundaries.md`, et la table de PRA — et les trois se
+ * ressemblaient. Aucun n'était **déclenché**. L'appel 2 était une phrase ayant
+ * un moment (« quand `architecture` est approuvée ») et pas de mécanisme, donc
+ * exactement comme une phrase sans moment : l'agent la lisait, ne la partageait
+ * pas.
+ *
+ * Constaté sur cinq projets du laboratoire, tous au même avancement : un seul
+ * avait un jeu de règles. Quatre avaient franchi l'approbation de l'architecture
+ * sans rien voir se passer, et rien ne l'avait signalé.
+ *
+ * **Ce qui est réellement vérifié**, dans cet ordre, parce que chaque étape peut
+ * échouer seule :
+ *
+ *   1. l'**approbation** — le contrôle est inerte avant. C'est le moment
+ *      déclaré, et rien ne doit échouer avant lui ;
+ *   2. l'**existence** d'un répertoire de règles **non vide** ;
+ *   3. le **câblage** — un `.opencode/rules/` non vide dans un projet sans
+ *      `opencode.json` qui le charge est un jeu de règles complet en apparence
+ *      et totalement inerte. C'est le défaut exact que `target-formats.md`
+ *      existe pour empêcher, et il n'était détecté nulle part.
+ *
+ * Le troisième point est ce qui distingue une porte d'un rituel : sans lui, un
+ * projet peut « avoir un jeu de règles » avec quatre fichiers que rien ne
+ * charge, et le contrôle passe.
+ */
+/**
+ * Résout le câblage d'un répertoire de règles.
+ *
+ * Séparé de `checkRulesPresent` parce que **le câblage ne dépend pas du moment** :
+ * un jeu de règles inerte est inerte qu'il ait été écrit avant ou après
+ * l'approbation de l'architecture. L'approbation décide de l'**obligation**
+ * d'en avoir ; elle ne décide pas si ceux qu'on a sont chargés.
+ *
+ * Les deux issues sont distinctes et toutes deux réelles : le fichier de
+ * configuration **absent** — le cas le plus courant, on génère les `.md` et on
+ * oublie le `opencode.json` — et le fichier présent **sans la clé**. Ne traiter
+ * que la deuxième laissait passer le défaut le plus fréquent.
+ */
+function resolveWiring(root, dir) {
+  const rel = path.relative(root, dir).split(path.sep).join('/');
+  const cfgPath = path.join(root, 'opencode.json');
+
+  if (!fs.existsSync(cfgPath)) {
+    // `.opencode/` est la convention d'OpenCode : sans configuration, rien ne le
+    // charge. Les autres répertoires portent leur propre frontmatter, donc
+    // l'absence de configuration ne prouve rien pour eux.
+    return rel.split('/')[0] === '.opencode'
+      ? { rel, wired: false, problem: 'no_config_file' }
+      : { rel, wired: null, problem: null };
+  }
+
+  let cfg;
+  try {
+    cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+  } catch (e) {
+    return { rel, wired: null, problem: 'invalid_json', error: e.message };
+  }
+
+  const ins = Array.isArray(cfg.instructions) ? cfg.instructions : [];
+  const wired = ins.some(i => {
+    const norm = String(i).split(path.sep).join('/');
+    return norm === rel
+      || norm.startsWith(rel + '/')
+      || (norm.includes('*') && norm.split('*')[0].replace(/\/$/, '') === rel);
+  });
+  return { rel, wired, problem: wired ? null : 'no_instructions_key' };
+}
+
+/**
+ * rules_present — le jeu de règles existe-t-il, et est-il chargé ?
+ *
+ * **Pourquoi ce contrôle existe.** L'appel 2 à `project-rules-architect` était
+ * décrit à trois endroits — `SKILL.md` §Les deux appels,
+ * `references/skill-boundaries.md`, et la table de PRA — et les trois se
+ * ressemblaient. Aucun n'était **déclenché**. L'appel 2 était une phrase ayant
+ * un moment et pas de mécanisme, donc exactement comme une phrase sans moment.
+ *
+ * Constaté sur cinq projets du laboratoire au même avancement : un seul avait un
+ * jeu de règles. Quatre avaient franchi l'approbation sans rien voir se passer,
+ * et rien ne l'avait signalé.
+ *
+ * **Trois états, et le troisième est celui qui manquait.**
+ *
+ *   1. `not_due` — avant l'approbation, pas de règles. L'ordre normal.
+ *   2. `early`  — avant l'approbation, **des règles existent**. L'absence n'est
+ *      pas un défaut ; sa présence ne doit pas être muette. Une porte qui
+ *      rapporte « rien à signaler » sur un dépôt de dix-neuf fichiers laisse
+ *      croire qu'il n'y a rien, et c'est faux.
+ *   3. `absent` / `empty` / `not_wired` — après l'approbation. Là, ça échoue.
+ *
+ * `early` passe, et dit ce qu'il a trouvé. **Le câblage, lui, est évalué dans les
+ * trois états** : un jeu de règles non chargé est inerte indépendamment du moment
+ * où il a été écrit, et c'est le défaut le plus trompeur qui existe — complet en
+ * apparence, et il ne se charge pas.
+ */
+function checkRulesPresent(root) {
+  const state = loadStateOrFail(root);
+  const arch = (state.phases || {})['4_architecture'];
+  const approved = !!(arch && arch.status === 'approved');
+
+  const RULES_DIRS = ['.opencode/rules', '.cursor/rules', 'rules', '.rules'];
+  const dir = RULES_DIRS
+    .map(d => path.join(root, d))
+    .find(d => fs.existsSync(d) && fs.statSync(d).isDirectory());
+  const files = dir ? L.listFilesRecursive(dir).filter(f => /\.(md|mdc)$/.test(f)) : [];
+  const present = !!(dir && files.length > 0);
+
+  // Le câblage se résout dès qu'il y a un répertoire, avant toute décision sur
+  // l'obligation d'en avoir un.
+  const wiring = present ? resolveWiring(root, dir) : null;
+
+  if (wiring && wiring.problem === 'invalid_json') {
+    return record('rules_present', false, {
+      state: 'invalid_config',
+      path: 'opencode.json',
+      why: wiring.error,
+      rule: "Un opencode.json invalide désactive silencieusement tout le jeu d'instructions du projet."
+    });
+  }
+
+  if (wiring && wiring.wired === false) {
+    return record('rules_present', false, {
+      state: 'not_wired',
+      rules_dir: wiring.rel,
+      files: files.length,
+      config_problem: wiring.problem,
+      approved,
+      why: files.length + ' fichier(s) de règles existent dans ' + wiring.rel +
+           ' mais rien ne les charge. Le jeu de règles est complet en apparence et totalement inerte.',
+      next: 'Ajouter la clé `instructions` — ["AGENTS.md", "' + wiring.rel + '/*.md"] — dans opencode.json, en fusionnant, jamais en remplaçant le fichier.',
+      rule: "Générer le Markdown sans le fichier qui le fait charger produit un livrable qui semble fini et ne l'est pas."
+    });
+  }
+
+  if (!present) {
+    if (!approved) {
+      // Avant l'approbation, l'absence de règles est l'ordre normal : les règles
+      // se génèrent *contre* la stack décidée, pas avant.
+      return record('rules_present', true, {
+        state: 'not_due',
+        phase: state.current_phase,
+        rule: "L'appel 2 est dû quand `architecture` est approuvée. Avant, son absence est l'ordre normal, pas un oubli."
+      });
+    }
+    return record('rules_present', false, {
+      state: dir ? 'empty' : 'absent',
+      phase: state.current_phase,
+      searched: RULES_DIRS,
+      why: dir
+        ? "Le répertoire de règles existe et est vide : le jeu de règles a été annoncé mais rien n'y est."
+        : "L'architecture est approuvée et aucun jeu de règles n'existe : l'appel 2 à project-rules-architect n'a pas eu lieu.",
+      next: 'Invoquer project-rules-architect (appel 2 — jeu de règles), puis câbler opencode.json.',
+      rule: "Un jeu de règles qui n'est pas écrit n'est pas une préférence : c'est une phrase que l'agent lira dans aucun fichier."
+    });
+  }
+
+  if (!approved) {
+    // L'état que la porte ne voyait pas : un jeu de règles écrit AVANT son
+    // déclencheur. Ça passe — la stack est approuvée dans `conventions.md`, et
+    // s'appuyer dessus est légitime — mais ça se dit, sinon l'état est muet.
+    return record('rules_present', true, {
+      state: 'early',
+      phase: state.current_phase,
+      rules_dir: wiring.rel,
+      files: files.length,
+      wired: wiring.wired,
+      why: files.length + ' fichier(s) de règles existent alors que `architecture` n\'est pas approuvée. Rien n\'interdit de s\'appuyer sur une stack approuvée dans conventions.md — mais le moment déclaré n\'est pas atteint, et le jeu de règles pourra avoir à être révisé quand il le sera.',
+      rule: "Une porte qui rapporte « rien à signaler » sur un dépôt de dix-neuf fichiers laisse croire qu'il n'y a rien, et c'est faux."
+    });
+  }
+
+  return record('rules_present', true, {
+    state: 'present',
+    rules_dir: wiring.rel,
+    files: files.length,
+    wired: wiring.wired,
+    rule: "Un jeu de règles écrit, indexé et chargé vaut trois fois plus qu'un jeu de règles écrit."
+  });
+}
+
+/**
+ * memory_present — la mémoire du projet existe-t-elle, et ses déclencheurs
+ * sont-ils **des conditions** ?
+ *
+ * **Pourquoi une porte, et pas une consigne.** L'appel 1 du socle de contexte
+ * était une étape numérotée de la Phase 0 — une phrase. Elle a donc été exécutée
+ * sur deux projets de laboratoire et ignorée sur trois, sans que rien ne le
+ * signale. C'est la forme exacte du défaut que ce dépôt s'est donné pour mission
+ * de traquer : une exigence décidable écrite en prose est une exigence que
+ * l'agent déclare satisfaite.
+ *
+ * **Les deux moitiés, parce qu'une seule ne suffit pas :**
+ *
+ *   1. les **quatre fichiers** existent, à la racine de l'anchor ;
+ *   2. `AGENTS.md` nomme chacun des trois autres **avec un déclencheur**, pas
+ *      seulement une description.
+ *
+ * La seconde est celle qui manque le plus souvent. Un fichier décrit et jamais
+ * nommé ailleurs est un conteneur sans instruction à le remplir : il est créé,
+ * correctement nommé, et **permanemment vide** — ce qui est pire que de ne pas
+ * l'avoir, parce que cela ressemble à du progrès.
+ */
+function checkMemoryPresent(root) {
+  const state = loadStateOrFail(root);
+  const phase = parseInt(state.current_phase, 10);
+  const required = ['AGENTS.md', 'SESSION_LOG.md', 'DECISIONS.md', 'LEARNINGS.md'];
+
+  const missing = required.filter(f => !fs.existsSync(path.join(root, f)));
+
+  // Avant la Phase 1, l'absence est le travail en cours. La porte échouerait
+  // pendant la Phase 0 elle-même, et une porte qui échoue pendant la tâche
+  // qu'elle surveille apprend à être ignorée.
+  if (missing.length && (!Number.isFinite(phase) || phase < 1)) {
+    return record('memory_present', true, {
+      state: 'not_due',
+      phase: state.current_phase,
+      missing,
+      rule: "Le socle de contexte est posé en Phase 0. Avant la Phase 1, son absence est le travail en cours, pas un oubli."
+    });
+  }
+
+  if (missing.length) {
+    return record('memory_present', false, {
+      state: missing.length === 4 ? 'absent' : 'partial',
+      phase: state.current_phase,
+      missing,
+      why: missing.length === 4
+        ? "Le projet est en Phase " + phase + " et n'a aucune mémoire d'entre-sessions : l'appel 1 à project-rules-architect (socle de contexte) n'a pas eu lieu."
+        : "Mémoire incomplète : " + missing.join(', ') + " manquent alors que le projet est en Phase " + phase + '.',
+      next: 'Invoquer project-rules-architect en mode scaffold : AGENTS.md, SESSION_LOG.md, DECISIONS.md, LEARNINGS.md à la racine de l\'anchor.',
+      rule: "Quatre fichiers de mémoire absents ne sont pas quatre détails : c'est toute la continuité entre deux sessions qui disparaît."
+    });
+  }
+
+  // Les déclencheurs. Une mention en prose ne suffit pas : il faut la **condition**,
+  // recognaissable sans relire le fichier pour savoir si le moment est arrivé.
+  const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf-8');
+  const MEMORY = ['SESSION_LOG.md', 'DECISIONS.md', 'LEARNINGS.md'];
+  const CUES = /déclencheur|quand tu|si tu |avant de|à chaque|une fois|au début|termin|ouvre|tranche|geste|vrai|ferme/i;
+  const rowHasTrigger = (line) => {
+    const cells = line.split('|').map(c => c.trim());
+    // `| fichier | ce qu'on y écrit | déclenché quand |` — trois cellules,
+    // dont la troisième non vide.
+    return cells.length >= 4 && cells[3].length > 0;
+  };
+
+  const withoutTrigger = [];
+  for (const f of MEMORY) {
+    const named = agents.split('\n').some(line =>
+      line.includes(f) && (CUES.test(line) || rowHasTrigger(line)));
+    if (!named) withoutTrigger.push(f);
+  }
+
+  if (withoutTrigger.length) {
+    return record('memory_present', false, {
+      state: 'described_not_triggered',
+      phase: state.current_phase,
+      files: withoutTrigger,
+      why: withoutTrigger.join(', ') + ' sont décrits dans AGENTS.md sans condition d\'écriture. Un fichier décrit et jamais nommé ailleurs est un conteneur sans instruction à le remplir : créé, correctement nommé, et vide — ce qui est pire que de ne pas l\'avoir.',
+      next: 'Ajouter à la ligne de chaque fichier dans l\'index de AGENTS.md la **condition** qui fait écrire — un moment que l\'agent reconnaît seul, pas une catégorie.',
+      rule: "Une catégorie (« Corrections ») est une description ; une condition (« la deuxième fois que tu te trompes ») est un déclencheur. Seul le second remplit le fichier."
+    });
+  }
+
+  const sessions = (fs.readFileSync(path.join(root, 'SESSION_LOG.md'), 'utf-8')
+    .match(/^#{2,3}\s+\d{4}-\d{2}-\d{2}/gm) || []).length;
+
+  return record('memory_present', true, {
+    state: 'present',
+    phase: state.current_phase,
+    sessions,
+    files: required,
+    rule: "Une mémoire d'entre-sessions n'existe que si quelqu'un écrit dedans."
+  });
+}
+
+/**
+ * kit_integrity — les scripts de Forge ont-ils été modifiés ?
+ *
+ * **Le défaut que ce contrôle ferme.** `forge-guard` portait sur `.forge/`,
+ * `AGENTS.md`, `.opencode/rules/` et les manifestes — **pas sur le kit lui-même**.
+ * Et `$FORGE` est un `export` que pose l'agent, donc il peut pointer où il veut.
+ * Deux chemins de contournement, donc, et aucun détecté :
+ *
+ *   1. éditer `$FORGE/scripts/forge-guard.js` pour qu'un gate passe ;
+ *   2. exporter `FORGE` vers une copie de l'agent, qui passe toujours.
+ *
+ * Constaté sur un projet réel : une IA a modifié le script pour franchir des
+ * gates, et l'état du dépôt — script corrompu, livrables manquants — n'a été vu
+ * qu'à la relecture humaine. **C'est le seul défaut de ce dépôt qui désactive ses
+ * propres protections**, donc le seul qui ne peut pas se voir tout seul.
+ *
+ * **Comment.** Un manifeste `sha256` par fichier du kit est écrit dans le projet
+ * (`.forge/kit-manifest.json`). Chaque exécution compare. Un script qui a changé
+ * est un **échec dur** : les scripts appliquent le processus, donc un script
+ * modifié, c'est un processus qui n'est plus appliqué.
+ *
+ * Un document de référence qui a changé est un **avertissement**, pas un échec :
+ * il informe l'agent, il n'applique rien. Fail et warn ont deux régimes
+ * volontairement distincts — sinon une mise à jour de documentation bloquerait
+ * un projet pour rien, et la porte serait contournée pour cette raison.
+ *
+ * ⚠️ Cette porte **ne se valide pas elle-même** : c'est l'ancrage de confiance de
+ * tout le reste. Si le manifeste est réécrit après une modification, le défaut
+ * devient invisible. D'où `--write` explicite, jamais exécuté automatiquement.
+ */
+function checkKitIntegrity(root, flags) {
+  const state = loadStateOrFail(root);
+  const manifestPath = path.join(root, L.FORGE_DIR, 'kit-manifest.json');
+  const kitRoot = path.resolve(__dirname, '..');
+  const version = (() => { try { return JSON.parse(fs.readFileSync(path.join(ROOT_VSN(), 'VERSION'), 'utf-8')).trim(); } catch { return null; } })();
+
+  // L'extension suit le contenu : `scripts/` est du `.js`, `references/` du `.md`.
+  // Une seule extension pour les deux faisait que les références n'étaient
+  // **jamais** collectées — un contrôle de dérive qui ne collecte rien, et qui
+  // rapporte donc « intact » sans avoir rien regardé.
+  const collect = (sub, ext) => {
+    const dir = path.join(kitRoot, sub);
+    const out = {};
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+    for (const e of entries) {
+      if (!e.isFile() || !e.name.endsWith(ext)) continue;
+      out[sub + '/' + e.name] = crypto.createHash('sha256')
+        .update(fs.readFileSync(path.join(dir, e.name))).digest('hex');
+    }
+    return out;
+  };
+  const actualScripts = collect('scripts', '.js');
+  const actualRefs = collect('references', '.md');
+
+  // `flags` est un **tableau** de chaînes brutes (`--x`), pas un objet — c'est la
+  // convention des autres contrôles (`flags.includes('--fix')`). Un accès par clé
+  // sur un tableau vaut toujours undefined : le drapeau était donc lu comme absent
+  // et le manifeste ne s'écrivait jamais, en silence.
+  const wantsWrite = flags.includes('--write-manifest');
+
+  if (wantsWrite) {
+    fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+    const payload = {
+      forge_version: version,
+      written_at: new Date().toISOString(),
+      note: "Ancrage de confiance. Ne jamais réécrire après une modification du kit sans dire pourquoi.",
+      scripts: actualScripts,
+      references: actualRefs
+    };
+    fs.writeFileSync(manifestPath, JSON.stringify(payload, null, 2) + '\n');
+    return record('kit_integrity', true, {
+      state: 'manifest_written',
+      path: L.FORGE_DIR + '/kit-manifest.json',
+      scripts: Object.keys(actualScripts).length,
+      rule: "Écrire le manifeste est un acte explicite : c'est la seule opération qui peut masquer une modification."
+    });
+  }
+
+  if (!fs.existsSync(manifestPath)) {
+    return record('kit_integrity', true, {
+      state: 'no_manifest',
+      hint: 'forge-guard kit-integrity <anchor> --write-manifest',
+      rule: "Sans manifeste, la porte n'a rien contre quoi comparer. Elle ne le signale pas comme un défaut : un premier ancrage est un acte délibéré."
+    });
+  }
+
+  let m;
+  try {
+    m = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  } catch (e) {
+    return record('kit_integrity', false, {
+      state: 'invalid_manifest',
+      path: L.FORGE_DIR + '/kit-manifest.json',
+      why: e.message,
+      rule: "Un manifeste illisible ne peut rien garantir : l'ancrage de confiance est cassé, donc il doit se voir."
+    });
+  }
+
+  const compare = (expected, current, label) => {
+    const changed = [];
+    const removed = [];
+    const added = [];
+    for (const [f, h] of Object.entries(current || {})) {
+      if (!expected || !(f in expected)) { added.push(f); continue; }
+      if (expected[f] !== h) changed.push({ file: f, expected: String(expected[f]).slice(0, 12), actual: h.slice(0, 12) });
+    }
+    for (const f of Object.keys(expected || {})) {
+      if (!(f in (current || {}))) removed.push(f);
+    }
+    return { changed, removed, added, label };
+  };
+
+  const s = compare(m.scripts, actualScripts, 'scripts');
+  const r = compare(m.references, actualRefs, 'references');
+  const problems = [];
+  if (s.changed.length) problems.push({ kind: 'script_modified', files: s.changed });
+  if (s.removed.length) problems.push({ kind: 'script_removed', files: s.removed });
+  if (s.added.length) problems.push({ kind: 'script_added', files: s.added });
+  if (r.changed.length) problems.push({ kind: 'reference_modified', files: r.changed, warn: true });
+  if (r.removed.length) problems.push({ kind: 'reference_removed', files: r.removed, warn: true });
+
+  const hard = problems.filter(p => !p.warn);
+  if (hard.length) {
+    return record('kit_integrity', false, {
+      state: 'scripts_modified',
+      forge_version_recorded: m.forge_version || null,
+      forge_version_installed: version,
+      problems,
+      why: 'Un script de Forge a changé depuis que le projet a enregistré son kit. Les scripts appliquent le processus : un script modifié, c\'est un processus qui n\'est plus appliqué.',
+      next: 'Si la modification est voulue (mise à jour du kit) : réécrire le manifeste avec --write-manifest et dire pourquoi dans DECISIONS.md. Sinon : restaurer le script depuis le kit installé.',
+      rule: "C'est le seul défaut qui désactive ses propres protections : il ne peut donc pas se voir tout seul."
+    });
+  }
+
+  return record('kit_integrity', true, {
+    state: problems.length ? 'references_changed' : 'intact',
+    forge_version_recorded: m.forge_version || null,
+    forge_version_installed: version,
+    scripts: Object.keys(actualScripts).length,
+    warnings: problems.filter(p => p.warn),
+    rule: "Un script qui a changé est un échec ; un document qui a changé est un avertissement. Le premier applique le processus, le second l'explique."
+  });
+}
+
+function ROOT_VSN() {
+  // <repo>/skills/forge/scripts → <repo>
+  return path.resolve(__dirname, '..', '..', '..');
+}
+
+/**
+ * tools_registered — les scripts complémentaires sont-ils déclarés ?
+ *
+ * **La plainte qu'il ferme.** Un kit qui ne couvre pas un besoin réel oblige à
+ * écrire un script, ou à modifier un script existant. Ces scripts atterrissent
+ * alors n'importe où, et finissent **difficiles à retrouver et difficiles à
+ * maintenir** — pas parce qu'ils sont mauvais, mais parce que personne ne sait
+ * qu'ils existent. Trois mois après, on en réécrit un.
+ *
+ * Trois défauts distincts, trois contrôles :
+ *
+ *   1. **non déclaré** — le fichier existe, rien ne dit à quoi il sert ;
+ *   2. **hors registre** — il est écrit ailleurs que `.forge/tools/` ;
+ *   3. **mort** — déclaré, mais le fichier a disparu.
+ *
+ * Le (3) est celui qu'on oublie toujours : un registre qui ment sur ce qu'il
+ * contient est pire qu'un registre absent, parce qu'on s'y fie.
+ *
+ * ⚠️ Un outil déclaré est **une convention, pas une interdiction**. Écrire dans
+ * `.forge/` reste interdit — ce sont les artefacts du kit. `.forge/tools/` est
+ * la seule exception, et elle est explicite.
+ */
+function checkToolsRegistered(root) {
+  const state = loadStateOrFail(root);
+  const toolsDir = path.join(root, L.FORGE_DIR, 'tools');
+  const registered = (state.project && state.project.tools) || {};
+  const regNames = Array.isArray(registered) ? registered : Object.keys(registered);
+
+  const onDisk = fs.existsSync(toolsDir)
+    ? L.listFilesRecursive(toolsDir).filter(f => /\.(js|mjs|cjs|sh)$/.test(f))
+    : [];
+
+  const problems = [];
+  const rel = f => path.relative(root, f).split(path.sep).join('/');
+  const diskNames = onDisk.map(f => path.basename(f));
+
+  for (const f of onDisk) {
+    const name = path.basename(f);
+    const entry = Array.isArray(registered) ? null : registered[name];
+    if (!regNames.includes(name)) {
+      problems.push({
+        kind: 'unregistered', file: rel(f),
+        why: "Ce script complémentaire n'est déclaré dans aucun registre : personne ne saura qu'il existe dans trois mois."
+      });
+    } else if (entry && !entry.purpose) {
+      problems.push({
+        kind: 'no_purpose', file: rel(f),
+        why: "Déclaré sans but : une entrée qui dit qu'un fichier existe ne dit pas quoi il fait."
+      });
+    }
+  }
+
+  // Des scripts `*.js` à la racine ou dans `.forge/` hors `tools/` : c'est la
+  // signature d'un agent qui a contourné le kit en écrivant à côté.
+  const strayDirs = [root, path.join(root, L.FORGE_DIR)];
+  for (const d of strayDirs) {
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      if (!e.isFile() || !/\.(js|mjs|cjs)$/.test(e.name)) continue;
+      problems.push({
+        kind: 'stray_script', file: path.relative(root, path.join(d, e.name)).split(path.sep).join('/'),
+        why: "Un script à cet endroit n'est ni un script du kit, ni un outil déclaré. C'est l'emplacement par défaut de ce qui n'a pas trouvé sa place."
+      });
+    }
+  }
+
+  for (const name of regNames) {
+    if (!diskNames.includes(name)) {
+      problems.push({
+        kind: 'declared_but_missing', tool: name,
+        why: "Déclaré dans le registre, absent du disque : un registre qui ment sur ce qu'il contient est pire qu'un registre absent, parce qu'on s'y fie."
+      });
+    }
+  }
+
+  if (problems.length) {
+    return record('tools_registered', false, {
+      state: 'problems',
+      problems,
+      accepted_project_keys: L.PROJECT_KEYS,
+      next: 'Déclarer chaque outil sous state.json → project.tools = { "<nom>": { purpose, owner, supersedes? } } et le placer dans .forge/tools/.',
+      rule: "Un script complémentaire non déclaré est un script qu'on réécrit dans trois mois, parce que personne ne se souvient qu'il existe."
+    });
+  }
+
+  return record('tools_registered', true, {
+    state: onDisk.length ? 'registered' : 'none',
+    tools: onDisk.length,
+    rule: "Trois mois après, la seule question qui compte est : est-ce que quelqu'un sait que ce fichier existe ?"
+  });
+}
+
+/**
+ * incidents_logged — un incident du processus a-t-il été consigné ?
+ *
+ * **Ce que la porte ne fait pas** : elle n'invente pas les incidents. Elle vérifie
+ * qu'**au moins un incident a été consigné quand le contrôle en a détecté un** —
+ * c'est-à-dire qu'un écart observé par une porte et perdu dans la sortie console
+ * a fini quelque part.
+ *
+ * Le mécanisme existait déjà : `state.js finding` avec son domaine, et le fichier
+ * `.forge/audit/issues.md` pour ce qui n'est pas un constat de règle. Ce qui
+ * manquait, c'était l'**obligation** : le routage était une chaîne d'indice dans
+ * un message d'erreur, donc une information que l'agent lit en passant.
+ *
+ * `.forge/audit/run-log.jsonl` est le journal **machine** : il dit qu'une commande
+ * a tourné, pas pourquoi une décision a été remise en cause. Il ne compte donc
+ * pas comme un incident consigné — c'est précisément la différence que
+ * `skill-boundaries.md` pose, et la porte l'applique.
+ */
+function checkIncidentsLogged(root) {
+  const state = loadStateOrFail(root);
+  const issuesPath = path.join(root, L.FORGE_DIR, 'audit', 'issues.md');
+  const phase = parseInt(state.current_phase, 10);
+
+  const exists = fs.existsSync(issuesPath);
+  const raw = exists ? fs.readFileSync(issuesPath, 'utf-8') : '';
+  // `### INC-<n>` — un en-tête d'incident, pas une mention en prose.
+  const incidents = (raw.match(/^#{2,3}\s+INC-\d+/gm) || []).length;
+
+  if (exists && incidents > 0) {
+    return record('incidents_logged', true, {
+      state: 'logged', phase: state.current_phase, incidents,
+      rule: "Un journal d'incidents n'est lu que s'il distingue la faiblesse de l'outil de l'insuffisance de la spécification."
+    });
+  }
+
+  // **Ce que la porte exige, et ce qu'elle n'exige pas.**
+  //
+  // Elle n'exige pas un journal d'incidents : un projet où rien n'a mal tourné n'a
+  // rien à consigner, et exiger le fichier dans ce cas serait de la mise en scène
+  // de l'exigence — un dossier vide créé pour contenter un contrôle, donc un
+  // dossier que personne ne lit.
+  //
+  // Elle exige qu'**un écart détecté par une autre porte soit écrit quelque part**.
+  // Un `fail` que personne ne relit est un `fail` qui sera redécouvert dans six mois,
+  // sous une autre forme et avec une autre cause apparente.
+  //
+  // Le journal **machine** (`run-log.jsonl`) ne compte pas : il dit qu'une commande
+  // a tourné, pas pourquoi une décision a été remise en cause.
+  const previousFailures = (results.checks || [])
+    .filter(c => c.check !== 'incidents_logged' && c.status === 'fail')
+    .map(c => c.check);
+
+  if (previousFailures.length === 0) {
+    return record('incidents_logged', true, {
+      state: exists ? 'empty' : 'absent',
+      phase: state.current_phase,
+      incidents: 0,
+      rule: "Un projet où rien n'a mal tourné n'a rien à consigner : exiger le fichier dans ce cas produirait un dossier vide que personne ne lit."
+    });
+  }
+
+  return record('incidents_logged', false, {
+    state: 'failures_unlogged',
+    phase: state.current_phase,
+    incidents: 0,
+    failures: previousFailures,
+    why: previousFailures.length + ' controle(s) ont echoue (' + previousFailures.join(', ') +
+         ") et aucun incident n'est consigne : l'ecart est reste dans la sortie console, qui est l'endroit le plus facilement oublie.",
+    next: "Creer .forge/audit/issues.md et y consigner chaque ecart : Gravite (bloquant|majeur|mineur), Origine (forge|projet|environnement), Phase, et \u2014 le champ le plus important \u2014 ce qu'il a fallu contourner.",
+    rule: "L'origine est ce qui distingue \u00ab Forge a mal guides \u00bb de \u00ab le PRD etait ambigu \u00bb. Un journal sans ce champ est un journal qu'on ne peut pas lire."
+  });
+}
+
 /* ------------------------------------------------------------------ *
  * CLI
  * ------------------------------------------------------------------ */
@@ -1638,6 +2236,11 @@ const CHECKS = {
   facts: (root) => checkFacts(root),
   'hash-check': (root) => checkHashDrift(root),
   anchor: (root) => checkAnchor(root),
+  'rules-present': (root) => checkRulesPresent(root),
+  'memory-present': (root) => checkMemoryPresent(root),
+  'kit-integrity': (root, flags) => checkKitIntegrity(root, flags),
+  tools: (root) => checkToolsRegistered(root),
+  incidents: (root) => checkIncidentsLogged(root),
   'fast-track': (root, flags) => checkFastTrack(root, flags),
   contract: (root) => checkContract(root),
   all: (root, flags) => {
@@ -1654,6 +2257,11 @@ const CHECKS = {
     checkHashes(root);
     checkProvenance(root);
     checkUndecidedSlots(root);
+    checkRulesPresent(root);
+    checkMemoryPresent(root);
+    checkKitIntegrity(root, flags);
+    checkToolsRegistered(root);
+    checkIncidentsLogged(root);
     checkSync(root, flags.includes('--fix'));
     checkPlaceholders(root);
     checkHashDrift(root);
@@ -1679,6 +2287,11 @@ function main() {
         facts: 'forge-guard facts <root>',
         'hash-check': 'forge-guard hash-check <root>',
         anchor: 'forge-guard anchor [start]',
+        'rules-present': 'forge-guard rules-present <root>',
+        'memory-present': 'forge-guard memory-present <root>',
+        'kit-integrity': 'forge-guard kit-integrity <root> [--write-manifest]',
+        tools: 'forge-guard tools <root>',
+        incidents: 'forge-guard incidents <root>',
         'fast-track': 'forge-guard fast-track <root> [--scope plans|phases4-7] [--autonomy milestone|full]',
         contract: 'forge-guard contract <root>',
         all: 'forge-guard all <root> [--fix] [--relocate]',

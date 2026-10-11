@@ -73,6 +73,37 @@ appels, le projet a une mémoire et pas de règles. Ce n'est pas un jeu de règl
 et datée. Avant, c'est une case `À DÉCIDER` ; après, c'est un choix qu'on peut
 câbler dans un fichier de règles.
 
+### Et la porte qui le déclenche
+
+**Un moment déclaré n'est pas un déclencheur.** L'appel 2 était écrit, daté et
+conditionné dans trois documents — tous d'accord entre eux — et rien ne le
+déclenchait : l'agent lisait la phrase et continuait.
+
+```bash
+node "$FORGE/scripts/forge-guard.js" rules-present <anchor>
+```
+
+La porte échoue quand l'architecture est close et qu'il n'y a **pas de jeu de
+règles chargé** : répertoire absent, répertoire vide, ou répertoire rempli sans
+`opencode.json` qui le pointe. Le troisième cas est celui qui compte — un jeu de
+règles écrit et non câblé est le livrable le plus trompeur possible, parce
+qu'il est complet en apparence.
+
+Avant l'approbation, la porte passe et le dit : les règles se génèrent *contre*
+la stack, donc leur absence avant ce moment est l'ordre normal.
+
+**Mesuré** : cinq projets de laboratoire au même avancement, un seul avec un jeu
+de règles. Quatre avaient approuvé leur architecture. Rien ne le signalait.
+
+### Ce que Forge transmet à l'appel 2
+
+Des **extraits structurés**, pas les fichiers entiers. `architecture.md` et
+`conventions.md` peuvent faire plusieurs milliers de lignes, et la partie qui
+décide d'une règle est une fraction de l'ensemble — la table de stack, les choix
+de bibliothèques, les questions ouvertes. Un fait transmis est une ligne, pas un
+chapitre. Un résumé structuré est à la fois plus petit et plus fiable qu'un
+fichier lu en diagonale.
+
 ---
 
 ## La règle unique

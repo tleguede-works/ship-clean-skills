@@ -3,9 +3,9 @@
 ## Le projet
 
 Trois ou quatre phrases : qui est le client, ce qu'il fait, et ce que le produit doit
-permettre. **Pas** de choix technique — la stack a sa place dans `.forge/conventions.md`
-et `.forge/architecture.md`, et la répéter ici en fait un deuxième propriétaire qui
-devient faux à la première mise à jour de dépendance.
+permettre. **Pas** de choix technique — la stack se résout depuis le manifeste et vit
+dans le document de conventions du projet, et la répéter ici en fait un deuxième
+propriétaire qui devient faux à la première mise à jour de dépendance.
 
 Ce que la personne sait faire, et ce qu'elle ne sait pas. Une contrainte du client
 énoncée sans ces deux moitiés devient une exigence impossible à juger.
@@ -20,24 +20,50 @@ signalées comme des cases vides, pas laissées en silence.
 
 ## Propriété
 
-Ces quatre fichiers sont **la mémoire de l'agent**. Le skill de planification possède
-`.forge/` et n'y écrit rien ; ce skill écrit le jeu de règles et ne touche pas à ces
-quatre fichiers. Un seul propriétaire par fait — voir
-`skills/forge/references/skill-boundaries.md`.
+Ces quatre fichiers sont **la mémoire de l'agent**, et l'agent les tient : ni ce skill,
+ni un autre, n'y écrit après la création. Un seul propriétaire par fait.
+
+{{#if forge-present}}
+Ce projet utilise Forge, qui possède `.forge/` ; ce jeu de règles n'y écrit rien. Sa
+frontière : `skills/forge/references/skill-boundaries.md`.
+{{else}}
+Ce projet n'utilise pas de skill de planification. Ces quatre fichiers sont sa seule
+mémoire d'entre-sessions, et rien d'autre ne les remplace.
+{{/if}}
 
 ## Index
 
 | Fichier | Ce qu'on y écrit | Déclencheur |
 |---|---|---|
-| `SESSION_LOG.md` | ce qui s'est passé, une entrée par session, 8 champs nommés | **Tu ouvres une session** : tu écris l'entrée **avant** de terminer, jamais pendant |
-| `DECISIONS.md` | les décisions **fermées** (ADR) et les questions ouvertes, avec le déclencheur qui les ferme | **Tu tranches quelque chose qu'une session future=rediscuterait**, ou une question ouverte atteint sa condition de fermeture |
-| `LEARNINGS.md` | les correctifs, chacun avec sa destination de promotion | **Tu te trompes une deuxième fois sur la même chose**, ou tu découvres un contournement qui n'est pas un comportement |
+| `SESSION_LOG.md` | où la session en est, ce qu'elle a décidé, ce qu'elle a écarté | **À l'ouverture de la session** — tu crées l'entrée **avant** d'écrire la première ligne de code, jamais à la fin. Puis un point de contrôle à chaque moment de `SESSION_LOG.md` § Points de contrôle |
+| `DECISIONS.md` | les décisions **fermées** et les questions ouvertes, avec le déclencheur qui les ferme | **Tu tranches quelque chose qu'une session future rediscusserait** — donc dès que tu décides, pas quand la décision te revient. Aussi en supersédant une entrée |
+| `LEARNINGS.md` | les correctifs, un par ligne, chacun avec sa destination de promotion | **Tu te trompes une deuxième fois sur la même chose**, ou tu découvres un contournement qui n'est pas un comportement |
 
-Les trois déclencheurs sont distincts, et chacun est une **condition** — un moment que
-l'agent reconnaît seul. Une catégorie (« Corrections ») est une description ; une
-condition (« la deuxième fois que tu te trompes ») est un déclencheur.
+## Les déclencheurs, et pourquoi ceux-là
 
-`AGENTS.md` n'a pas de déclencheur : il est chargé, c'est lui qui déclenche les trois.
+Les trois déclencheurs sont des **conditions** — un moment que l'agent reconnaît
+seul. Une catégorie (« Corrections ») est une description ; une condition
+(« la deuxième fois que tu te trompes ») est un déclencheur. Seul le second
+remplit un fichier.
+
+**Le déclencheur du journal est en tête de liste parce qu'il ne peut pas attendre
+la fin.** Un modèle avec un million de tokens de contexte tient jusqu'au bout et
+écrit une entrée complète en fin de session. Un modèle plus petit est compacté
+avant d'y arriver, et ce qui disparaît en premier n'est pas le résultat — il est
+dans le diff — c'est **le refus** : ce que tu as écarté, et pourquoi. Un refus
+perdu est une décision re-prise dans six mois, avec un argument différent.
+
+Donc : **l'entrée s'ouvre au départ**, et l'agent y dépose un point de contrôle à
+chaque moment observable — changement de phase, début de slice, fin de slice,
+avant un commit, et **dès qu'un résumé de contexte vient d'arriver**. Ce dernier
+est le plus important : c'est le dernier moment avant le suivant.
+
+Les cinq moments sont listés dans `SESSION_LOG.md` § Points de contrôle. Ils
+n'utilisent **pas d'horloge** : un modèle ne sait pas quelle heure il est, et une
+horloge non déclenchée est un déclencheur silencieux.
+
+`AGENTS.md` n'a pas de déclencheur : il est chargé à chaque session, et c'est lui
+qui déclenche les trois.
 
 ### Les trois fichiers, en détail
 

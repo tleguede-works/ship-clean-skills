@@ -27,6 +27,271 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### fix(forge) — les domaines de constat n'étaient plus routables
+
+`FINDING_DOMAINS` listait 22 noms, la bibliothèque en compte **31**. Neuf
+gabarits étaient donc **refusés** au routage, dont les quatre ajoutés au core :
+`quality-gates.md`, `code-review.md`, `git-workflow.md`, `dependency-security.md`.
+
+Conséquence mesurable : une correction découverte dans le fichier des portes
+n'avait **nulle part où être promue**. C'est `postmortems.md` Cas 5 en direct, sur
+le mécanisme censé le prévenir — et l'ajout des quatre gabarits l'avait causé.
+
+La liste est désormais **dérivée du dossier de gabarits** à chaque chargement.
+La liste littérale ne sert plus que de repli quand le skill voisin est absent, et
+l'union est délibérée : un nom du repli devenu caduc reste accepté — inoffensif,
+il ne correspondra à rien — alors qu'un gabarit nouveau absent serait refusé,
+ce qui est précisément le défaut réparé.
+
+`state.js finding --resolve` **nu** produisait `unknown_finding id: true` : un
+refus qui ne dit pas quoi écrire, sur la commande dont dépend la promotion. Il
+exige maintenant un identifiant et nomme ceux qui existent.
+
+### feat(forge) — la mémoire du projet devient une porte
+
+L'appel 1 du socle de contexte était une **étape numérotée de la Phase 0** —
+une phrase. Elle a donc été exécutée sur deux projets de laboratoire et ignorée
+sur trois, sans que rien ne le signale. Une exigence décidable écrite en prose
+est une exigence que l'agent déclare satisfaite.
+
+`forge-guard.js memory-present` vérifie les deux moitiés : les quatre fichiers
+existent, **et** `AGENTS.md` nomme chacun des trois avec un **déclencheur**. La
+seconde est celle qui manque le plus souvent — un fichier décrit et jamais nommé
+ailleurs est un conteneur sans instruction à le remplir : créé, correctement
+nommé, et vide, ce qui est pire que de ne pas l'avoir parce que cela ressemble à
+du progrès.
+
+Avant la Phase 1 la porte passe : une porte qui échoue pendant la tâche qu'elle
+surveille apprend à être ignorée.
+
+### feat(forge) — les scripts du kit sont ancrés par empreinte
+
+`forge-guard` portait sur `.forge/`, `AGENTS.md`, `.opencode/rules/` et les
+manifestes — **pas sur le kit qui le fait tourner**. Et `$FORGE` est un `export`
+que pose l'agent, donc il peut pointer où il veut. Deux chemins de contournement,
+aucun détecté.
+
+Constaté sur un projet réel : une IA a modifié le script pour franchir des gates,
+et l'état du dépôt — script corrompu, livrables obligatoires manquants — n'a été
+vu qu'à la relecture humaine. **C'est le seul défaut qui désactive ses propres
+protections**, donc le seul qui ne peut pas se voir tout seul.
+
+`forge-guard.js kit-integrity` compare chaque fichier à un `.forge/kit-manifest.json`,
+avec **deux régimes volontairement distincts** : un **script** modifié est un
+échec dur — les scripts appliquent le processus —, un **document** de référence
+modifié est un avertissement, parce qu'il informe sans appliquer. Confondre les
+deux ferait échouer une mise à jour de documentation pour rien, et la porte serait
+contournée pour cette raison.
+
+Le manifeste s'écrit par `--write-manifest`, **jamais automatiquement** : c'est la
+seule opération qui puisse masquer une modification, donc une porte qui
+s'écrirait elle-même ne protégerait plus rien.
+
+### feat(forge) — `.forge/tools/` et un registre déclaré
+
+Le kit ne couvrant pas un besoin réel, l'agent écrivait un script, qui atterrissait
+n'importe où et devenait difficile à retrouver. Trois mois après, on en réécrit un
+— pas parce qu'il était mauvais, mais parce que personne ne savait qu'il existait.
+
+`.forge/tools/` est l'emplacement canonique, et `forge-guard.js tools` refuse
+trois défauts distincts : outil **non déclaré**, **déclaré sans but**,
+**déclaré mais absent du disque** — un registre qui ment sur ce qu'il contient est
+pire qu'un registre absent, parce qu'on s'y fie. Un script écrit ailleurs est
+signalé comme égaré.
+
+### feat(forge) — un écart détecté doit être consigné
+
+Le routage des incidents existait : `state.js finding`, et `.forge/audit/issues.md`
+pour ce qui n'est pas un constat de règle. Ce qui manquait était l'**obligation** —
+le routage était une chaîne d'indice dans un message d'erreur, donc une
+information lue en passant.
+
+`forge-guard.js incidents` exige qu'un `fail` ne reste pas dans la sortie console.
+Elle **n'exige pas** un journal d'incidents : un projet où rien n'a mal tourné n'a
+rien à consigner, et un dossier vide créé pour contenter un contrôle est un
+dossier que personne ne lit.
+
+Sur les cinq projets du laboratoire : `bi-dashboard` consigne 12 incidents et passe ;
+`atelier` échoue sur `contract_complete` sans rien consigner ; `shopify-mobile` et
+`gestion-locative` échouent sur trois contrôles avec un journal vide.
+
+### feat(project-rules-architect) — le journal se remplit en avance, pas à la fin
+
+Les déclencheurs étaient **write-behind** : « avant chaque commit » et « à la fin
+d'une session ». Ce sont deux moments de **fin de tâche**.
+
+**Un modèle avec un million de tokens de contexte survit jusqu'au bout** — il
+garde le raisonnement et écrit une entrée complète au moment où il sait ce qu'il a
+fait. **Un modèle plus petit ne survit pas** : la compaction arrive avant, et à la
+réouverture l'agent sait ce qu'il a fait mais plus pourquoi. Ce qui disparaît en
+premier n'est pas le résultat — il est dans le diff — c'est **le refus**. Un refus
+perdu est une décision re-arguée six mois plus tard, avec un autre argument.
+
+Un déclencheur de fin de session est donc **le pire placement possible** : il ne
+se déclenche que si l'agent survit jusque-là.
+
+L'entrée s'ouvre donc **au départ**, et l'agent dépose un point de contrôle sur
+cinq moments **observables** : ouverture de session, changement de phase, début de
+slice, fin de slice, et **dès qu'un résumé de contexte vient d'arriver** — ce
+dernier étant le plus important, car c'est le dernier avant le suivant.
+
+**Pas d'horloge.** Un modèle ne sait pas quelle heure il est, et une horloge non
+déclenchée est un déclencheur silencieux — exactement le défaut réparé. Les cinq
+moments sont des événements que l'agent constate, pas des durées qu'il devine.
+
+`state.js start` expose désormais `checkpoints`, `checkpoints_per_session` et
+`entry_open_at_start` : une session longue à un seul point de contrôle est une
+session dont le milieu s'est perdu, et c'est visible sans qu'on le demande.
+
+### feat(project-rules-architect) — les portes, la revue, le scan, et un contrôle exécutable
+
+Le skill produisait des règles complètes en apparence et **non vérifiables** :
+aucun de ses dix critères d'audit n'était exécutable, donc aucun n'était vérifié.
+
+**Un jeu de règles sans portes.** Un projet peut livrer un Definition of Done
+parfait — lint, types, tests — et n'avoir **aucune** porte de couverture, de
+duplication, de vulnérabilité ni de revue. C'est ce qu'a produit le projet de
+laboratoire `atelier` : quatre fichiers, cohérents, câblés, et sans une seule
+mesure de qualité. Le gap n'était pas un oubli de rédaction : il n'existait
+**aucun gabarit** qui pût porter ces règles. Le core était arrêté à cinq fichiers
+par un argument circulaire — *« un sixième gabarit core ne serait pas universel »*
+— et un sujet est universel parce qu'il est dans le core, et dans le core parce
+qu'il est universel.
+
+**Une couverture qui varie d'une exécution à l'autre.** 6 fichiers sur un
+projet, 17 sur un autre, depuis la même bibliothèque. Trois soupapes
+s'additionnaient : le core fermé, l'interview qui laissait l'agent choisir les
+domaines sur un projet sans code, et un budget qui poussait vers la coupe dès
+qu'il était atteint.
+
+**Quatre nouveaux gabarits, et le core passe de cinq à huit** :
+
+- `core/quality-gates.md` — les sept portes, chacune avec **la commande qui sort
+  non-zéro**. Propriétaire unique des seuils (duplication ≤ 3 %, couverture
+  ≥ 80 %, 0 vulnérabilité) et, pour chacun, de **la façon dont il est mesuré** —
+  parce que quatre nombres différents répondent tous à « quelle est votre
+  couverture », et que la moyenne de moyennes masque le paquet à 0 %.
+- `core/code-review.md` — le document qui manquait le plus, et qui était confondu
+  avec le pre-commit review. Séparation **mécanique / jugement** : la revue n'est
+  pas une liste de commandes, et la moitié automatisable doit tourner **avant**
+  que l'attention humaine ne soit dépensée.
+- `core/git-workflow.md` — la discipline git sortait de `AGENTS.md`, qui est le
+  tier chargé à chaque session : 60 lignes de détail payées en continu pour un
+  contenu lu au moment de commiter. La stratégie est désormais **décidée** à la
+  génération, jamais déduite.
+- `domain/dependency-security.md` — aucun propriétaire. `security.md` parle de
+  secrets, `coding-standards.md` §Dependencies parle d'épinglage. La
+  vulnérabilité était **entre les deux**.
+
+**Le scan initial précède tout** (`references/baseline-scan.md`) et décide du
+mode `greenfield` / `ratchet` **au lieu de le demander**. Un mode décidé par
+interview varie avec l'humeur de l'agent et la formulation de la question — c'est
+la source de la variance. Le mode ratchet résout ce qui le rendait intenable en
+pratique : une porte toujours rouge est une porte qu'on contourne, donc
+`jscpd --baseline-from-ref origin/main --fail-on-new-clones 0` échoue sur la
+**régression**, pas sur un total inatteignable aujourd'hui.
+
+**Le principe 6 ne disait qu'une moitié.** « Les plafonds sont des plafonds »
+poussait à couper dès que le budget était atteint — y compris les seuils, qui
+sont le contenu le moins coûteux du fichier. Séparé : **la prose a un plafond,
+une porte a un plancher**, et une porte sans commande qui sort non-zéro n'est pas
+une porte. `research-summary.md` gagne la section qui explique que ses chiffres
+— issus d'un comparatif instruction présente / absente — mesurent un effet
+marginal et **ne donnent pas un plancher**.
+
+**La soupape de sélection fermée.** *« Propose les domaines que la stack
+implique »* devient *« propose, fais ratifier, et traite le silence comme un
+refus »*. Une proposition ni confirmée ni refusée est une décision prise en
+silence — c'était là que la variance vivait.
+
+### feat(project-rules-architect) — les dix contrôles qui étaient une checklist
+
+`scripts/rules-selftest.js` vérifie un jeu de règles **livré** : câblage, index,
+placeholders, renvois de section, seuils contradictoires, couplage `.forge/`,
+contamination (trois passes, avec exemption pour la stack réellement détectée),
+prose invérifiable, portes présentes, budget mesuré.
+
+**Sa raison d'être n'est pas le confort, c'est une mesure.** Tout ce que le skill
+exigeait en prose était décidable, et une exigence décidable écrite en prose est
+une exigence que l'agent peut déclarer satisfaite sans l'avoir vérifiée. Le
+diagnostic de ce chantier est exactement ce que le script constate sur `atelier` :
+`9/10`, le seul échec étant l'absence de portes.
+
+`scripts/selftest.js` prouve que chaque contrôle **détecte** ce qu'il annonce,
+sur un jeu cassé construit à la volée. Il a attrapé quatre bugs pendant
+l'écriture — dont un contrôle de portes qui ne reconnaissait pas le français et
+validait en silence les jeux non-anglais. **Un contrôle qui ne reconnaît pas la
+langue du projet rapporte « tout va bien » sur ce qu'il n'a pas regardé.**
+
+### feat(project-rules-architect) — Angular, monorepo outillé, générateurs
+
+`tech/angular.md` : l'overlay manquant. Standalone et la migration
+`ng generate @angular/core:standalone`, `OnPush` et le piège `BehaviorSubject`,
+`inject()`, budget de bundle — dont **un budget augmenté est une décision**, pas
+une correction.
+
+`references/monorepo-strategy.md` : le sujet était décrit à trois endroits et
+aucun ne mentionnait un outil de build. Nx / Turborepo / pnpm workspaces /
+réacteur Maven / Gradle, avec la commande **par périmètre** et la commande
+**« seulement ce qui a changé »** — c'est elle qui fait tenir les portes sous le
+budget de 10 s d'un `pre-commit`.
+
+Générateurs : `nest generate resource` pour Nest ; et pour Spring, la réponse
+honnête — **Initializr génère le squelette, il n'existe pas de générateur mature
+pour un contrôleur, un service ou une entité**. Le dire évite qu'un agent cherche
+un outil qui n'existe pas, et la section écrit ce qu'un générateur aurait réussi
+et qu'il faut donc retenir à la main : le package qui suit le répertoire, le
+constructeur `public`, `@Transactional` sur la méthode publique.
+
+Le mécanisme de **balisage de section** — prendre une section d'un autre stack
+et la retaguer au lieu de réécrire un fichier — est enfin mis en œuvre là où la
+branche existe réellement : listes, découpage et budgets de
+`domain/performance.md` séparent web et mobile.
+
+### feat(project-rules-architect) — le scaffold mémoire ne dépend plus de Forge
+
+Onze références à `.forge/` dans `templates/memory/`, **normatives et non
+illustratives** : *« la stack a sa place dans `.forge/conventions.md` »*. Sur un
+usage autonome de PRA — le cas ordinaire — c'est faux, et cela envoie l'agent
+chercher un répertoire inexistant au moment où il construit sa représentation du
+projet. Elles deviennent des blocs conditionnels, et la propriété des faits ne
+liste que ce qui existe.
+
+`rules-selftest.js` gagne `no_forge_coupling`, qui rend la contrainte
+vérifiable au lieu de documentée.
+
+### fix(forge) — l'appel 2 avait un moment, pas un déclencheur
+
+L'appel 2 à `project-rules-architect` était décrit à trois endroits, les trois
+d'accord sur le moment — « quand `architecture` est `approved` » — et **aucun
+n'était déclenché**. Une phrase qui a un moment mais pas de mécanisme est une
+phrase sans moment : l'agent la lisait et continuait.
+
+**Mesuré sur les cinq projets du laboratoire au même avancement : un seul avait
+un jeu de règles.** Quatre avaient approuvé leur architecture sans rien voir se
+passer, et rien ne le signalait.
+
+`forge-guard.js rules-present` rend l'appel déclenchable, et échoue sur trois
+issues distinctes : répertoire absent, répertoire **vide**, et répertoire rempli
+**sans `opencode.json` qui le pointe**. La troisième compte plus que les autres —
+un jeu de règles écrit et non câblé est le livrable le plus trompeur possible,
+parce qu'il est complet en apparence. Avant l'approbation, la porte passe et le
+dit : les règles se génèrent *contre* la stack, donc leur absence avant ce moment
+est l'ordre normal, et une porte qui échoue trop tôt enseigne à la contourner.
+
+`skill-boundaries.md` dit aussi **ce qui est transmis** : des extraits structurés,
+pas les fichiers entiers. Un fait transmis est une ligne, pas un chapitre.
+
+### fix(repo) — la liste de lecture de PRA n'était contrôlée par rien
+
+`validate-repo.js` déclarait `'skills/project-rules-architect/SKILL.md': []` —
+une liste vide, donc **aucun** contrôle de dérive, là où Forge en a deux. Le
+tier qu'un skill gagne le plus est celui qu'il perd le plus. La table « What to
+read, per mode » et le dossier `references/` se vérifient désormais l'un l'autre.
+Le scan est ancré sur les **lignes de tableau** : la prose qui suit peut citer le
+même fichier sans le déclarer, et le compter aurait fait échouer le contrôle sur
+sa propre documentation.
+
 ## [1.13.3] - 2026-10-03
 
 ### fix(forge) — FastTrack ne pouvait pas valider une fondation

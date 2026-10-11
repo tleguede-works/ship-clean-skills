@@ -135,6 +135,55 @@ Trois interdits, tous vérifiés par `forge-guard.js` :
 2. **Jamais de contenu de document dans `state.json`.** Le PRD est `.forge/prd.md`. Un bloc de texte dans l'état est un bug — détecté par clé interdite et par longueur de valeur.
 3. **Jamais de `status:` écrit à la main** dans le front matter d'un `.md`. Le seul écrivain est `state.js set-status`, qui met à jour l'état et le front matter dans la même opération.
 
+## Les scripts du kit ne se modifient pas — et c'est vérifié
+
+Les trois interdits ci-dessus protègent **les livrables du projet**. Le kit, lui,
+n'était protégé par rien : `forge-guard.js` portait sur `.forge/`, `AGENTS.md`,
+`.opencode/rules/` et les manifestes — **pas sur les scripts qui le font tourner**.
+Et `$FORGE` est un `export` que pose l'agent, donc il peut pointer où il veut.
+
+Deux chemins de contournement, donc, et aucun détecté. Constaté sur un projet
+réel : une IA a modifié le script pour franchir des gates, et l'état du dépôt —
+script corrompu, livrables obligatoires manquants — n'a été vu qu'à la relecture
+humaine. **C'est le seul défaut qui désactive ses propres protections**, donc le
+seul qui ne peut pas se voir tout seul.
+
+```bash
+node "$FORGE/scripts/forge-guard.js" kit-integrity <anchor>
+node "$FORGE/scripts/forge-guard.js" kit-integrity <anchor> --write-manifest
+```
+
+`.forge/kit-manifest.json` enregistre une empreinte `sha256` par fichier du kit.
+À chaque exécution, la porte compare. **Deux régimes, volontairement distincts :**
+
+| Ce qui a changé | Régime | Pourquoi |
+|---|---|---|
+| Un **script** | **échec dur** | Les scripts appliquent le processus. Un script modifié, c'est un processus qui n'est plus appliqué |
+| Un **document** de référence | **avertissement** | Il informe l'agent ; il n'applique rien. Fail et warn confondus, une mise à jour de documentation bloquerait un projet pour rien — et la porte serait contournée pour cette raison |
+
+**Le manifeste s'écrit par un acte explicite, jamais automatiquement.** C'est la
+seule opération qui puisse masquer une modification : une porte qui se
+réécrirait elle-même ne protégerait plus rien. Si un script a été modifié
+**voulablement** — mise à jour du kit — réécris le manifeste et **dis pourquoi
+dans `DECISIONS.md`**. Sinon, restaure le script.
+
+### Les scripts complémentaires ont une place
+
+Quand le kit ne couvre pas un besoin réel, on écrit un script. Il va dans
+`.forge/tools/`, et il est déclaré :
+
+```json
+{ "project": { "tools": { "seed-dwight.js": { "purpose": "…", "owner": "…" } } } }
+```
+
+`forge-guard.js tools` refuse trois choses, et chacune est un défaut distinct : un
+outil **non déclaré** (personne ne saura qu'il existe dans trois mois), un outil
+**déclaré sans but**, un outil **déclaré mais absent du disque** — un registre qui
+ment sur ce qu'il contient est pire qu'un registre absent, parce qu'on s'y fie.
+
+Écrire ailleurs — à la racine, dans `.forge/` hors `tools/` — est signalé comme un
+script égaré. C'est l'emplacement par défaut de ce qui n'a pas trouvé sa place.
+
 ## Qui fait foi — l'état et les livrables ne divergent jamais
 
 ```
@@ -347,9 +396,40 @@ Transmets, depuis `.forge/architecture.md` et `.forge/conventions.md` : la stack
 avec ses versions exactes, les conventions retenues, le périmètre, et les questions
 ouvertes qui ne doivent **pas** devenir des règles.
 
+**Transmets des extraits, pas les fichiers entiers.** Ces deux documents peuvent
+faire plusieurs milliers de lignes, et la partie qui décide d'une règle est
+toujours une fraction de l'ensemble. Un résumé structuré — la table de stack, les
+choix de bibliothèques, les questions ouvertes — est à la fois plus petit et plus
+fiable qu'un fichier complet lu en diagonale. Règle : **un fait transmis est une
+ligne, pas un chapitre.**
+
 **Pourquoi pas avant.** Les règles se génèrent *contre* la stack. Les produire
 avant que la stack soit décidée, c'est deviner — et une règle devinée a
 l'autorité d'une règle et la fiabilité d'une supposition, donc l'agent l'applique.
+
+**Cet appel a une porte, pas seulement un moment.** Avant `architecture approved`
+il est dû ; après, son absence est un défaut que `forge-guard` signale :
+
+```bash
+node "$FORGE/scripts/forge-guard.js" rules-present <anchor>
+```
+
+Elle échoue si le répertoire de règles est absent, vide, **ou présent mais pas
+câblé** — parce que quatre fichiers Markdown que rien ne charge sont un jeu de
+règles complet en apparence et totalement inerte. C'est le contrôle qui manquait :
+l'appel 2 était écrit, daté, conditionné, et jamais déclenché. Sur cinq projets
+du laboratoire au même avancement, un seul avait un jeu de règles, et rien ne le
+disait.
+
+Vérifie le résultat avant de continuer :
+
+```bash
+node "$PRA/scripts/rules-selftest.js" <anchor>
+```
+
+Dix contrôles sur le jeu livré : câblage, index, placeholders, renvois, seuils
+contradictoires, couplage `.forge/`, contamination, prose invérifiable, portes,
+budget. **Un échec ici est un défaut de livraison, pas une discussion.**
 
 ### Ce que Forge ne fait jamais avec ces fichiers
 
@@ -1125,7 +1205,12 @@ le pire des contrôles, parce qu'il donne un vert.
 | `state.js dep` | Déclare le graphe de dépendances d'une slice ou d'une fondation | Phase 4 |
 | `state.js amend` | Enregistre un amendement et **refuse le renumérotage** ; écrit `amended_from`, la raison, la liste des changements | Chaque amendment |
 | `state.js migrate` | v1 → v2 | Un projet existant |
-| `forge-guard.js all` | Chemins, état, vocabulaire, synchronisation, **provenance `derived_from`**, **artefacts produits en avance**, **caractères parasites**, cases « À DÉCIDER », placeholders, versions | **Avant chaque gate** |
+| `forge-guard.js all` | Chemins, état, vocabulaire, synchronisation, **provenance `derived_from`**, **artefacts produits en avance**, **caractères parasites**, cases « À DÉCIDER », placeholders, versions, **mémoire du projet**, **intégrité du kit**, **outils déclarés**, **incidents non consignés** | **Avant chaque gate** |
+| `forge-guard.js memory-present` | Les quatre fichiers de mémoire existent, et `AGENTS.md` nomme chacun des trois **avec un déclencheur** | Phase 0, puis à chaque gate |
+| `forge-guard.js kit-integrity` | Les scripts du kit correspondent à leur empreinte enregistrée ; **un script modifié est un échec dur**, un document un avertissement | **Avant chaque gate** |
+| `forge-guard.js kit-integrity --write-manifest` | Écrit `.forge/kit-manifest.json` — **acte explicite**, jamais automatique | Une fois, et après chaque mise à jour du kit |
+| `forge-guard.js tools` | Tout script complémentaire est dans `.forge/tools/` **et déclaré** avec son but | Avant chaque gate |
+| `forge-guard.js incidents` | Un écart détecté par une porte est consigné dans `.forge/audit/issues.md` | Avant chaque gate |
 | `consistency-check.js all` | Écarts **entre** artefacts : PRD ↔ archi ↔ plans ↔ tests ↔ écrans, et **renvois de section résolus** | **Avant chaque gate** |
 | `forge-exit.js` | Critère de sortie **exécuté** d'une slice | **Phase 7, par slice** |
 | `coverage-check.js` | Couverture d'un plan de slice | Phase 5 |

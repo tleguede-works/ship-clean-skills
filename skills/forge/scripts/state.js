@@ -1324,6 +1324,21 @@ function readSiblingMemory(root) {
     // document comme vide. Le meme predicat doit accepter ce que l'auteur écrit
     // réellement, ou il ne mesure rien.
     memory.sessions = (sessionLog.match(/^#{2,3}\s+\d{4}-\d{2}-\d{2}/gm) || []).length;
+
+    // **Points de contrôle** — le format « write-ahead ».
+    //
+    // Une ligne `- **[HH:MM] …` déposée pendant le travail, pas écrite à la fin.
+    // On les compte pour rendre visible une session qui n'en a produit aucun :
+    // c'est le signe qu'un seul point d'écriture existe — la fin — donc qu'une
+    // compaction a eu lieu sans rien écrire.
+    //
+    // Le ratio sessions / points de contrôle est le signal : une session longue
+    // avec un seul point de contrôle est une session dont le milieu s'est perdu.
+    memory.checkpoints = (sessionLog.match(/^-\s*\*\*\[[\d:]+\]/gm) || []).length;
+    memory.checkpoints_per_session = memory.sessions
+      ? +(memory.checkpoints / memory.sessions).toFixed(2)
+      : 0;
+    memory.entry_open_at_start = /^\s*-\s*\*\*STARTED FROM\*\*/m.test(sessionLog);
   }
 
   const decisions = read('DECISIONS.md');
@@ -1754,8 +1769,21 @@ function cmdFinding(root, args) {
   const { flags, positional } = parseFlags(args);
 
   if (flags.resolve) {
-    const f = (state.findings || []).find(x => x.id === flags.resolve);
-    if (!f) L.fail({ error: 'unknown_finding', id: flags.resolve });
+    // `--resolve` **nu** avalait la valeur booléenne et produisait
+    // `unknown_finding id: true` : un refus qui ne dit pas quoi écrire, sur la
+    // commande dont dépend la promotion. C'est exactement le genre de papercut
+    // qui fait qu'un chemin documenté cesse d'être emprunté (`postmortems.md`
+    // Cas 5).
+    const id = typeof flags.resolve === 'string' ? flags.resolve : flags.id;
+    if (!id || typeof id !== 'string') {
+      L.fail({
+        error: 'missing_finding_id',
+        usage: 'state.js finding <anchor> --resolve=<id> [--promoted-to=<fichier de règles>]',
+        rule: "Un refus qui ne dit pas quoi écrire transforme un chemin en obstacle."
+      });
+    }
+    const f = (state.findings || []).find(x => x.id === id);
+    if (!f) L.fail({ error: 'unknown_finding', id, known: (state.findings || []).map(x => x.id) });
     f.status = 'resolved';
     if (flags['promoted-to']) {
       f.promoted_to = flags['promoted-to'];

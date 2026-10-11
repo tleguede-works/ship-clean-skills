@@ -320,6 +320,34 @@ const DECLARED_LISTS = {
   'skills/project-rules-architect/SKILL.md': []
 };
 
+/**
+ * `project-rules-architect` déclarait une liste vide — donc **aucun** contrôle de
+ * dérive sur son `SKILL.md`, là où Forge en a deux. Le tier qu'il gagne le plus
+ * est celui qu'il perd le plus : les listes de ce fichier désignent quelles
+ * références sont lues, et une liste qui a dérivé — une référence supprimée
+ * encore prescrite, ou un gabarit ajouté que rien ne sait lire — produit un run
+ * qui lit un fichier mort ou ignore silencieusement un fichier vivant.
+ */
+DECLARED_LISTS['skills/project-rules-architect/SKILL.md'] = [
+  // Chaque ligne de la table « What to read, per mode » nomme un fichier de
+  // `references/`. Ancré sur son propre en-tête : une liste qui dérive doit
+  // être signalée comme telle, et pas confondue avec la liste des scripts.
+  {
+    label: 'references',
+    dir: 'skills/project-rules-architect/references',
+    ext: '.md',
+    heading: '## What to read, per mode',
+    // Le groupe 0 exclut un `/` ou un caractère de mot juste avant le nom :
+    // `` `provenance/synthesis-provenance.md` `` est **hors** de `references/`,
+    // et le compter comme une référence de ce dossier le déclarerait manquant.
+    // Sans cette garde, le contrôle signale la documentation d'un fichier qui
+    // existe — un faux positif qui apprend à ignorer le contrôle.
+    re: /(^|[^/\w-])`([a-z0-9-]+\.md)`/gm,
+    capture: 2,
+    tableOnly: true
+  }
+];
+
 const listDrift = [];
 for (const [rel, specs] of Object.entries(DECLARED_LISTS)) {
   const file = path.join(ROOT, rel);
@@ -328,10 +356,16 @@ for (const [rel, specs] of Object.entries(DECLARED_LISTS)) {
   const text = fm ? fm.body : fs.readFileSync(file, 'utf-8');
 
   for (const spec of specs) {
-    const scope = section(text, spec.heading);
+    let scope = section(text, spec.heading);
     if (scope === null) {
       listDrift.push({ file: rel, label: spec.label, problem: 'section « ' + spec.heading + ' » introuvable' });
       continue;
+    }
+    // Une **table** se lit dans ses lignes. La prose qui la suit peut citer le
+    // même fichier sans le déclarer — et la compter produirait un contrôle qui
+    // signale sa propre documentation.
+    if (spec.tableOnly) {
+      scope = scope.split('\n').filter(l => /^\s*\|/.test(l)).join('\n');
     }
     const dir = path.join(ROOT, spec.dir);
     if (!fs.existsSync(dir)) continue;
@@ -344,7 +378,11 @@ for (const [rel, specs] of Object.entries(DECLARED_LISTS)) {
     spec.re.lastIndex = 0;
     const declared = new Set();
     let m;
-    while ((m = spec.re.exec(scope)) !== null) declared.add(m[1]);
+    const group = spec.capture || 1;
+    // Les deux côtés sont comparés **sans extension** : la liste de Forge cite
+    // `forge-guard.js`, celle de PRA cite `audit-checklist.md`, et comparer un
+    // nom à un autre ne produit que du bruit.
+    while ((m = spec.re.exec(scope)) !== null) declared.add(m[group].replace(/\.(md|js|mdc)$/, ''));
 
     for (const d of declared) {
       if (!actual.has(d)) listDrift.push({ file: rel, label: spec.label, item: d, problem: 'déclaré dans SKILL.md mais absent du dossier' });

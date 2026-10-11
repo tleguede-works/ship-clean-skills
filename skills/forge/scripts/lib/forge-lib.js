@@ -37,6 +37,31 @@ const CANONICAL_LAYOUT = {
   test_plan: '.forge/test-plan.md'
 };
 
+/**
+ * Les répertoires que `init` crée, et que `isProject` reconnaît.
+ *
+ * `tools` est ici pour une raison qui n'est pas la symétrie : c'est l'emplacement
+ * des scripts **complémentaires** qu'un projet doit écrire parce que le kit ne
+ * couvre pas son besoin. Sans lui, ces scripts atterrissent n'importe où — à la
+ * racine, dans `src/`, dans un coin du `.forge/` non documenté — et deviennent
+ * **difficiles à retrouver et impossibles à maintenir**, ce qui est exactement la
+ * plainte qu they've formulée.
+ */
+const CANONICAL_DIRS = [
+  FORGE_DIR,
+  `${FORGE_DIR}/design`,
+  `${FORGE_DIR}/design/screens`,
+  `${FORGE_DIR}/plans`,
+  `${FORGE_DIR}/audit`,
+  `${FORGE_DIR}/tools`
+];
+
+/** Clés acceptées sous `project` dans state.json. */
+const PROJECT_KEYS = [
+  'name', 'root', 'commands', 'tools', 'package_manager', 'node_version',
+  'ci', 'deploy', 'reference'
+];
+
 const STATUS_VOCAB = {
   phase: ['not_started', 'in_progress', 'approved'],
   document: ['draft', 'in_review', 'approved', 'stale', 'deprecated'],
@@ -322,15 +347,61 @@ const ALLOWED_STATE_KEYS = [
  * Ces noms correspondent aux gabarits de project-rules-architect. Un constat
  * dont le domaine n'est pas dans cette liste n'est pas routable : il doit
  * aller dans .forge/audit/issues.md (incident), pas dans state.json.
+ *
+ * ⚠️ **Cette liste ne doit plus être écrite à la main.** Elle l'était, et elle a
+ * divergé : quatre gabarits ajoutés au core — `quality-gates.md`,
+ * `code-review.md`, `git-workflow.md`, `dependency-security.md` — étaient
+ * **refusés** au routage, donc non promouvables. C'est `postmortems.md` Cas 5 en
+ * direct, sur le mécanisme censé le prévenir : une correction découverte dans le
+ * fichier des portes n'avait nulle part où aller.
+ *
+ * Elle est donc **dérivée du dossier de gabarits** à chaque chargement. La liste
+ * littérale ne sert plus que de repli quand ce dossier est absent — une
+ * installation à Skills isolés, sans le skill voisin.
  */
-const FINDING_DOMAINS = [
+const FINDING_DOMAINS_FALLBACK = [
   'entry-file.md', 'workflow.md', 'architecture.md', 'coding-standards.md', 'security.md',
   'data-and-state.md', 'testing.md', 'ui-components.md', 'forms.md',
   'errors-and-loading-states.md', 'external-system-contracts.md',
   'accessibility.md', 'design-system.md', 'i18n.md', 'performance.md',
   'flutter-dart.md', 'typescript-javascript.md', 'react.md', 'react-native-expo.md',
-  'nextjs.md', 'node-nestjs.md', 'java-spring.md'
+  'nextjs.md', 'node-nestjs.md', 'java-spring.md',
+  'quality-gates.md', 'code-review.md', 'git-workflow.md', 'dependency-security.md'
 ];
+
+/** Le dossier de gabarits du skill voisin, s'il est présent à côté de celui-ci. */
+function templatesDir() {
+  // <repo>/skills/forge/scripts/lib  →  <repo>/skills
+  const skillsDir = path.resolve(__dirname, '..', '..', '..');
+  const dir = path.join(skillsDir, 'project-rules-architect', 'references', 'templates');
+  return fs.existsSync(dir) ? dir : null;
+}
+
+/**
+ * Les domaines de constat, dérivés du disque.
+ *
+ * L'union avec le repli est délibérée : un nom du repli dont le gabarit a disparu
+ * reste accepté — inoffensif, il ne correspondra à rien — alors qu'un gabarit
+ * nouveau absent de la liste serait **refusé**, ce qui est précisément le défaut
+ * qu'on répare.
+ */
+function deriveFindingDomains() {
+  const dir = templatesDir();
+  if (!dir) return FINDING_DOMAINS_FALLBACK.slice();
+  const found = new Set(FINDING_DOMAINS_FALLBACK);
+  (function walk(d) {
+    let entries = [];
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith('.md')) found.add(e.name);
+    }
+  })(dir);
+  return [...found].sort();
+}
+
+const FINDING_DOMAINS = deriveFindingDomains();
 
 /** Sous-clés interdites dans state.json : le contenu des documents vit ailleurs. */
 const FORBIDDEN_STATE_KEYS = [
@@ -704,14 +775,7 @@ function writeState(root, state) {
 }
 
 function ensureLayout(root) {
-  const dirs = [
-    FORGE_DIR,
-    `${FORGE_DIR}/design`,
-    `${FORGE_DIR}/design/screens`,
-    `${FORGE_DIR}/plans`,
-    `${FORGE_DIR}/audit`
-  ];
-  for (const d of dirs) fs.mkdirSync(path.join(root, d), { recursive: true });
+  for (const d of CANONICAL_DIRS) fs.mkdirSync(path.join(root, d), { recursive: true });
 }
 
 function deliverables(state) {
@@ -815,7 +879,7 @@ function resolveGraphNode(state, name) {
 
 module.exports = {
   FORGE_DIR, STATE_PATH, STATE_VERSION, AUDIT_PATHS, NON_DELIVERABLE_DIRS,
-  CANONICAL_LAYOUT, STATUS_VOCAB, ALLOWED_STATE_KEYS, FORBIDDEN_STATE_KEYS, FINDING_DOMAINS,
+  CANONICAL_LAYOUT, CANONICAL_DIRS, PROJECT_KEYS, STATUS_VOCAB, ALLOWED_STATE_KEYS, FORBIDDEN_STATE_KEYS, FINDING_DOMAINS,
   out, fail,
   splitFrontMatter, serializeFrontMatter, readFrontMatter, writeFrontMatter, normalizeBody,
   sha12, contentHash,

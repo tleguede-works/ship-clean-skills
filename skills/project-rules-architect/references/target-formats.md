@@ -83,6 +83,52 @@ permission granted to nothing.
 the `instructions` key and the permission block to it. Replacing the file
 destroys the user's model, provider, MCP, and permission configuration.
 
+### The hook configuration — a deliverable, not a follow-up
+
+**The Markdown and the config are the same deliverable.** A gate that exists
+only as prose in a rule file is enforced by the agent remembering it, and an
+agent under time pressure does not remember it.
+
+Write one of these, derived from what the project already uses:
+
+```yaml
+# lefthook.yml — polyglot, binary, parallel by default
+pre-commit:
+  parallel: true
+  commands:
+    lint-staged:
+      glob: "*.{ts,tsx,js,jsx}"
+      run: npx eslint --fix --max-warnings=0 {staged_files}
+    secrets:
+      run: gitleaks detect --staged --no-banner
+commit-msg:
+  commands:
+    commitlint:
+      run: npx commitlint --edit {1}
+pre-push:
+  commands:
+    duplication:
+      run: npx jscpd --threshold {{THRESHOLD}} src
+```
+
+**Three rules that decide whether it survives:**
+
+1. **`core.hooksPath` must point at the committed directory.** `.git/hooks` is
+   not versioned, so hooks written there exist on one developer's machine.
+2. **`pre-commit` under ~10 seconds.** A hook that takes 30 seconds is bypassed
+   with `--no-verify` within a week, and a bypassed hook is worse than no hook:
+   it leaves everyone believing the property holds. That is why the commands run
+   on staged files rather than the whole tree.
+3. **Slow gates go to `pre-push` or CI**, not to `pre-commit`. The full test
+   suite, the vulnerability scan, the build.
+
+| Target | Hook mechanism | Note |
+|---|---|---|
+| Node / any git repo | `lefthook` (binary, parallel, polyglot) | The default recommendation |
+| Node-only | `husky` + `lint-staged` | `npm install` already provides the runtime |
+| Python-only | `pre-commit` | Isolated virtualenvs |
+| **No hooks** | emit the command table anyway, and state the budget | Never silently skip this |
+
 ### AGENTS.md-native tools
 
 `AGENTS.md` at the project root. Nothing else. These tools discover it

@@ -31,6 +31,42 @@ Tested by running the same task with and without a given instruction, 10+ trials
 > figures without that qualifier is how a set ends up 2× over a ceiling that
 > never applied to it.
 
+### What these figures describe, and what they don't
+
+**The "start small" finding describes a set that already converged. It is not a
+recipe for producing the first one.**
+
+The evidence is consistent and easy to misread. Every measurement here compares
+*an instruction that exists* against *the same instruction absent*, over tasks a
+developer was already doing. That design measures marginal effect, not adequacy.
+It can tell you that a prose paragraph is worthless; it cannot tell you that
+three prose paragraphs plus three commands are better than one prose paragraph
+and no commands.
+
+Three consequences, and the third is the one that causes defects:
+
+1. **These figures cannot size a set.** Nothing here measured "the smallest
+   rule set that produces acceptable work." Choosing a line count because the
+   research says smaller sets ignore less is reading a correlation as a
+   threshold.
+2. **"Start small, add on the second repeated mistake" is a maintenance
+   strategy for an existing project.** It presupposes a set already exists and
+   a project already in production. Applied to a project's first generation,
+   where no mistake has been repeated twice *because there is no history yet*,
+   it emits nothing at all — which is a correct reading of the principle and a
+   useless output.
+3. **The advice inverts the cost.** Under maintenance, a rule is added when it
+   has already cost something, so most proposed rules are worthless and lean
+   wins. Under first generation, an unstated rule costs silently forever: there
+   is no first failure to trigger it, because the failing behaviour is *the
+   absence of the rule*. Lean wins on average there only if the absent rules
+   were worthless, and nobody has measured that.
+
+**So: use these findings to cut prose, never to decide what to omit.** The
+question a line budget can answer is "does this sentence change what the agent
+does", not "is this rule worth having". SKILL.md Principle 6 splits the two for
+exactly this reason.
+
 - Practical ceiling: keep individual rule files under ~500 lines (Cursor's own guidance; content beyond that risks being dropped from context). Total combined "always apply" content should stay under roughly 2,000 tokens (~500 lines of plain English) — five 50-line "always apply" files is fine (~1,000-2,000 tokens); twenty 200-line "always apply" files burns 10%+ of the context window before the model reads any actual code.
 - One widely-cited convention keeps each *section* to ~50 lines and the *whole root file* to ~150-200 lines, front-loading commands and definition-of-done before any style preference — most rule files that fail were written style-first and never got to the commands.
 - **The decisive test**: ask the agent, cold, to recite its build command and definition of done. If it can't reproduce them, the file is too long (truncated out of context), too vague (nothing concrete to latch onto), or simply not being discovered (check file location and the tool's own docs).

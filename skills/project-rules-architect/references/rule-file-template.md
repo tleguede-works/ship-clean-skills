@@ -41,6 +41,36 @@ keyboard on mobile. One section, two tagged subsections, one rule.
 
 **A section with no tag is treated as `universal`.** Tag anything that isn't.
 
+### This is the mechanism that makes a stack reusable, not rebuilt
+
+**Porting a pattern means taking a *section*, not inventing a file.**
+
+The failure this prevents was measured: a React Native project was given a
+Flutter-derived rule set, and the parts that were genuinely portable were
+rewritten from scratch — losing the nuance that came from years of use — while
+the parts that were genuinely Flutter-specific travelled along and had to be
+corrected by hand.
+
+| The situation | What to do |
+|---|---|
+| A section applies to this project too | **Keep it, retag it.** Change `tech:flutter-dart` → `tech:react-native-expo`, re-derive the examples, keep the rules |
+| A section applies with one change | **Keep the section, change the platform branch** — the web/mobile tag above |
+| A section names a Flutter-only mechanism | **Delete the section.** Do not port it "in spirit" |
+
+**Re-derive the examples, not the rules.** A rule carries a concrete trigger; an
+example carries a symbol from the source stack. `postmortems.md` Case 2's
+addendum is exactly this: the contaminating word in a correctly-adapted rule is
+almost always an example, not the rule around it.
+
+**And say so in the emitted file's provenance line** — `<!-- adapted from:
+domain/ui-components.md, tech:mobile branch -->` — so a later session knows a
+rule arrived from somewhere and can check whether it still fits.
+
+**A tagged section is still audited by the emitted set, not by the template.**
+Tagging decides what survives; `audit-checklist.md` decides whether what
+survived is right for *this* project. A rule carried across platforms and not
+re-checked is contamination with a paper trail.
+
 ## The skeleton
 
 Delete any section genuinely not applicable. **Never leave a section with

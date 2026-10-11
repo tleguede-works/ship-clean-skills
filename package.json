@@ -13,7 +13,8 @@
   ],
   "scripts": {
     "validate": "node scripts/validate-repo.js",
-    "test": "node scripts/validate-repo.js && node skills/forge/scripts/selftest.js && node scripts/release-smoke.js && node scripts/snapshot-smoke.js",
+    "test": "node scripts/validate-repo.js && node skills/forge/scripts/selftest.js && node skills/project-rules-architect/scripts/selftest.js && node scripts/release-smoke.js && node scripts/snapshot-smoke.js",
+    "test:pra": "node skills/project-rules-architect/scripts/selftest.js",
     "snapshot": "node scripts/snapshot.js build"
   },
   "private": false,
