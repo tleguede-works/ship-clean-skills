@@ -54,7 +54,21 @@ verification tool isn't in the project is a suggestion.
   measured slowdown. The refactor costs readability and buys nothing.
 - **Stable keys, never the array index.** Index keys turn a reorder into a
   remount, and a remount loses local state and re-fires effects.
+
+<!-- tech:web -->
 - **Uniform rows can declare their height**, which lets the list skip layout.
+
+<!-- tech:mobile -->
+- **Rows are the platform's list primitive, not a `ScrollView` of children.**
+  A screen that grows with its data must use the virtualized list; a
+  `ScrollView` renders every child and the frame time grows with the data.
+- **A long list on a low-end device is measured, not assumed.** Profile on a
+  real device, not in a simulator or a browser's mobile emulation.
+- **Memory is the real limit, not time.** A screen holding a few hundred
+  decoded images at full resolution is the failure that a frame-time number does
+  not show.
+
+<!-- universal -->
 - **No nested virtualized lists.** A list inside a list header defeats the
   outer list's windowing. Restructure into sections with sticky headers, or one
   flat list.
@@ -125,24 +139,44 @@ consistently wrong.**
 
 ## Code Splitting
 
-- **A heavy, rarely-used dependency is dynamically imported.** A charting
-  library, a rich-text editor, a map, a date picker with locales — the cost of
-  loading it is paid by every user on every route, to benefit the one who opens
-  it.
+<!-- universal -->
+- **A heavy, rarely-used dependency is lazily loaded.** A charting library, a
+  rich-text editor, a map, a date picker with locales — the cost is paid by every
+  user on every route, to benefit the one who opens it.
+- Don't split a module into so many chunks that the loading overhead exceeds the
+  saving. Measure the actual effect on a production build.
+
+<!-- tech:web -->
 - **Route-level splitting is the default** for anything with more than one
   screen. {{Use the framework's routing-level lazy loading; don't preload
   screens the user hasn't navigated to.}}
-- **Page-scoped resources are released when the page is popped**, where the
-  framework supports it — a long-lived session accumulates every screen visited.
-- Don't split a module into so many chunks that the request overhead exceeds the
-  saving. Measure the actual effect on a production build.
+- **A dynamic import is worth it above a size you measured**, not above one you
+  assumed. Measure the chunk before adding the boundary.
+
+<!-- tech:mobile -->
+- **The binary is the first budget, not the last.** Everything linked is in
+  every user's download. A heavy dependency is paid for on install, before the
+  user sees a single frame.
+- **Splitting is per-feature, not per-screen.** The bundle is resolved at build
+  time; what you are actually deferring is initialisation, not download.
+- **Route code is already split by the platform's route system.** Adding a
+  manual dynamic import on top usually duplicates it.
 
 ## Budgets
 
-- **Pick a per-route or per-page payload budget** appropriate to this project
-  and **check it when a page grows noticeably heavier**.
-  {{e.g. a few hundred KB gzipped for a data-heavy page is a reasonable starting
-  point; set the real number in `AGENTS.md`.}}
+<!-- tech:web -->
+- **Pick a per-route payload budget** appropriate to this project
+  and **check it when a route grows noticeably heavier**.
+  {{e.g. a few hundred KB gzipped for a data-heavy route is a reasonable
+  starting point; set the real number in `AGENTS.md`.}}
+
+<!-- tech:mobile -->
+- **Pick a startup-time budget and a binary-size budget.** Cold start to first
+  frame, measured on a mid-range device — a simulator number is not a number.
+- **The store listing has its own size limit**, and it is a release blocker,
+  not a performance concern.
+
+<!-- universal -->
 - **A budget nobody checks is not a budget.** It goes in the Definition of Done
   or the review checklist, with the command that measures it.
 - **When a page exceeds its budget, the fix is to find what's in it** — not to

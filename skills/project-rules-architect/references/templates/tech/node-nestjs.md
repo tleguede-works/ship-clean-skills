@@ -196,6 +196,42 @@ service → interceptors (post) → exception filters → response.}}
   hit a real database in a unit test; leave an application unclosed; assert on an
   internal method call.
 
+## Generated Code
+
+<!-- The one part of this overlay that is not a style opinion: Nest's schematics
+     exist because the boilerplate has a module registration, a provider scope
+     and a matching spec file, and getting any of the three wrong produces a
+     runtime failure rather than a compile error. -->
+
+**Use the CLI. Do not create these by hand.**
+
+```bash
+nest g resource <name>        # controller + service + module + spec, wired
+nest g controller <name>
+nest g service <name>
+nest g module <name>
+nest g resolver <name>
+nest g guard <name>
+nest g pipe <name>
+nest g filter <name>
+nest g interceptor <name>
+```
+
+- **`nest g resource` is the default for anything with a route.** It wires the
+  provider into the module, and a controller registered by hand is usually not —
+  a route that 404s despite a correct handler is almost always this.
+- **The generated spec is a starting point, not a test.** It asserts the default
+  before each. Replace the body; do not keep it as-is, because a spec that only
+  compiles proves nothing (`testing.md` §Status Gating).
+- **A generated file is regenerated, never hand-edited** — except the ones you
+  are supposed to edit (the service body). Re-running the generator over a
+  hand-edited controller overwrites it; that is the intended behaviour.
+- **The generated import path is not an alias by default.** Whatever this
+  project's `tsconfig.json` configures is what the generator emits; check it
+  before assuming the generated imports match `architecture.md` §Conventions.
+- Verify the installed CLI's flags against `nest g --help` for this version
+  before writing the command into a rule — the flags changed across majors.
+
 ## Banned Patterns
 
 | Banned | Use instead | Enforced by |

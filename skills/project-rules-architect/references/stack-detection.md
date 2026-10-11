@@ -46,13 +46,26 @@ No detection. A project with no code still gets these, adjusted for being empty.
 | `core/entry-file.md` | always |
 | `core/architecture.md` | always |
 | `core/workflow.md` | always |
+| `core/git-workflow.md` | always |
+| `core/quality-gates.md` | always |
+| `core/code-review.md` | always |
 | `core/coding-standards.md` | always |
 | `core/security.md` | always |
 
-**Why these five and no more.** They are the rules that hold in any project in
-any language, they are the ones an agent needs before it can do anything useful,
-and they are the ones whose absence produces the failures this skill exists to
-prevent. A sixth core template would be a template that isn't universal.
+**Why these eight and no more.** Two bars; a subject has to clear one:
+
+1. **It holds in any project in any language**, and an agent needs it before it
+   can do anything useful — or
+2. **It decides whether the other rules can be checked at all.**
+
+The second bar is the one that was missing, and its absence is why a project
+could ship a complete-looking rule set in which no rule was verifiable: nothing
+in it owned the commands. `quality-gates.md` and `code-review.md` clear it.
+
+A ninth would have to clear one of the two bars. **"It is a good topic" is not a
+bar** — and that was the argument used to keep the list at five. It is
+circular: a subject is universal because it is core, and core because it is
+universal, so the test excludes exactly the subjects nobody thought to argue for.
 
 ## Technology overlays
 
@@ -68,13 +81,21 @@ family**, and a lower row can still add a non-conflicting overlay.
 | `@nestjs/core` in dependencies | `tech/node-nestjs.md` | — |
 | `@nestjs/common` in dependencies without `@nestjs/core` | `tech/node-nestjs.md` | — |
 | `pom.xml` or `build.gradle` with a Spring Boot parent/plugin | `tech/java-spring.md` | — |
+| `@angular/core` in dependencies, or `angular.json` present | `tech/angular.md` | `tech/typescript-javascript.md` |
 | `tsconfig.json`, or `typescript` in dev dependencies | `tech/typescript-javascript.md` | — |
 | `jsconfig.json`, or a `.js`/`.jsx` source tree with no TypeScript | `tech/typescript-javascript.md`, TypeScript rows omitted | — |
 | A JavaScript or TypeScript source tree, no framework row matched | `tech/typescript-javascript.md` | — |
 
 **Rows are additive where they don't conflict.** A Next.js project emits
 `typescript-javascript` + `nextjs` + `react`. An Expo project emits
-`typescript-javascript` + `react-native-expo` + `react`.
+`typescript-javascript` + `react-native-expo` + `react`. An Angular project emits
+`angular` + `typescript-javascript`.
+
+**A React signal does not imply a React overlay if a more specific row matched.**
+`react` in dependencies inside an Expo or Angular project means "there is a React
+runtime", not "this project's component model is React's" — emitting
+`tech/react.md` there produces rules about hook boundaries and re-renders on a
+codebase whose components are Angular classes. The row order is what prevents it.
 
 **Where two overlays would conflict on the same mechanism** — the rendering
 family, the state-management rows — the more specific overlay wins and the
@@ -143,27 +164,25 @@ act on.
 
 ## Monorepos
 
-**One overlay per service, not one for the repository.** The detection probe runs
-in each service directory, and the emitted set is assembled from the union.
-
-> This section owns the monorepo **layout** — which files exist where, and what
-> each carries. The **wiring** — the config file each service needs, and the
-> `instructions` globs — is `target-formats.md` §Monorepos. One owner per fact.
+> **Layout and tooling live in `monorepo-strategy.md`** — the package map, the
+> orchestrator (Nx / Turborepo / pnpm workspaces / Gradle composite), and the
+> per-package commands. This section states only what belongs in which file, and
+> **wiring** — the config each package needs — is `target-formats.md`
+> §Monorepos. One owner per fact.
 
 ```
-/AGENTS.md                          ← core only, plus what's genuinely universal:
-                                      git conventions, the DoD shape, the
-                                      escalation ladder, the memory-file protocol
+/AGENTS.md                          ← universal only:
+                                       git conventions, the DoD shape, the
+                                       escalation ladder, the memory protocol
 /services/api/AGENTS.md             ← core + node-nestjs + data-and-state + testing
 /services/api/.opencode/rules/*.md
 /services/web/AGENTS.md             ← core + typescript + nextjs + react + ui + …
 /services/web/.opencode/rules/*.md
 ```
 
-- **The root file states only what is universal.** The root carries the git
-  conventions, the definition-of-done *shape*, the escalation ladder, the
-  memory-file protocol, and the priority ranking. It does not carry a service's
-  commands, its stack, or its domain rules.
+- **The root file states only what is universal.** Git conventions, the
+  definition-of-done *shape*, the escalation ladder, the memory-file protocol,
+  the priority ranking. Not a service's commands, its stack, or its domain rules.
 - **A service file states its deltas**, including its own commands and its own
   tech stack table.
 - **A conflict resolves to the closer file.** A service can tighten a root rule;
@@ -175,6 +194,10 @@ in each service directory, and the emitted set is assembled from the union.
   emits its own copy — a shared file that one service edits breaks the other.
   Where the tool supports directory-scoped instruction files, use them; the
   portability of a single canonical file is a deliberate trade against this.
+
+**Run the probe in each service directory.** One overlay for the repository is
+wrong for at least one service, and the service that gets the wrong overlay is
+the one nobody notices.
 
 ## On a project with no code yet
 
@@ -191,10 +214,17 @@ Handle it honestly:
 - **Say so.** "The project has no code yet, so the domain rules are a choice
   rather than a detection — here are the ones a {{stack}} project usually needs."
   Presenting the table and then finding nothing to match reads as a broken tool.
-- **Propose the domains the stack implies** and ask for confirmation. A React
-  Native project almost always wants `forms` and `testing`; a project that
-  genuinely has neither should say so, and that is worth knowing before the
-  first feature is written.
+- **Propose the domains the stack implies, label each as an assumption, and ask
+  for confirmation.** A React Native project almost always wants `forms` and
+  `testing`; a project that genuinely has neither should say so, and that is
+  worth knowing before the first feature is written.
+
+  **Record which ones were confirmed, and which were declined.** A declined
+  proposal is a decision, so the next run does not re-propose it. A proposal
+  that is *neither confirmed nor declined* is the defect this section produced:
+  the agent offered a set, nobody objected, and nobody chose either — and two
+  runs of the same task then emitted 6 files and 17. **An unratified proposal
+  is an arbitrary one**, so treat silence as declining and say which.
 - **Do not report day-one omissions as findings.** "No test runner configured" is
   true and worthless before any code exists. Reserve the omission report for
   omissions that mean something — a project with 200 files and no tests, a design
@@ -202,6 +232,17 @@ Handle it honestly:
 - **Re-run the probe later.** The detection table is cheap, and a project that
   gains its first form or its first test is exactly the moment the domain
   selection becomes a lookup.
+
+### The baseline scan answers most of this, so the proposal is small
+
+`baseline-scan.md` runs before this step and resolves the stack, the test
+script, the linter and the dependency health **from the manifest**. So on day
+one the domain selection is mostly a detection against the manifest rather than
+against the source tree — what is left genuinely undetectable is a short list,
+and it should be emitted as **assumptions**, not offered as a menu.
+
+The rule to keep: **an assumption you do not get ratified is a decision you
+made silently.** Write it down as one, and the variance disappears with it.
 
 ## Reporting
 

@@ -1,41 +1,103 @@
 # SESSION_LOG.md — journal de session
 
 **Append-only.** Une entrée par session de travail, à lire **en entier au début de
-chaque session** et à ajouter **avant de terminer** une session ou un commit.
+chaque session** et à compléter **avant de terminer** une session ou un commit.
 
-Chaque entrée porte **8 champs, dans cet ordre**. L'ordre fait partie du format : une
-session qui commence par `STATUS` doit relire les sept autres pour savoir où elle en
-est.
+## Le format, et pourquoi il est écrit en avance
 
-`STARTED FROM` · `DECIDED` · `REJECTED` · `BLOCKED` · `FILES TOUCHED` · `STATUS` ·
-`NEXT SESSION SHOULD` · `NEXT SESSION SHOULD NOT`
+Le journal ne se remplit pas **à la fin** d'une session. Il se remplit **au fil
+de l'eau**, et la raison n'est pas organisationnelle.
 
-**Ce que ce fichier n'est pas.** Il ne porte pas le statut d'un livrable — cette
-autorité est `.forge/state.json`, seul. Il ne porte pas une décision
-d'architecture : c'est `DECISIONS.md`. Il ne porte pas une correction de fond : c'est
-`LEARNINGS.md`. Il porte **ce qui s'est passé et dans quel ordre**, y compris les
-hésitations et les erreurs — la seule information qu'aucun autre fichier ne peut
-déduire.
+**Un modèle avec un million de tokens de contexte survit jusqu'au bout.** Il
+reste le raisonnement, et il écrit une entrée complète au moment où il sait ce
+qu'il a fait. **Un modèle plus petit ne survit pas** : la compaction arrive avant
+la fin, et quand l'agent rouvre les yeux, il sait ce qu'il a fait mais plus
+pourquoi. Ce qui disparaît en premier, ce n'est pas le résultat — il est dans le
+diff — c'est **le refus**, c'est-à-dire l'information la plus difficile à
+reconstituer.
 
-**Ce que `.forge/audit/run-log.jsonl` n'est pas.** C'est le journal machine des
-commandes Forge (`init`, `hash`, `status_change`, `gate_approved`). Il sait qu'un
-`hash` a tourné ; il ne sait pas pourquoi la décision qui l'a précédé a été remise en
-cause. Les deux sont complémentaires, et aucun des deux ne remplace l'autre.
+Un déclencheur de fin de session est donc **le pire moment possible** : il ne se
+déclenche que si l'agent survit jusque-là.
+
+**Le déclencheur est donc placé sur des moments observables, et l'entrée est
+ouverte au départ.** Ce qui est écrit est écrit avant que le contexte ne puisse
+le prendre.
+
+## L'entrée
+
+```markdown
+### AAAA-MM-JJ — <titre de session>
+
+- **STARTED FROM** — d'où la session part
+- **STATUS** — en cours
+```
+
+Les six autres champs — `DECIDED`, `REJECTED`, `BLOCKED`, `FILES TOUCHED`,
+`NEXT SESSION SHOULD`, `NEXT SESSION SHOULD NOT` — sont complétés **au fil de
+l'eau**, jamais d'un seul bloc à la fin. `REJECTED` est le champ le plus cher :
+c'est le seul qui empêche une session future de reproposer ce qui a déjà été
+écarté, et il est aussi le premier oublié, parce que personne ne pense à écrire
+« non » pendant qu'on écrit du code.
+
+## Les points de contrôle
+
+**Un point de contrôle est une ligne.** Il ne coûte rien et il est écrit quand
+l'information est encore fraîche.
+
+```markdown
+- **[HH:MM] <où j'en suis> — <ce que je viens de décider, et ce que je fais maintenant>**
+```
+
+### Quand en écrire un — cinq moments, tous observables
+
+| Moment | Pourquoi celui-là |
+|---|---|
+| **La session ouvre** | l'entrée est créée immédiatement, pas à la fin |
+| **Un changement de phase** | Forge sait qu'une phase change ; c'est un signal fiable, pas une horloge |
+| **Le début d'une slice** | le périmètre est connu et frais |
+| **La fin d'une slice** | avant tout commit — le moment où l'inventaire des fichiers est encore exact |
+| **Le contexte vient d'être compacté** | l'agent s'en aperçoit : le résumé vient d'arriver. **C'est le moment le plus important de tous**, parce que c'est le dernier avant le suivant |
+
+**Pas d'horloge.** Un modèle ne sait pas quelle heure il est, et une horloge non
+déclenchée est un déclencheur silencieux — exactement le défaut qu'on répare.
+Les cinq moments ci-dessus sont des **événements que l'agent constate**, pas des
+durées qu'il devine.
+
+### Ce qu'un point de contrôle contient
+
+Trois choses, dans cet ordre :
+
+1. **Où j'en suis** — la slice, la phase, l'étape.
+2. **Ce que je viens de décider** — une phrase, pas un paragraphe.
+3. **Ce que je fais maintenant** — la prochaine action, nommée.
+
+Le troisième est ce qui rend le point de contrôle utile après une compaction :
+l'agent relit « je vais écrire le plan de la slice X » et il sait reprendre, sans
+avoir à relire le diff pour savoir où il s'était arrêté.
+
+### Ce qu'un point de contrôle ne contient pas
+
+- Un diff, un listing de fichiers, une sortie de commande. **Ça, ça se
+  régénère** depuis git ; uneynthèse ne le fait pas.
+- Une justification longue. Si elle tient en trois lignes maintenant, elle
+  tiendra en trois lignes dans une heure. Si elle n'y tient pas, c'est un
+  `DECISIONS.md`.
 
 ## Propriété des faits
 
 | Fichier | Tient |
 |---|---|
-| `.forge/state.json` | Statut des livrables, hashes, ID — autorité, jamais édité à la main |
-| `.forge/audit/run-log.jsonl` | Journal machine de Forge |
-| `.forge/audit/issues.md` | Incidents du processus de planification |
 | `DECISIONS.md` | Décisions d'architecture fermées |
 | `LEARNINGS.md` | Corrections apprises, avec leur domaine de promotion |
 | `SESSION_LOG.md` (ce fichier) | Le récit de la session |
 
+{{#if forge-present}}
+| `.forge/state.json` | Statut des livrables, hashes, ID — autorité, jamais édité à la main |
+| `.forge/audit/run-log.jsonl` | Journal machine du skill de planification |
+{{/if}}
+
 ## Journal
 
-<!-- Une entrée par session, la plus ancienne en premier. Rien d'autre ici. -->
 
 ---
 

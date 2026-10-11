@@ -32,7 +32,6 @@ fois avant qu'on admette qu'elle est un motif.
 
 ## Corrections
 
-<!-- La plus récente en dernier. -->
 
 ## Promotion
 
@@ -54,6 +53,6 @@ Elle n'a lieu qu'après que le jeu de règles existe.
 
 ## Constats non promus
 
-Un constat sans domaine de promotion va dans `.forge/audit/issues.md`, pas ici. Il
-n'est pas encore un correctif : c'est une observation qui n'a pas d'endroit où être
-appliquée.
+Un constat sans domaine de promotion ne va nulle part : ce n'est pas encore un
+correctif, c'est une observation. Il reste ici, marqué comme non promu, jusqu'à ce
+qu'un magasin de constats existe pour le recevoir.

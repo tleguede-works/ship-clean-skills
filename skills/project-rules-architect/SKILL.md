@@ -135,12 +135,26 @@ draft, not the principle.
    surviving "per the profiles" or a framework symbol from the wrong stack is
    both contamination and a dangling reference.
 
-6. **Budgets are ceilings, not targets.** The line and token figures exist to
-   catch bloat, not to be minimised. A complete 1,200-line set beats an 800-line
-   one with silent gaps. **If you're under budget, stop cutting** — there's no
-   reward for being further under. If you're over, look for tutorial prose
-   first; if there isn't any, add more scoped files rather than trimming
-   operational content.
+6. **Budgets are ceilings for prose and floors for gates.** These are two
+   different rules, and conflating them is how a set ends up complete in its
+   argument and empty in its enforcement.
+
+   | Content | Budget | The test |
+   |---|---|---|
+   | **Prose** — rationale, framing, examples, history | a **ceiling**. Cut this first | Would the agent act differently without this sentence? |
+   | **A gate** — a threshold, a command, an exit code, a banned list | a **floor**. Never cut it | Does it exit non-zero when violated? |
+
+   **A gate that does not exit non-zero is not a gate.** It is a sentence, and
+   it is subject to the same fate as every other sentence: an agent that is
+   tired, or in a hurry, or told to "just get this done", will read past it. A
+   threshold, a command and a banned list are the *cheapest* content in any
+   rule file — a line each — and the only thing that survives that pressure.
+
+   So: if the set is over budget, cut tutorial prose first, and if there isn't
+   any, **add more scoped files rather than trimming operational content.** If
+   it is under budget, that is not licence to cut further — it is a signal to
+   ask **what is missing**, because the usual reason a generated set is thin is
+   that a pressure valve fired (see § Step 0b).
 
 6b. **The budget is per-target, and it must be measured — the read-back test
    cannot detect it.**
@@ -281,6 +295,33 @@ that is wrong looks exactly like a scaffold that is empty:
    case-sensitive filesystem the lowercase name resolves to nothing, and the
    reference fails silently at the moment somebody follows it, which is months
    later. Check the prose, not only the table: the two leak separately.
+7. **The conditionals are resolved.** See below.
+
+### The one conditional in this mode, and why it exists
+
+`templates/memory/` carries a single `{{#if forge-present}}` block, in `AGENTS.md`
+and in the ownership table of `SESSION_LOG.md`.
+
+**Resolve it by testing the filesystem: a `.forge/` directory at the project root
+means the block is kept; otherwise it is deleted.** There is no template engine,
+and inventing one is a second thing to maintain.
+
+**This is the whole point.** Those blocks used to be unconditional, so they named
+`.forge/conventions.md`, `.forge/architecture.md`, `.forge/state.json` and
+`.forge/audit/issues.md` as places the stack lives — in a project that has no
+`.forge/` at all, which is the ordinary case for anyone using this skill
+standalone. It is not a dangling link that costs nothing: it is a **false
+instruction in the file every session loads first**, telling the agent the stack
+lives somewhere it does not, at the moment it builds its picture of the project.
+
+Standalone use is the common case, so the standalone branch is the one that has to
+read correctly with nothing else present.
+
+**Check both directions.** Emit the scaffold for a project without `.forge/` and
+confirm no `.forge` string survives; then for one with, and confirm the
+references are there. `rules-selftest.js` §`no_forge_coupling` enforces the first
+direction automatically — the second has no project to run against, so it stays
+a reading check.
 
 ## The template library
 
@@ -289,9 +330,20 @@ wholesale, and you never edit it during a run.**
 
 | Tier | Directory | Emitted |
 |---|---|---|
-| Core | `templates/core/` | Always. Five files: entry file, architecture, workflow, coding standards, security |
-| Domain | `templates/domain/` | Selected by detection. Ten files: data & state, errors & async states, forms, UI components, accessibility, testing, performance, i18n, design system, external system contracts |
-| Technology | `templates/tech/` | Selected by detection. Seven overlays, plus four variant deltas in `tech/variants/` |
+| Core | `templates/core/` | Always. **Eight** files: entry file, architecture, workflow, git-workflow, quality-gates, code-review, coding standards, security |
+| Domain | `templates/domain/` | Selected by detection. Eleven files: data & state, errors & async states, forms, UI components, accessibility, testing, **dependency security**, performance, i18n, design system, external system contracts |
+| Technology | `templates/tech/` | Selected by detection. Eight overlays, plus four variant deltas in `tech/variants/` |
+
+**Why eight core files, and what a ninth would have to justify.** They are the
+rules that hold in any project in any language, **or the rules that decide
+whether any other rule is enforceable at all**. The second half is the part
+that matters: `quality-gates.md` owns the commands that make the rest checkable,
+and a set that omits it has rules nothing can verify — which is the failure this
+skill exists to prevent.
+
+A ninth would have to clear the same bar, and "it is a good topic" is not the
+bar. The bar is: *does every project need it before it can act, or does every
+project need it before it can check whether it acted correctly?*
 
 **Selection is a lookup, not a judgement call** — `references/stack-detection.md`
 is the table, and every emitted template records the signal that triggered it.
@@ -315,27 +367,61 @@ agent reads, and this one has no recurring value.
 
 ## Workflow
 
+### Step 0b — Scan, and let the scan decide
+
+**Run this before Step 1, and before any threshold is written.** Protocol in
+`references/baseline-scan.md`; run it, don't read it and describe it.
+
+The scan answers three questions in one pass, and all three used to be answered
+by guessing:
+
+1. **What is the stack, exactly?** — resolved from the manifests, not from an
+   impression of them.
+2. **Is the project green today?** — every gate, run, with the output captured.
+   A rule set written on a project whose lint is already red must say so, or its
+   Definition of Done is red on arrival and gets ignored on day one.
+3. **`greenfield` or `ratchet`?** — **derived from the scan, never asked.**
+   Asking makes the mode a preference; deriving it makes it a consequence, and a
+   consequence is identical on two runs of the same repository.
+
+A mode decided by interview varies with the agent's mood and with the phrasing
+of the question. That variance is what produced a 6-file rule set on one project
+and a 17-file one on another from the same template library.
+
+Write the result to `docs/quality-baseline.md` — a project artefact, not part of
+the rule set — and report it in the six-line form the protocol gives.
+
+**"The command is not installed" is a result.** Record it as `absent`, propose
+the installation, and emit the gate with that status. **Never** write a baseline
+number that no command produced.
+
 ### Step 1 — Probe, then interview
 
 **If the caller asked for the context scaffold, stop here** and run
-§ The context scaffold. Do not probe, do not interview, do not produce a stack.
-Probing on a project whose stack has not been decided produces a manifest match
-and a table of domain rows that have nothing to match — a confident-looking
-report about nothing, which is the mode's entire purpose to avoid.
+§ The context scaffold. Do not probe, do not scan, do not interview, do not
+produce a stack. Probing on a project whose stack has not been decided produces
+a manifest match and a table of domain rows that have nothing to match — a
+confident-looking report about nothing, which is the mode's entire purpose to
+avoid.
 
-Otherwise, run the detection probe first (`stack-detection.md`). Read the
-manifests, match the table, produce a proposed template set. Don't ask what the
-repository already says.
+Otherwise, take the stack the scan resolved, run the detection probe
+(`stack-detection.md`), match the table, produce a proposed template set. Don't
+ask what the repository already says.
 
 **Then ask only the gaps the probe can't close.** Usually one or two questions:
 
 - **Target format** — the one question that can't be inferred. See
   `references/target-formats.md`. **If the user has already stated a preferred
   structure, that is the specification, not a default to improve on.**
+- **Git strategy** — trunk-based, git-flow or release-train. Also not
+  derivable: both branches cost something, and they are not reversible by the
+  same amount. With no preference, choose trunk-based and record it in
+  `DECISIONS.md`; "no strategy" is the only option nobody can reverse.
 - **Variants that are decisions rather than detections** — router, rendering
   strategy, whether a state library is wanted. A component-library axis is
   settled by what's installed; a data-access axis is a decision, so ask.
-- **Monorepo or single app**, and for a monorepo, which services are in scope.
+- **Monorepo or single app**, and for a monorepo, which packages are in scope
+  (`references/monorepo-strategy.md`).
 - **Team or solo** — affects how much day-one scaffolding is worth it.
 - **Anything already decided** — closed decisions, an existing memory system, a
   design contract, a deployment story.
@@ -344,6 +430,10 @@ repository already says.
 interview.** State the assumptions you're filling in and proceed. Confirm only
 what would silently produce the wrong architecture — the target format is the one
 that qualifies.
+
+**Do not ask about the thresholds.** They are decided in `baseline-scan.md`
+§Mode selection, and asking reintroduces exactly the variance the scan was
+added to remove.
 
 ### Step 2 — Verify against real sources
 
@@ -452,8 +542,21 @@ file, while the source is still open:
 
 ### Step 5 — Audit
 
-Run `references/audit-checklist.md` in full before showing anything to the user.
-The sections that catch what the others can't:
+**Part A is a command. Run it before reading anything.**
+
+```bash
+node "$PRA/scripts/rules-selftest.js" <project>
+```
+
+Ten decided checks — wiring, index, placeholders, cross-references,
+contradictory thresholds, `.forge/` coupling, contamination, unenforceable prose,
+gates, budget. **A failure is a defect, not a discussion.** Fix it and re-run.
+The script's own self-test (`node "$PRA/scripts/selftest.js"`) proves each check
+detects what it claims to, so a pass is evidence and not a formality.
+
+**Then Part B**, the judgement half of `references/audit-checklist.md`. Do not
+automate it and do not report it as verified when it was not. The sections that
+catch what the others can't:
 
 - **Content preservation** — for a consolidation. Redundancy and contradiction
   checks compare the new set against *itself*; a set can be perfectly
@@ -461,9 +564,9 @@ The sections that catch what the others can't:
   count: *"N rules preserved, M absorbed with cross-references, K lines of
   tutorial prose cut (listed)."* If you can't state that number, you haven't
   checked.
-- **Cross-project contamination** — for an adoption or a port. Library names, file
-  names, **and process vocabulary** in a separate pass. Plus: every file named
-  inside a rule must exist in the delivered set.
+- **Cross-project contamination** — for an adoption or a port. Part A catches the
+  mechanical form; this catches the semantic one, where a borrowed idea is
+  expressed in this project's vocabulary and therefore looks native.
 - **Contradiction with the code** — for an adoption. For each rule, confirm the
   code doesn't already do the opposite in a load-bearing way. **No other check
   catches this**, because it compares a rule set against a codebase, not against
@@ -528,10 +631,12 @@ a row says "on demand".
 | File | Context scaffold | Bootstrap | Consolidation | Adoption |
 |---|---|---|---|---|
 | `SKILL.md` | ✔ | ✔ | ✔ | ✔ |
+| `baseline-scan.md` | — | **✔** | ✔ | **✔** |
 | `postmortems.md` | — | **✔** | ✔ | ✔ |
 | `stack-detection.md` | — | ✔ | ✔ | ✔ |
 | `documentation-sources.md` | — | ✔ | ✔ | ✔ |
 | `target-formats.md` | — | ✔ | ✔ | ✔ |
+| `monorepo-strategy.md` | — | monorepo | monorepo | monorepo |
 | `research-summary.md` | — | ✔ | — | — |
 | `existing-project-protocol.md` | — | — | — | ✔ |
 | `audit-checklist.md` | § verify above | Step 5 | Step 5 | Step 5 |
@@ -539,6 +644,11 @@ a row says "on demand".
 | `architecture-decision-guide.md` | — | on demand | on demand | on demand |
 | `mdc-frontmatter-spec.md` | — | Cursor only | Cursor only | Cursor only |
 | `provenance/synthesis-provenance.md` | **never** | **never** | **never** | **never** |
+
+**`baseline-scan.md` is read in every mode that emits rules**, and it is read
+*before* the mode probe — the scan decides the quality mode, and a protocol
+read after the thing it decides has already been decided is a protocol read for
+the wrong reason.
 
 **The scaffold reads almost nothing, on purpose.** Four files are written from
 one decision — where does a correction go, and where does a question go — and
@@ -563,20 +673,26 @@ for*, for the rows you reach on demand.
 
 - **`templates/`** — the library. `core/` always, `domain/` and `tech/` by
   detection, `tech/variants/` as deltas.
-- **`stack-detection.md`** — the selection table, the exclusion rows, monorepo
-  handling, and the reporting requirement. Owns the monorepo **layout**.
+- **`baseline-scan.md`** — the measurement pass that runs before drafting: what
+  the stack is, whether the project is green, and `greenfield` vs `ratchet`.
+  Owns the **quality mode**, and the baseline artefact.
+- **`stack-detection.md`** — the selection table, the exclusion rows, and the
+  reporting requirement. Points at `monorepo-strategy.md` for layout.
+- **`monorepo-strategy.md`** — the repository's package map, its build tool,
+  per-package command discovery, and the root-versus-package ownership rule.
 - **`existing-project-protocol.md`** — mode detection, the light and full
   convention-detection paths, the gap report, preserve-vs-migrate, the migration
   stages.
-- **`documentation-sources.md`** — the verification ladder and the citation
-  requirement.
-- **`target-formats.md`** — per-environment entry file, rules location, and
-  **wiring file**, with the exact content to write. Owns the monorepo **wiring**.
+- **`documentation-sources.md`** — the verification ladder, the citation
+  requirement, and the **tool-selection rule** (a tool becomes a gate only if it
+  is installed, maintained, and exits non-zero).
+- **`target-formats.md`** — per-environment entry file, rules location, the
+  **wiring file**, and the hook configuration. Owns monorepo **wiring**.
 - `rule-file-template.md` — the section skeleton and ordering, the section-tagging
   convention, and what a template may never contain.
 - `architecture-decision-guide.md` — the decision tree for file organisation and
   activation modes. Defers format questions to `target-formats.md`.
-- `audit-checklist.md` — the pre-delivery checklist.
+- `audit-checklist.md` — Part A is the script, Part B is the judgement.
 - `postmortems.md` — real caught failures and the fix each produced. Read in
   every mode.
 - `research-summary.md` — the evidence behind the principles, read once per
@@ -586,3 +702,20 @@ for*, for the rows you reach on demand.
 - `../provenance/synthesis-provenance.md` — every source rule mapped to its
   template, with what was merged, deduplicated, cut, and left project-specific.
   **Maintained by hand; never read by a run.**
+
+## Scripts
+
+| Script | What it does | When |
+|---|---|---|
+| `scripts/rules-selftest.js` | Ten decided checks on a **delivered** rule set: wiring, index, placeholders, cross-references, contradictory thresholds, `.forge/` coupling, contamination, unenforceable prose, gates, budget | Step 5, and again after Step 6 |
+| `scripts/selftest.js` | Proves each of those ten checks detects what it claims to, on a synthetic broken set | Before changing a check |
+
+**The script exists because the audit checklist could not be trusted.** Every
+requirement it stated was decidable, and a decidable requirement written in prose
+is one the agent can report as satisfied without running anything. Measured: a
+delivered rule set that was internally consistent, cleanly wired, and missing
+every quality gate — and which had passed the audit as written.
+
+**Run `scripts/selftest.js` after editing either script.** A check that has
+quietly become too permissive reports "all clear" on everything, and the
+failure is invisible precisely because the tool still works.

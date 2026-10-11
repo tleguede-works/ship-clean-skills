@@ -12,9 +12,21 @@ points at them.
 Fill order is fixed and is the priority order from SKILL.md: commands → done →
 tie-break → blocked → git → stack → index → memory. Style never appears here.
 
+This file carries only what is needed **before** the agent can act, and a
+pointer to everything else. Two consequences worth stating, because they are
+what makes it stay small:
+
+- **Thresholds and commands are a floor here.** This is the always-loaded tier:
+  if the build command, the gate command or the Definition of Done were
+  "compressed", the file would still cost the same context and would have lost
+  the two things an agent cannot recover on its own.
+- **Paraphrase is a ceiling.** Architecture, conventions, review detail, git
+  discipline — all referenced, none restated. A paragraph in this file is paid
+  for on every session, including the 95 % where it is irrelevant.
+
 Placeholders: {{PROJECT_NAME}}, {{ONE_LINE_PURPOSE}}, {{COMMANDS_TABLE}},
-{{DOD_ITEMS}}, {{PRIORITIES}}, {{NEVER_LIST}}, {{GIT_*}}, {{STACK_TABLE}},
-{{ARCH_DIGEST}}, {{RULES_INDEX_TABLE}}, {{MEMORY_SECTION}}.
+{{GATE_COMMAND}}, {{DOD_ITEMS}}, {{PRIORITIES}}, {{NEVER_LIST}}, {{STRATEGY}},
+{{STACK_TABLE}}, {{ARCH_DIGEST}}, {{RULES_INDEX_TABLE}}, {{MEMORY_SECTION}}.
 
 Delete any section that genuinely does not apply. Never leave a section with
 placeholder text or a vague heading — an empty section is worse than no section.
@@ -32,6 +44,7 @@ placeholder text or a vague heading — an empty section is worse than no sectio
 
 | Action | Command |
 |---|---|
+| **All gates** | `{{gate command}}` — see `{{quality gate file}}` |
 | Install dependencies | `{{...}}` |
 | Lint | `{{...}}` |
 | Typecheck | `{{...}}` |
@@ -44,21 +57,27 @@ placeholder text or a vague heading — an empty section is worse than no sectio
 
 A task is complete when **ALL** of:
 
-1. `{{lint command}}` exits 0
-2. `{{typecheck command}}` exits 0
-3. `{{test command}}` exits 0{{— or: **once a runner exists**; this line is aspirational until then, do not silently treat it as satisfied}}
-4. {{stack-specific gate, e.g. `{{health-check command}}` reports no issues}}
-5. `{{COMMAND that checks the thing}}` exits 0 — e.g. for "a session log entry is appended", this is a script that asserts it, not the sentence asserting it
-6. {{a real, non-command gate this project has — e.g. "new/changed auth flows smoke-tested on a development build"}}
+1. **`{{gate command}}` exits 0** — every gate in `{{quality gate file}}`
+   §The Gate Table: lint, typecheck, tests, coverage, duplication,
+   vulnerabilities, doctor. One command, because the table exists so this line
+   does not have to enumerate.
+2. {{stack-specific gate, e.g. `{{health-check command}}` reports no issues}}
+3. `{{COMMAND that checks the thing}}` exits 0 — e.g. for "a session log entry
+   is appended", this is a script that asserts it, not the sentence asserting it
+4. {{a real, non-command gate this project has — e.g. "new/changed auth flows
+   smoke-tested on a development build"}}
 
 <!-- Rules for this list:
      - Conjunctive. "ALL of" is load-bearing — it is what stops the agent
        reporting done on work that doesn't run.
      - Every item is checkable: a command with an exit code, a named check, or a
        process step. No item may be a quality judgement.
-     - If an item cannot be checked yet, mark it aspirative in the item text.
-       A DoD line that is silently unsatisfiable is worse than an absent one,
-       because it trains the agent to report "done" on a line nobody verifies.
+     - **The gate table is item 1, and it is item 1 deliberately.** It is the
+       only item that can be checked mechanically, and the only one whose
+       failure is invisible afterwards. A DoD where the gate is item 6 is a
+       DoD where the gate is item 6.
+     - If a gate's tool is not installed, its line says **absent**, never
+       satisfied (`{{quality gate file}}` §Status).
      - Each item names the rule file that owns the detail, if there is one:
        "(see `{{rules file}}` §X)".
 
@@ -113,70 +132,40 @@ When rules or goals conflict, resolve in this order:
      it. Two attempts, not three: the third attempt is where an agent starts
      inventing workarounds.
 
-     Git-operation bans are deliberately NOT here — they are in §Git
-     Conventions, which is their domain. Two Never lists in one file is fine as
-     long as they don't overlap: this one is about what you may do to the
-     codebase, that one about what you may do to the repository. -->
+     Git-operation bans are deliberately NOT here — they are in
+     `git-workflow.md` §When Blocked, which is their domain. Two Never lists in
+     one file is fine as long as they don't overlap: this one is about what you
+     may do to the codebase, that one about what you may do to the repository. -->
 
 ## Git Conventions
 
-### Commits
+**Strategy: `{{trunk-based | git-flow | release-train}}`** — decided at
+generation, never inferred from the repository. The full discipline — commit
+atomicity, message format, branch rules, integration, hooks — lives in
+`{{git workflow rule file}}`.
 
-- **Format:** `<type>(<scope>): <description>`
-  - Types: `feat`, `fix`, `chore`, `refactor`, `test`, `docs`, `style`, `perf`
-  - Scope: lowercase feature name — `feat(checkout): add cart screen`
-  - Description: imperative mood, lowercase, no trailing period
+| Rule | Value |
+|---|---|
+| Commit format | `<type>(<scope>): <description>`, imperative, no trailing period |
+| Branch naming | `{{feature/<name>}}` from `{{main}}` |
+| Default branch | `{{main}}` |
+| Hooks | `{{lefthook | husky | none}}`, `pre-commit` under 10 s |
 
-- **One commit = one intent, and it must be independently revertible.** That is
-  the property — not the line count. A large change that does one thing is
-  correct; twelve small commits that each half-finish one thing are a mess,
-  because nothing in the history can be undone on its own.
-  - **If reverting one commit would break the commits after it, the split is
-    wrong.**
-  - **Never mix a refactor with a behaviour change in one commit.** They revert
-    differently, and reviewing them together means reviewing both at once.
+The three rules that matter, without their detail:
 
-- **Commit at the last point where the tree is coherent and verified** — not
-  before, not much after. A commit that leaves the tree broken is not a safety
-  net; three days of accumulated work is not a history.
-  - WIP commits on a throwaway branch are fine. WIP commits on a branch that will
-    be integrated are not — they end up in the history.
+- **One commit = one intent, independently revertible.** If reverting it alone
+  would break the commits after it, the split is wrong.
+- **Never mix a refactor with a behaviour change** — they revert differently.
+- **The pre-commit review passes before every commit**
+  (`{{workflow rule file}}` §Pre-Commit Review).
 
-- **The pre-commit review passes before every commit** — see
-  `{{workflow rule file}}` §Pre-Commit Review. A commit that skipped it is a
-  commit nobody verified.
-
-### Branches
-
-- Naming: `{{feature/<name> | fix/<name> | chore/<name>}}`, branched from
-  `{{main | master}}`.
-- **A branch isolates a change that would not be clean on the default branch** —
-  a feature, a fix, a refactor, an experiment. A typo fix does not need one.
-- **One branch, one intent.** A branch carrying three unrelated changes merges
-  badly and reviews badly.
-- Bring the branch up to date with the default branch **before** starting work
-  that touches shared ground, not after.
-
-### Before merging
-
-- The worktree is green — `{{lint}}`, `{{typecheck}}`, `{{test}}` all exit 0.
-- The Definition of Done is satisfied, including the process items.
-- **Every conflict was resolved by reading both sides and understanding the
-  intended behaviour.** A conflict resolved by taking the nearest version, or by
-  deleting one side, is not resolved — it is deferred to runtime, where it fails
-  without anyone knowing which change caused it.
-- Re-verified after conflicts are resolved, not before.
-
-### Never
-
-- Force-push a shared branch, or amend/rebase a commit already pushed to one.
-- Delete a lockfile or dependency directory to clear an error — resolve the
-  constraint instead.
-- `reset --hard`, `checkout .`, or `restore .` to "get back to clean". That
-  discards work that was never committed and never reviewed.
-- Merge with a red tree, or merge to unblock someone else.
-- Resolve a conflict without reading both sides.
-- Commit a credential, on the assumption it can be revoked afterwards.
+<!-- This is a POINTER, and it is one for a reason. The full discipline used to
+     live here, which meant ~60 lines of detail paid for on every single
+     session to be read only at the moment of committing — the opposite of what
+     Principle 6 says. The entry file is the always-loaded tier: a threshold
+     there is a floor, a paragraph there is a ceiling. It keeps the strategy
+     name and the message format (both read constantly) and references the
+     rest. -->
 
 ## Tech Stack
 

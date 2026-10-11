@@ -1089,6 +1089,301 @@ test('Forge sait QUAND appeler project-rules-architect, et ce qu\'il ne doit PAS
     'Forge doit savoir que le jeu de règles vient de l\'appel 2, câblé');
 });
 
+test('rules_present : l\'appel 2 a un DÉCLENCHEUR, pas seulement un moment déclaré', () => {
+  // **Ce que ce test attrape.** L'appel 2 était décrit à trois endroits, les
+  // trois d'accord sur le moment (« quand `architecture` est `approved` »), et
+  // aucun n'était déclenché. Exiger le moment ne prouve rien — il était déjà
+  // écrit. Exiger un **mécanisme** est ce qui échoue, et c'est le vrai défaut.
+  //
+  // Sans porte exécutable, l'agent lit la phrase, ne la partage pas, et le jeu
+  // de règles n'est jamais écrit. Constaté sur cinq projets de laboratoire : un
+  // seul en avait un, quatre avaient approuvé leur architecture sans rien voir
+  // se passer.
+  const s = fs.readFileSync(path.join(SKILL_DIR, 'SKILL.md'), 'utf-8');
+  const boundaries = fs.readFileSync(path.join(SKILL_DIR, 'references', 'skill-boundaries.md'), 'utf-8');
+
+  // 1. Le moment reste nommé — la contrainte précédente ne doit pas régresser.
+  assert(/architecture`?\s*(?:est\s+)?`?approved/.test(s),
+    'l\'appel 2 doit rester conditionné par `architecture approved`');
+
+  // 2. Un contrôle exécutable existe, et il est nommé dans les deux documents.
+  for (const [nom, txt] of [['SKILL.md', s], ['skill-boundaries.md', boundaries]]) {
+    assert(/rules[-_]present|forge-guard\s+rules-present/.test(txt),
+      nom + ' doit nommer le contrôle rules-present : sans porte exécutable, l\'appel 2 est une phrase, pas un déclencheur');
+  }
+
+  // 3. Et il est branché dans `all`. Un contrôle déclaré et jamais appelé est le
+  //    même défaut sous une autre forme — c'est ce qui s'était produit avec
+  //    `fast-track`, volontairement hors de `all`.
+  const guard = fs.readFileSync(path.join(SKILL_DIR, 'scripts', 'forge-guard.js'), 'utf-8');
+  assert(/function checkRulesPresent/.test(guard), 'forge-guard.js doit définir checkRulesPresent');
+  const allBody = guard.slice(guard.indexOf('all: (root, flags) =>'));
+  assert(/checkRulesPresent\(root\)/.test(allBody),
+    'checkRulesPresent doit être dans `all` — un contrôle que `all` ne porte pas ne protège d\'aucun gate');
+});
+
+test('rules_present : échoue quand l\'architecture est close sans jeu de règles câblé', () => {
+  // Un test qui vérifie seulement « la fonction existe » prouve qu'un fichier
+  // compile. Celui-ci exerce les cinq issues, et la quatrième est celle qui
+  // compte : un répertoire de règles **présent mais non chargé** — le défaut
+  // exact que `target-formats.md` existe pour empêcher, et que rien ne voyait.
+  const guard = (project) => run('forge-guard.js', ['rules-present', project]).json || {};
+
+  const proj = freshProject('rules-present');
+  const state = readState(proj);
+
+  // 1. Avant l'approbation : passe. Un contrôle qui échoue trop tôt enseigne à
+  //    le contourner — c'est le mode d'échec de `contract_complete`.
+  assert(guard(proj).pass === true,
+    'avant `architecture approved`, l\'absence de règles est l\'ordre normal');
+
+  // 2. Après approbation, sans rien : ÉCHOUE, et nomme l'appel manquant.
+  state.phases = Object.assign({}, state.phases, { '4_architecture': { status: 'approved' } });
+  fs.writeFileSync(path.join(proj, '.forge', 'state.json'), JSON.stringify(state, null, 2));
+  let r = guard(proj);
+  assert(r.pass === false, 'architecture approuvée sans jeu de règles : la porte doit échouer');
+  assert(/appel 2|project-rules-architect/i.test(r.checks[0].why || ''),
+    'le message doit nommer l\'appel manquant, sinon il refuse sans dire quoi faire');
+
+  // 3. Répertoire présent mais vide : échec, et un état distinct de « absent ».
+  fs.mkdirSync(path.join(proj, '.opencode', 'rules'), { recursive: true });
+  r = guard(proj);
+  assert(r.pass === false && r.checks[0].state === 'empty',
+    'un répertoire de règles vide doit échouer comme un répertoire absent');
+
+  // 4. Des règles existent mais rien ne les charge.
+  fs.writeFileSync(path.join(proj, '.opencode', 'rules', '10-git.md'), '# Git\n');
+  r = guard(proj);
+  assert(r.pass === false && r.checks[0].state === 'not_wired',
+    'des règles non câblées sont inertes : la porte doit le dire');
+  assert(/instructions/.test(r.checks[0].next || ''),
+    'le message doit dire quoi écrire, pas seulement constater');
+
+  // 5. Câblé : passe.
+  fs.writeFileSync(path.join(proj, 'opencode.json'),
+    JSON.stringify({ instructions: ['AGENTS.md', '.opencode/rules/*.md'] }, null, 2));
+  r = guard(proj);
+  assert(r.pass === true && r.checks[0].wired === true,
+    'un jeu de règles écrit et câblé doit passer');
+});
+
+test('rules_present : un jeu de règles écrit TÔT est rapporté, pas silencieusement ignoré', () => {
+  // L'état que la porte ne voyait pas. Elle disait `not_due` — et passait — sur un
+  // dépôt de dix-neuf fichiers, donc elle rapportait « rien à signaler » alors
+  // qu'il y avait dix-neuf fichiers. **Une porte qui se tait sur un état réel
+  // apprend à être ignorée**, et c'est la même famille de défaut que le sien.
+  const guard = (project) => run('forge-guard.js', ['rules-present', project]).json || {};
+
+  const proj = freshProject('rules-early');
+  const rules = path.join(proj, '.opencode', 'rules');
+  fs.mkdirSync(rules, { recursive: true });
+  fs.writeFileSync(path.join(rules, '10-git.md'), '# Git\n');
+  fs.writeFileSync(path.join(proj, 'opencode.json'),
+    JSON.stringify({ instructions: ['AGENTS.md', '.opencode/rules/*.md'] }, null, 2));
+
+  // Avant l'approbation, avec des règles : ça passe, mais ça **dit** ce qu'il y a.
+  let r = guard(proj);
+  assert(r.pass === true, 'des règles écrites avant le déclencheur ne sont pas un échec');
+  assert(r.checks[0].state === 'early',
+    'l\'état doit être `early` — `not_due` sur un dépôt peuplé rapporte une absence qui n\'existe pas');
+  assert(r.checks[0].files === 1 && r.checks[0].wired === true,
+    'la porte doit inventorier ce qu\'elle trouve, pas seulement dire que ce n\'est pas dû');
+
+  // **Et le câblage reste une obligation dans cet état.** Un jeu de règles inerte
+  // est inerte indépendamment du moment où il a été écrit — l'approbation décide
+  // de l'obligation d'en avoir, pas de si ceux qu'on a sont chargés.
+  fs.rmSync(path.join(proj, 'opencode.json'));
+  r = guard(proj);
+  assert(r.pass === false && r.checks[0].state === 'not_wired',
+    'des règles écrites tôt mais non chargées restent inertes : la porte doit le dire');
+  assert(r.checks[0].approved === false,
+    'le motif doit dire que l\'architecture n\'est pas approuvée, sinon le refus paraît abuif');
+});
+
+test('memory_present : la mémoire est une porte, pas une consigne de Phase 0', () => {
+  // **Ce que ce test attrape.** L'appel 1 du socle de contexte était une étape
+  // numérotée de la Phase 0 — une phrase. Elle a donc été exécutée sur deux
+  // projets de laboratoire et ignorée sur trois, sans que rien ne le signale.
+  // Une exigence décidable écrite en prose est une exigence que l'agent déclare
+  // satisfaite.
+  const guard = (project) => run('forge-guard.js', ['memory-present', project]).json || {};
+  const w = (p, f, b) => { fs.mkdirSync(path.dirname(path.join(p, f)), { recursive: true }); fs.writeFileSync(path.join(p, f), b); };
+
+  const proj = freshProject('memoire');
+  const setPhase = (n) => { const s = readState(proj); s.current_phase = n; w(proj, '.forge/state.json', JSON.stringify(s, null, 2)); };
+
+  // Avant la Phase 1 : l'absence est le travail en cours. Une porte qui échoue
+  // pendant la tâche qu'elle surveille apprend à être ignorée.
+  assert(guard(proj).pass === true, 'en Phase 0, l\'absence de mémoire est normale');
+
+  setPhase(4);
+  let r = guard(proj);
+  assert(r.pass === false && r.checks[0].state === 'absent',
+    'en Phase 4 sans les quatre fichiers, la porte doit échouer');
+
+  // Les quatre fichiers, mais décrits sans déclencheur : le conteneur vide.
+  w(proj, 'AGENTS.md', '# A\n\n| Fichier | Ce qu on y ecrit |\n|---|---|\n' +
+    '| `SESSION_LOG.md` | le recit |\n| `DECISIONS.md` | les decisions |\n' +
+    '| `LEARNINGS.md` | les correctifs |\n');
+  w(proj, 'SESSION_LOG.md', '# S\n\n### 2026-10-11 — une\n\nx\n');
+  w(proj, 'DECISIONS.md', '# D\n\n## Q-001\n\nStatus: Open\n');
+  w(proj, 'LEARNINGS.md', '# L\n\n_(aucune)_\n');
+  r = guard(proj);
+  assert(r.pass === false && r.checks[0].state === 'described_not_triggered',
+    'des fichiers décrits sans condition d\'écriture doivent échouer : ils seront vides');
+  assert((r.checks[0].files || []).length === 3, 'la porte doit nommer les fichiers sans déclencheur');
+
+  // Avec déclencheur : passe. La troisième colonne non vide suffit.
+  w(proj, 'AGENTS.md', '# A\n\n| Fichier | Ce qu on y ecrit | Declencheur |\n|---|---|---|\n' +
+    '| `SESSION_LOG.md` | le recit | **Tu ouvres une session** : tu l\'ecris avant de commencer |\n' +
+    '| `DECISIONS.md` | les decisions | **Tu tranches** quelque chose de durable |\n' +
+    '| `LEARNINGS.md` | les correctifs | **Tu te trompes une deuxieme fois** |\n');
+  r = guard(proj);
+  assert(r.pass === true && r.checks[0].state === 'present', 'quatre fichiers + trois déclencheurs : passe');
+  assert(r.checks[0].sessions === 1, 'la porte doit compter les sessions déjà écrites');
+});
+
+test('kit_integrity : un script modifié est un ÉCHEC, un document modifié un avertissement', () => {
+  // Le défaut le plus grave du dépôt : il désactive ses propres protections.
+  // forge-guard portait sur le projet, **pas sur le kit** ; et `$FORGE` est un
+  // `export` que pose l'agent. Deux chemins de contournement, aucun détecté.
+  //
+  // Constaté sur un projet réel : une IA a modifié le script pour franchir des
+  // gates, et rien ne l'a signalé.
+  const guard = (project, ...flags) =>
+    run('forge-guard.js', ['kit-integrity', project, ...flags]).json || {};
+
+  const proj = freshProject('kit-integrity');
+
+  // 1. Pas de manifeste : rien à comparer, donc pas un défaut. Un premier ancrage
+  //    est un acte délibéré, pas une obligation implicite.
+  assert(guard(proj).checks[0].state === 'no_manifest', 'sans manifeste, la porte ne fabrique pas un défaut');
+
+  // 2. Écriture, puis vérification : intact.
+  assert(guard(proj, '--write-manifest').checks[0].state === 'manifest_written', 'l\'écriture doit être explicite');
+  const written = JSON.parse(fs.readFileSync(path.join(proj, '.forge', 'kit-manifest.json'), 'utf-8'));
+  assert(Object.keys(written.scripts).length > 0, 'les scripts doivent être ancrés');
+  assert(Object.keys(written.references).length > 0,
+    "les références doivent être ancrées : une seule extension pour les deux faisait que rien n'était collecté, et la porte rapportait « intact » sans rien regarder.");
+  assert(guard(proj).pass === true, 'un kit intact passe');
+
+  // 3. Un script a changé : ÉCHEC DUR.
+  const mp = path.join(proj, '.forge', 'kit-manifest.json');
+  const m = JSON.parse(fs.readFileSync(mp, 'utf-8'));
+  const script = Object.keys(m.scripts)[0];
+  m.scripts[script] = '0'.repeat(64);
+  fs.writeFileSync(mp, JSON.stringify(m, null, 2));
+  let r = guard(proj);
+  assert(r.pass === false && r.checks[0].state === 'scripts_modified',
+    'un script modifié doit être un échec dur : les scripts appliquent le processus');
+  assert(/applique/.test(r.checks[0].why || ''), 'le refus doit dire pourquoi, pas seulement constater');
+  assert(/write-manifest/.test(r.checks[0].next || ''), 'le refus doit dire quoi faire');
+
+  // 4. Seul un document a changé : AVERTISSEMENT, pas échec. Un doc informe
+  //    l'agent ; il n'applique rien. Fail et warn ont deux régimes distincts,
+  //    sinon une mise à jour de doc bloquerait un projet pour rien — et la porte
+  //    serait contournée pour cette raison.
+  guard(proj, '--write-manifest');
+  const m2 = JSON.parse(fs.readFileSync(mp, 'utf-8'));
+  m2.references[Object.keys(m2.references)[0]] = '1'.repeat(64);
+  fs.writeFileSync(mp, JSON.stringify(m2, null, 2));
+  r = guard(proj);
+  assert(r.pass === true && r.checks[0].state === 'references_changed',
+    'un document modifié doit être un avertissement, pas un échec');
+  assert((r.checks[0].warnings || []).length > 0, "l'avertissement doit nommer le fichier");
+});
+
+test('tools : un script complémentaire non déclaré, égaré, ou fantôme est un défaut', () => {
+  // La plainte : le kit ne couvrait pas un besoin, l'IA a écrit un script, il a
+  // atterri n'importe où, et trois mois après on en a réécrit un. Pas parce
+  // qu'il était mauvais — parce que personne ne savait qu'il existait.
+  const guard = (project) => run('forge-guard.js', ['tools', project]).json || {};
+  const w = (p, f, b) => { fs.mkdirSync(path.dirname(path.join(p, f)), { recursive: true }); fs.writeFileSync(path.join(p, f), b); };
+  const register = (proj, tools) => {
+    const s = readState(proj);
+    s.project = Object.assign({}, s.project, { tools });
+    w(proj, '.forge/state.json', JSON.stringify(s, null, 2));
+  };
+
+  const proj = freshProject('outils');
+  assert(guard(proj).pass === true, 'un projet sans outil passe : ne pas exiger un registre vide');
+
+  // 1. Non déclaré.
+  w(proj, '.forge/tools/seed-dwight.js', '// x\n');
+  let r = guard(proj);
+  assert(r.pass === false && r.checks[0].problems.some(p => p.kind === 'unregistered'),
+    "un outil existant et non déclaré doit échouer : personne ne saura qu'il existe");
+
+  // 2. Déclaré sans but.
+  register(proj, { 'seed-dwight.js': { owner: 'moi' } });
+  r = guard(proj);
+  assert(r.pass === false && r.checks[0].problems.some(p => p.kind === 'no_purpose'),
+    'déclaré sans but ne dit pas ce que le fichier fait');
+
+  // 3. Déclaré avec but.
+  register(proj, { 'seed-dwight.js': { purpose: "seed de l'entrepôt de test", owner: 'moi' } });
+  assert(guard(proj).pass === true, 'déclaré et placé dans .forge/tools/ : passe');
+
+  // 4. Déclaré mais absent du disque — le registre qui ment, pire qu'un registre absent.
+  fs.rmSync(path.join(proj, '.forge/tools/seed-dwight.js'));
+  r = guard(proj);
+  assert(r.pass === false && r.checks[0].problems.some(p => p.kind === 'declared_but_missing'),
+    "un registre qui déclare un fichier absent est pire qu'aucun registre, parce qu'on s'y fie");
+
+  // 5. Un script qui s\'égare ailleurs — la signature d\'un agent qui a contourné le kit.
+  w(proj, '.forge/mon-hack.js', '// x\n');
+  assert(guard(proj).checks[0].problems.some(p => p.kind === 'stray_script'),
+    "un script écrit hors de .forge/tools/ doit être signalé");
+});
+
+test('incidents : un écart détecté par une porte doit être consigné quelque part', () => {
+  // Ce que la porte exige, et ce qu'elle **n'exige pas** : exiger un journal
+  // d'incidentsalways. Un projet où rien n'a mal tourné n'a rien à consigner, et
+  // un dossier vide créé pour contenter un contrôle est un dossier que personne
+  // ne lit. Elle exige qu'un `fail` ne reste pas dans la sortie console.
+  const guard = (project) => run('forge-guard.js', ['incidents', project]).json || {};
+  const w = (p, f, b) => { fs.mkdirSync(path.dirname(path.join(p, f)), { recursive: true }); fs.writeFileSync(path.join(p, f), b); };
+
+  const proj = freshProject('incidents');
+  const s = readState(proj);
+  s.current_phase = 5;
+  w(proj, '.forge/state.json', JSON.stringify(s, null, 2));
+
+  // Seul : rien n'a échoué, donc rien à consigner. Doit passer.
+  assert(guard(proj).pass === true, "sans échec amont, exiger un journal serait de la mise en scène de l'exigence");
+
+  // Un journal existe et contient des incidents : passe.
+  w(proj, '.forge/audit/issues.md', '---\ntype: audit-issues\n---\n\n# Incidents\n\n### INC-001 — un ecart\n');
+  assert(guard(proj).pass === true, 'un journal peuplé passe');
+
+  // Le journal disparaît alors qu'un gate échoue : doit échouer, en nommant les gates.
+  fs.rmSync(path.join(proj, '.forge/audit/issues.md'));
+  const s2 = readState(proj);
+  s2.current_phase = 5;   // contrat non signé -> contract_complete échoue
+  w(proj, '.forge/state.json', JSON.stringify(s2, null, 2));
+  const all = run('forge-guard.js', ['all', proj]).json || {};
+  const inc = (all.checks || []).find(c => c.check === 'incidents_logged');
+  assert(inc && inc.status === 'fail' && inc.state === 'failures_unlogged',
+    'des échecs amont sans incident consigné doivent être signalés');
+  assert((inc.failures || []).includes('contract_complete'),
+    'la porte doit nommer les contrôles qui ont échoué : un refus qui ne dit pas quoi faire');
+});
+
+test('rules_present : un opencode.json invalide échoue même avant l\'approbation', () => {
+  // Caslein : le contrôle rendait `not_due` **avant** de regarder quoi que ce
+  // soit, donc un `opencode.json` cassé passait tant que l'architecture n'était
+  // pas approuvée. Or un JSON invalide désactive tout le jeu d'instructions
+  // **maintenant** — l'approbation n'a rien à y voir.
+  const proj = freshProject('rules-json');
+  fs.mkdirSync(path.join(proj, '.opencode', 'rules'), { recursive: true });
+  fs.writeFileSync(path.join(proj, '.opencode', 'rules', '10-git.md'), '# Git\n');
+  fs.writeFileSync(path.join(proj, 'opencode.json'), '{ "instructions": [ ');
+
+  const r = run('forge-guard.js', ['rules-present', proj]).json || {};
+  assert(r.pass === false && r.checks[0].state === 'invalid_config',
+    'un JSON invalide doit échouer avant comme après l\'approbation');
+});
+
 test('la mémoire du projet est lue sous les MAJUSCULES, et ses déclencheurs sont comptés', () => {
   // `project_memory` a répondu `present: false` sur les trois projets de laboratoire
   // pendant toute la vie du skill, parce que personne n'avait jamais appelé

@@ -8,6 +8,38 @@ only exist *across* files, or between the rules and the code.
 Each section below catches something the others cannot. **A clean result on one
 section says nothing about the others.**
 
+## Part A — Mechanical. Run it, don't read it
+
+```bash
+node "$PRA/scripts/rules-selftest.js" <project>
+```
+
+**These ten checks are decided, not judged.** Reading them off a checklist lets
+the agent report them as satisfied without running anything — which is how a
+rule set ends up internally consistent, wired to nothing, and complete on paper.
+
+| Check | What it catches |
+|---|---|
+| `wiring_present` | Config missing, unparseable, or a glob matching nothing |
+| `index_covers_everything` | A rule file nobody will read, or a row pointing at a file that does not exist |
+| `no_placeholder_residue` | A `{{PLACEHOLDER}}` that survived generation |
+| `cross_references_resolve` | A `§Section` reference pointing at a section that was renamed |
+| `no_contradictory_thresholds` | Two files giving two answers to "is this file too big" |
+| `no_forge_coupling` | A reference to `.forge/` in a project that has none |
+| `no_cross_project_contamination` | A library, file or symbol from another project |
+| `no_unenforceable_prose` | "Properly", "as needed", "probably X, but verify" |
+| `gates_are_commands` | A gate set with no duplication, coverage, vulnerability or review check |
+| `budget_measured` | The total of a glob-loaded rules directory, and per-file overages |
+
+**A failure here is a defect, not a discussion.** Fix it and re-run. The
+script's own self-test (`scripts/selftest.js`) proves each check detects what it
+claims to, so a pass is evidence rather than a formality.
+
+## Part B — Judgement. This is what a checklist is for
+
+Everything below is a decision no script can make. Do not automate these, and do
+not report them as verified when they were not.
+
 ## Redundancy
 
 - [ ] For every rule stated as a command or a do/don't, search the rest of the set

@@ -10,8 +10,24 @@ Then, before you push:
 
 ```bash
 node scripts/validate-repo.js
-node skills/forge/scripts/selftest.js    # if you touched forge
+node skills/forge/scripts/selftest.js                  # if you touched forge
+node skills/project-rules-architect/scripts/selftest.js # if you touched the rule library
 ```
+
+### A check nobody tested is an assumption
+
+`rules-selftest.js` verifies a **delivered** rule set. `selftest.js` verifies
+`rules-selftest.js`, by building a broken one and asserting that each check
+reports it.
+
+That second file is not ceremony. While writing the first, the self-test caught
+four real defects — including one check that only recognised English and
+therefore **passed every non-English rule set silently**. A check that has
+quietly become too permissive reports "all clear" on everything, and nothing
+else in the repository would ever say otherwise.
+
+**Run `selftest.js` after touching either script**, and add a case for any check
+you add.
 
 ### The four rules
 

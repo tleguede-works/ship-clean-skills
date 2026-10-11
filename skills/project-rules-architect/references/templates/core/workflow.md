@@ -13,18 +13,20 @@ escalation ladder. This template is where each of those lives exactly once.
 Canonical homes this file does NOT own — reference them, never restate them:
 
   - Escalation / stop-and-report ladder   → `AGENTS.md` §Escalation Rules
-  - Git conventions, atomicity, branches  → `AGENTS.md` §Git Conventions
+  - Git commits, branches, hooks          → `git-workflow.md`
   - File size & partitioning table        → `architecture.md`
   - Memory-file formats                   → `SESSION_LOG.md` / `DECISIONS.md`
   - Style, naming, banned patterns        → `coding-standards.md`
   - Security rules                        → `security.md`
+  - The gate commands themselves          → `quality-gates.md`
+  - What a reviewer checks                → `code-review.md`
 
 The §Pre-Commit Review below is the one place that *sequences* checks, so it
-references the command gate it does not own (§Verification Order, same file)
-rather than restating it. When a rule here needs to say "never do X", it must be
-X that is not already banned in `coding-standards.md` §Banned Patterns or in
-`AGENTS.md`. Otherwise it is a duplicate with different wording — the exact
-failure this file was created to prevent.
+references the command gate it does not own (`quality-gates.md`) rather than
+restating it. When a rule here needs to say "never do X", it must be X that is
+not already banned in `coding-standards.md` §Banned Patterns, in
+`git-workflow.md` §When Blocked, or in `AGENTS.md`. Otherwise it is a duplicate
+with different wording — the exact failure this file was created to prevent.
 -->
 
 # Agent Operating Workflow
@@ -80,7 +82,9 @@ Before non-trivial work:
 
 ## Verification Order
 
-Run in order. **Fix before proceeding. Never commit past a failure.**
+**The gate table owns the commands. This section owns the order and the
+failure behaviour** — because the same command run in a different order, or run
+with a different response to a red result, is a different check.
 
 ```bash
 {{1. lint}}
@@ -89,7 +93,9 @@ Run in order. **Fix before proceeding. Never commit past a failure.**
 {{4. stack health check, e.g. dependency/config doctor}}
 ```
 
-Then the **Definition of Done** in `AGENTS.md` — all items, checked, not assumed.
+Then the **full gate** — `{{gate command}}`, which adds coverage, duplication
+and vulnerabilities (`{{quality gate file}}` §The Gate Table) — and the
+**Definition of Done** in `AGENTS.md`, all items, checked, not assumed.
 
 **Do not finish with a red tree.** Fix every issue you introduced. If the task
 genuinely cannot be completed — an external dependency is down, a design is
@@ -105,6 +111,10 @@ git diff
 ```
 
 Review **all** uncommitted files, not just the ones you think you changed.
+
+**This is your own diff, not a code review.** A review of someone else's work
+is `{{code review file}}`, done by someone else, and the two are different acts
+with different rules.
 
 ### Why the checks are ordered this way
 
@@ -123,9 +133,10 @@ prose.
 
 ### Systematic — every commit
 
-**First the command gate:** `§Verification Order` above, plus the Definition of
-Done in `AGENTS.md` — every item, checked, not assumed. Those commands are
-stated once, there; this section does not repeat them.
+**First the command gate:** `{{gate command}}` — the whole table
+(`{{quality gate file}}`), plus the Definition of Done in `AGENTS.md` — every
+item, checked, not assumed. Those commands are stated once, there; this section
+does not repeat them.
 
 **Then the judgement checks**, which no command covers:
 
@@ -251,7 +262,7 @@ failure path degrades into either paralysis or quiet skipping.
 - Commit a credential, on the assumption it can be revoked afterwards.
 
 The process-level bans are in `AGENTS.md` §Escalation Rules; the git-operation
-bans are in `AGENTS.md` §Git Conventions.
+bans are in `git-workflow.md` §When Blocked.
 
 ## Side-Effects Rule
 
@@ -292,13 +303,50 @@ failure.
 
 ## Memory File Triggers
 
-**Mandatory triggers. Do not skip them.**
+**Mandatory triggers. Do not skip them.** The session-log trigger is the one that
+cannot wait — see below.
 
 | File | Append when | Format |
 |---|---|---|
-| `{{SESSION_LOG}}` | **Before every commit**, and at the end of any session that did work — including one that stops mid-task. Also immediately when blocked, so the next session doesn't re-discover it. | Defined in the file itself |
-| `{{DECISIONS}}` | A durable project-wide choice is made or closed — one that would otherwise be re-argued every session. Also when superseding an existing entry. | ADR blocks, defined in the file |
-| `{{LEARNINGS}}` | **The same mistake happens twice.** This is where new rules are born — from observed failure, not speculation. | One line per correction, **naming the rule file it will be promoted into** |
+| `{{SESSION_LOG}}` | **At the opening of the session** — create the entry before writing the first line of code. Then a checkpoint at every moment below | Defined in the file itself |
+| `{{DECISIONS}}` | A durable project-wide choice is made or closed — **as soon as you decide**, not when the decision comes back to you. Also when superseding an entry | ADR blocks, defined in the file |
+| `{{LEARNINGS}}` | **The same mistake happens twice.** This is where new rules are born — from observed failure, not speculation | One line per correction, **naming the rule file it will be promoted into** |
+
+### Why the session log cannot wait until the end
+
+**A model with a million tokens of context survives to the end.** It still holds
+the reasoning, and it writes one complete entry when it knows what it did. **A
+smaller model does not survive**: compaction arrives first, and when the agent
+comes back it knows *what* it did but no longer knows *why*.
+
+What disappears first is not the result — it is in the diff. It is the
+**rejection**: what was ruled out, and on what grounds. A lost rejection is a
+decision re-litigated six months later, with a different argument.
+
+So a write-at-the-end trigger is **the worst possible placement** — it only fires
+if the agent survives long enough to reach it.
+
+### The five checkpoints
+
+One line each, at moments the agent **observes**. Never on a clock: a model does
+not know what time it is, and a clock that does not fire is a silent trigger,
+which is the defect being repaired.
+
+| Moment | Why this one |
+|---|---|
+| **The session opens** | The entry exists from the start |
+| **A phase changes** | Forge knows a phase changed — a signal, not a duration |
+| **A slice starts** | The scope is fresh and known |
+| **A slice ends** | Before any commit, while the file inventory is still accurate |
+| **The context has just been compacted** | The summary just arrived. **This is the most important one** — it is the last checkpoint before the next |
+
+Each checkpoint says, in order: **where I am** · **what I just decided** ·
+**what I am doing next**. The third is what makes it useful after a compaction —
+the agent reads "I am about to write the slice X plan" and resumes, without
+re-reading the diff to find out where it stopped.
+
+It does **not** contain a diff, a file listing, or a command output: that
+regenerates from git, a synthesis does not.
 
 **Promotion, both directions:**
 
