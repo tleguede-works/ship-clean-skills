@@ -53,6 +53,9 @@ jobs:
       # n'existent pas. La forme seule laisse passer une pull request qui
       # n'ajoute aucune trace, ce qui est précisément ce que la règle interdit.
       - name: Politique CHANGELOG
+        # Une règle de pull request : sur un push vers main, `--base main` compare main à
+        # lui-même et répond toujours « CHANGELOG non modifié » (run 164 du 11 octobre).
+        if: github.event_name == 'pull_request'
         run: node scripts/changelog-policy.js --base main
 
   workflows:
