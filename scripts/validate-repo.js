@@ -422,7 +422,8 @@ for (const [id] of allText) {
     const rel = path.relative(ROOT, file);
     // Un fichier sous un répertoire `templates/` est un gabarit par son
     // emplacement, même s'il s'appelle .md.
-    if (/(^|\/)templates?\//.test(rel)) continue;
+    // `rel` porte des `\` sous Windows : on normalise avant de tester l'emplacement.
+    if (/(^|\/)templates?\//.test(rel.split(path.sep).join('/'))) continue;
     const raw = fs.readFileSync(file, 'utf-8');
     if (raw.includes('forge:form')) { formFiles.push(rel); continue; }
     const found = (stripCodeSpans(raw).match(PLACEHOLDER) || []);

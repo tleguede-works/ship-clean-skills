@@ -27,6 +27,26 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### test(ci) — `npm test` s'exécute en CI, sur Ubuntu et Windows
+
+`ci.yml` rejouait les étapes de `npm test` une à une et omettait l'auto-test de
+`project-rules-architect`, ce que `npm test` exécute. Rien ne tournait non plus
+sous Windows. Le nouveau workflow `test.yml` appelle `npm test` lui-même : le
+script et la CI ne peuvent plus diverger.
+
+### fix(validate-repo) — l'exemption des gabarits ne s'appliquait pas sous Windows
+
+`no_unrendered_placeholders` testait `/(^|\/)templates?\//` sur un chemin issu de
+`path.relative`, qui contient des `\` sous Windows. Les gabarits
+`entry-file.md` et `quality-gates.md` étaient alors pris pour des documents livrés
+avec des `{{PLACEHOLDER}}` non rendus. Les séparateurs sont normalisés avant le test.
+
+### fix(ci) — la politique CHANGELOG ne s'exécute plus sur un push vers main
+
+`--base main` sur un push vers `main` compare `main` à lui-même et répond toujours
+« CHANGELOG non modifié » : le `ci` était rouge à chaque merge (run 164). La règle
+est une règle de pull request ; l'étape est limitée à cet événement.
+
 ## [1.14.0] - 2026-10-11
 
 ### fix(forge) — les domaines de constat n'étaient plus routables
