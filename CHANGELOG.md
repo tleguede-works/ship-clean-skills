@@ -27,6 +27,13 @@ parce qu'elle consomme un numéro.
 
 ## [Unreleased]
 
+### test(ci) — `npm test` s'exécute en CI, sur Ubuntu et Windows
+
+`ci.yml` rejouait les étapes de `npm test` une à une et omettait l'auto-test de
+`project-rules-architect`, ce que `npm test` exécute. Rien ne tournait non plus
+sous Windows. Le nouveau workflow `test.yml` appelle `npm test` lui-même : le
+script et la CI ne peuvent plus diverger.
+
 ## [1.14.0] - 2026-10-11
 
 ### fix(forge) — les domaines de constat n'étaient plus routables

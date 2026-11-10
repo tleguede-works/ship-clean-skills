@@ -1,0 +1,42 @@
+name: test
+
+# Runs the repository's own `npm test`, so this workflow and the `test` script cannot drift apart.
+# Today `ci.yml` runs most of those steps one by one but not the project-rules-architect self-test,
+# and nothing runs on Windows. This workflow closes both gaps without touching ci.yml or release.yml.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  npm-test:
+    name: npm test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The smoke scripts build throwaway Git sandboxes and commit in them: give Git an identity.
+      - name: Git identity for the sandboxes
+        run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.invalid"
+
+      # There is no lockfile in the repository, so `npm ci` is not available.
+      # The only dependency is @electric-sql/pglite (the DDL checks report "skipped" without it).
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: npm test
+        run: npm test
